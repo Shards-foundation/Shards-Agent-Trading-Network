@@ -37,6 +37,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -62,6 +64,25 @@ jobs:
         run: pnpm db:migrate:deploy
       - name: Typecheck
         run: pnpm typecheck
+      - name: Check formatting on changed files
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            base="origin/${GITHUB_BASE_REF}"
+          else
+            base="${BEFORE_SHA}"
+          fi
+          if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]]; then
+            base="HEAD^"
+          fi
+          mapfile -t files < <(git diff --name-only "$base...HEAD" -- '*.js' '*.jsx' '*.ts' '*.tsx' '*.json' '*.md' '*.mdx' '*.css' '*.scss' '*.yaml' '*.yml' '*.html' '*.vue' '*.graphql' '*.prisma' '*.toml')
+          if (( ${#files[@]} == 0 )); then
+            echo "No changed Prettier-supported files to check."
+          else
+            pnpm exec prettier --check "${files[@]}"
+          fi
       - name: Test
         env:
           NODE_ENV: test
