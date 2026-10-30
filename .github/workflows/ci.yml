@@ -24,6 +24,8 @@ jobs:
           node-version: 22
       - name: Install
         run: pnpm install --no-frozen-lockfile
+      - name: Validate database schema
+        run: pnpm db:validate
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
