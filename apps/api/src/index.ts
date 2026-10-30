@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { calculatePaperPerformance } from "@satn/accounting";
+import { verifyOidcAccessToken } from "@satn/auth";
 import { evaluateTradeIntent, TradeIntentSchema } from "@satn/risk";
 import { simulateLimitOrder } from "@satn/paper-engine";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
@@ -37,6 +38,51 @@ export interface BuildServerOptions {
   workerProbe?: DatabaseHealthProbe | null;
   prismaClient?: PrismaClient | null;
   now?: () => number;
+}
+
+type OwnerAuthError = "DISABLED" | "MISCONFIGURED" | "INVALID";
+type OwnerIdentity = { subject: string; actorType: "OIDC_USER" | "REGISTRATION_TOKEN" };
+type OwnerAuthResult = OwnerIdentity | { error: OwnerAuthError };
+
+async function resolveOwnerIdentity(authorization: unknown, suppliedRegistrationToken: unknown): Promise<OwnerAuthResult> {
+  const issuer = process.env.OIDC_ISSUER;
+  const audience = process.env.OIDC_AUDIENCE;
+  const jwksUrl = process.env.OIDC_JWKS_URL;
+  const oidcConfigured = Boolean(issuer || audience || jwksUrl);
+
+  if (oidcConfigured) {
+    if (!issuer || !audience || !jwksUrl) return { error: "MISCONFIGURED" };
+    if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) return { error: "INVALID" };
+    const token = authorization.slice(7).trim();
+    if (!token) return { error: "INVALID" };
+    try {
+      const identity = await verifyOidcAccessToken(token, { issuer, audience, jwksUrl });
+      return { subject: `${identity.issuer}:${identity.subject}`, actorType: "OIDC_USER" };
+    } catch {
+      return { error: "INVALID" };
+    }
+  }
+
+  const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
+  if (!registrationToken) return { error: "DISABLED" };
+  if (!hasValidRegistrationToken(suppliedRegistrationToken, registrationToken)) return { error: "INVALID" };
+  return { subject: registrationAuthSubject(registrationToken), actorType: "REGISTRATION_TOKEN" };
+}
+
+function ownerAuthFailure(error: OwnerAuthError, correlationId: string) {
+  const unavailable = error === "DISABLED" || error === "MISCONFIGURED";
+  const code = error === "DISABLED" ? "OWNER_AUTH_DISABLED" : error === "MISCONFIGURED" ? "OWNER_AUTH_MISCONFIGURED" : "INVALID_OWNER_CREDENTIAL";
+  return {
+    statusCode: unavailable ? 503 : 401,
+    body: {
+      error: {
+        code,
+        message: unavailable ? "Owner authentication is not configured correctly." : "The owner credential is invalid.",
+        correlationId,
+        retryable: false
+      }
+    }
+  };
 }
 
 function hasValidRegistrationToken(suppliedToken: unknown, expectedToken: string | undefined): expectedToken is string {
@@ -200,19 +246,10 @@ export function buildServer(options: BuildServerOptions = {}) {
   });
 
   app.post("/v1/agents", async (request, reply) => {
-    const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
-    const suppliedToken = request.headers["x-registration-token"];
-    if (!registrationToken || typeof suppliedToken !== "string") {
-      return reply.code(503).send({
-        error: { code: "REGISTRATION_DISABLED", message: "Agent registration is not configured.", correlationId: request.id, retryable: false }
-      });
-    }
-    const expectedHash = createHash("sha256").update(registrationToken).digest();
-    const suppliedHash = createHash("sha256").update(suppliedToken).digest();
-    if (!timingSafeEqual(expectedHash, suppliedHash)) {
-      return reply.code(401).send({
-        error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
-      });
+    const ownerAuth = await resolveOwnerIdentity(request.headers.authorization, request.headers["x-registration-token"]);
+    if ("error" in ownerAuth) {
+      const failure = ownerAuthFailure(ownerAuth.error, request.id);
+      return reply.code(failure.statusCode).send(failure.body);
     }
 
     const parsed = agentCreateSchema.safeParse(request.body);
@@ -229,7 +266,7 @@ export function buildServer(options: BuildServerOptions = {}) {
 
     const agentSecret = `satn_agent_${randomBytes(32).toString("base64url")}`;
     const secretHash = createHash("sha256").update(agentSecret).digest("hex");
-    const authSubject = `bootstrap:${createHash("sha256").update(registrationToken).digest("hex")}`;
+    const authSubject = ownerAuth.subject;
     const payloadHash = createHash("sha256").update(JSON.stringify(parsed.data)).digest("hex");
     try {
       const agent = await prismaClient.$transaction(async (tx) => {
@@ -253,7 +290,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         });
         await tx.auditEvent.create({
           data: {
-            actorType: "REGISTRATION_TOKEN",
+            actorType: ownerAuth.actorType,
             actorId: authSubject,
             action: "agent.registered",
             targetType: "Agent",
@@ -287,16 +324,10 @@ export function buildServer(options: BuildServerOptions = {}) {
         error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
       });
     }
-    const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
-    if (!registrationToken) {
-      return reply.code(503).send({
-        error: { code: "REGISTRATION_DISABLED", message: "Credential management is not configured.", correlationId: request.id, retryable: false }
-      });
-    }
-    if (!hasValidRegistrationToken(request.headers["x-registration-token"], registrationToken)) {
-      return reply.code(401).send({
-        error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
-      });
+    const ownerAuth = await resolveOwnerIdentity(request.headers.authorization, request.headers["x-registration-token"]);
+    if ("error" in ownerAuth) {
+      const failure = ownerAuthFailure(ownerAuth.error, request.id);
+      return reply.code(failure.statusCode).send(failure.body);
     }
     if (!prismaClient) {
       return reply.code(503).send({
@@ -304,7 +335,7 @@ export function buildServer(options: BuildServerOptions = {}) {
       });
     }
 
-    const authSubject = registrationAuthSubject(registrationToken);
+    const authSubject = ownerAuth.subject;
     try {
       const agent = await prismaClient.agent.findUnique({
         where: { id: parsedId.data },
@@ -333,7 +364,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         });
         await tx.auditEvent.create({
           data: {
-            actorType: "REGISTRATION_TOKEN",
+            actorType: ownerAuth.actorType,
             actorId: authSubject,
             action: "agent.credentials_rotated",
             targetType: "Agent",
@@ -362,16 +393,10 @@ export function buildServer(options: BuildServerOptions = {}) {
         error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
       });
     }
-    const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
-    if (!registrationToken) {
-      return reply.code(503).send({
-        error: { code: "REGISTRATION_DISABLED", message: "Credential management is not configured.", correlationId: request.id, retryable: false }
-      });
-    }
-    if (!hasValidRegistrationToken(request.headers["x-registration-token"], registrationToken)) {
-      return reply.code(401).send({
-        error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
-      });
+    const ownerAuth = await resolveOwnerIdentity(request.headers.authorization, request.headers["x-registration-token"]);
+    if ("error" in ownerAuth) {
+      const failure = ownerAuthFailure(ownerAuth.error, request.id);
+      return reply.code(failure.statusCode).send(failure.body);
     }
     if (!prismaClient) {
       return reply.code(503).send({
@@ -379,7 +404,7 @@ export function buildServer(options: BuildServerOptions = {}) {
       });
     }
 
-    const authSubject = registrationAuthSubject(registrationToken);
+    const authSubject = ownerAuth.subject;
     try {
       const agent = await prismaClient.agent.findUnique({
         where: { id: parsedId.data },
@@ -397,7 +422,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         });
         await tx.auditEvent.create({
           data: {
-            actorType: "REGISTRATION_TOKEN",
+            actorType: ownerAuth.actorType,
             actorId: authSubject,
             action: "agent.credentials_revoked",
             targetType: "Agent",
@@ -425,23 +450,17 @@ export function buildServer(options: BuildServerOptions = {}) {
           error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
         });
       }
-      const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
-      if (!registrationToken) {
-        return reply.code(503).send({
-          error: { code: "REGISTRATION_DISABLED", message: "Agent lifecycle controls are not configured.", correlationId: request.id, retryable: false }
-        });
-      }
-      if (!hasValidRegistrationToken(request.headers["x-registration-token"], registrationToken)) {
-        return reply.code(401).send({
-          error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
-        });
+      const ownerAuth = await resolveOwnerIdentity(request.headers.authorization, request.headers["x-registration-token"]);
+      if ("error" in ownerAuth) {
+        const failure = ownerAuthFailure(ownerAuth.error, request.id);
+        return reply.code(failure.statusCode).send(failure.body);
       }
       if (!prismaClient) {
         return reply.code(503).send({
           error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent lifecycle controls are temporarily unavailable.", correlationId: request.id, retryable: true }
         });
       }
-      const authSubject = registrationAuthSubject(registrationToken);
+      const authSubject = ownerAuth.subject;
       try {
         const agent = await prismaClient.agent.findUnique({
           where: { id: parsedId.data },
@@ -468,7 +487,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           });
           await tx.auditEvent.create({
             data: {
-              actorType: "REGISTRATION_TOKEN",
+              actorType: ownerAuth.actorType,
               actorId: authSubject,
               action: targetStatus === "PAUSED" ? "agent.paused" : "agent.resumed",
               targetType: "Agent",
