@@ -46,6 +46,7 @@ describe("WorkerQueue", () => {
     const queue = new WorkerQueue(db);
     await expect(queue.enqueue({ queue: " ", kind: "sample", payload: {} })).rejects.toThrow("queue");
     await expect(queue.enqueue({ queue: "default", kind: "sample", payload: {}, maxAttempts: 0 })).rejects.toThrow("maxAttempts");
+    await expect(queue.enqueue({ queue: "default", kind: "sample", payload: undefined })).rejects.toThrow("JSON-serializable");
     expect(db.query).not.toHaveBeenCalled();
   });
 
