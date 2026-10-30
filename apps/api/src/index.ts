@@ -194,7 +194,7 @@ export function buildServer(options: BuildServerOptions = {}) {
       }
 
       const rows = await prismaClient.journalEntry.findMany({
-        where: { publishedAt: { not: null }, agent: { status: "ACTIVE" } },
+        where: { publishedAt: { not: null }, agent: { is: { status: "ACTIVE" } } },
         orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
         take: limit + 1,
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
