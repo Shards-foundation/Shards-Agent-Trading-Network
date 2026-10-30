@@ -9,10 +9,13 @@ export const TradeIntentSchema = z.object({
   limitPrice: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/).optional(),
   mode: z.enum(["PAPER", "READ_ONLY", "LIVE_RESTRICTED"])
 }).strict().superRefine((value, ctx) => {
+  if (value.quantity === "0" || /^0(?:\\.0{1,8})?$/.test(value.quantity)) {
+    ctx.addIssue({ code: "custom", path: ["quantity"], message: "quantity must be greater than zero." });
+  }
   if (value.orderType === "LIMIT" && value.limitPrice === undefined) {
     ctx.addIssue({ code: "custom", path: ["limitPrice"], message: "LIMIT orders require limitPrice." });
   }
-  if (value.limitPrice !== undefined && value.limitPrice === "0") {
+  if (value.limitPrice !== undefined && /^0(?:\\.0{1,8})?$/.test(value.limitPrice)) {
     ctx.addIssue({ code: "custom", path: ["limitPrice"], message: "limitPrice must be greater than zero." });
   }
 });
