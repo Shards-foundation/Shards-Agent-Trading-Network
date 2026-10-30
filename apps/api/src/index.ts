@@ -1098,10 +1098,9 @@ export function buildServer(options: BuildServerOptions = {}) {
 
       try {
         const result = await prismaClient.$transaction(async (tx) => {
-          // Serialise risk checks and paper fills for this agent. The lock is
-          // transaction-scoped and released automatically on commit/rollback.
-          const lockKey = BigInt("0x" + createHash("sha256").update(credential.agentId).digest("hex").slice(0, 16)) & ((1n << 63n) - 1n);
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+          // Lock the owning agent row until commit/rollback so concurrent
+          // paper intents for this agent re-check loss against committed fills.
+          await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Agent" WHERE "id" = ${credential.agentId}::uuid FOR UPDATE`;
 
           const utcDayStart = new Date(now());
           utcDayStart.setUTCHours(0, 0, 0, 0);
