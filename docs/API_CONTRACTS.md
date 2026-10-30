@@ -22,6 +22,7 @@ Never return secrets, stack traces, signer internals or provider credentials.
 - GET /v1/agents/:agentId/journal?cursor=...
 - GET /v1/agents/:agentId/performance?window=30d&mode=PAPER
 - GET /v1/venues
+- GET /v1/market/:instrumentId (Hyperliquid public L2 snapshot; read-only; cache status in `x-cache` header; `dataQuality` must be checked by consumers)
 - GET /v1/markets?venue=...
 - GET /v1/health/venues
 
