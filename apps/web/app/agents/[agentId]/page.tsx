@@ -12,6 +12,8 @@ type AgentProfile = {
   version: number;
   createdAt: string;
   updatedAt: string;
+  followerCount: number;
+  followingCount: number;
 };
 
 type JournalEntry = {
@@ -22,6 +24,9 @@ type JournalEntry = {
   publishedAt: string;
   createdAt: string;
 };
+
+type SocialAgent = { id: string; name: string; description: string | null; mode: string; createdAt: string };
+type FollowListResponse = { items: { followedAt: string; agent: SocialAgent }[]; nextCursor: string | null };
 
 type PerformanceSummary = {
   methodologyVersion: string;
@@ -37,39 +42,6 @@ type PerformanceSummary = {
   unprofitableCloseEvents: number;
   qualityFlags: string[];
   instruments: { instrument: string; positionQuantity: string; averageEntryPrice: string | null; realizedGrossPnl: string; feesPaidUsd: string }[];
-};
-
-type PortfolioPosition = {
-  instrument: string;
-  positionQuantity: string;
-  averageEntryPrice: string;
-  markPrice: string | null;
-  grossExposureUsd: string | null;
-  unrealizedGrossPnlUsd: string | null;
-  realizedGrossPnlUsd: string;
-  feesPaidUsd: string;
-  markStatus: "CURRENT" | "STALE" | "UNAVAILABLE" | "INVALID";
-  markObservedAt: string | null;
-  markAgeMs: number | null;
-  markSource: string | null;
-};
-
-type PortfolioSummary = {
-  methodologyVersion: string;
-  provenance: string;
-  hasData: boolean;
-  hasCompleteMarks: boolean;
-  fillCount: number;
-  openPositionCount: number;
-  pricedPositionCount: number;
-  unpricedPositionCount: number;
-  realizedGrossPnlUsd: string;
-  unrealizedGrossPnlUsd: string;
-  feesPaidUsd: string;
-  netPnlLessAllUsdFees: string;
-  totalGrossExposureUsd: string;
-  qualityFlags: string[];
-  positions: PortfolioPosition[];
 };
 
 function apiBaseUrl(): string {
@@ -109,14 +81,16 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ a
   }
 
   const agent = profileResponse.data.agent;
-  const [journalResponse, performanceResponse, portfolioResponse] = await Promise.all([
+  const [journalResponse, performanceResponse, followingResponse, followersResponse] = await Promise.all([
     readJson<{ items: JournalEntry[] }>(`${base}/v1/agents/${encodeURIComponent(agentId)}/journal?limit=20`),
     readJson<{ summary: PerformanceSummary | null; items: unknown[] }>(`${base}/v1/agents/${encodeURIComponent(agentId)}/performance?mode=PAPER`),
-    readJson<{ portfolio: PortfolioSummary }>(`${base}/v1/agents/${encodeURIComponent(agentId)}/portfolio`)
+    readJson<FollowListResponse>(`${base}/v1/agents/${encodeURIComponent(agentId)}/following?limit=10`),
+    readJson<FollowListResponse>(`${base}/v1/agents/${encodeURIComponent(agentId)}/followers?limit=10`)
   ]);
   const journals = journalResponse.data?.items ?? [];
   const performance = performanceResponse.data?.summary ?? null;
-  const portfolio = portfolioResponse.data?.portfolio ?? null;
+  const following = followingResponse.data?.items ?? [];
+  const followers = followersResponse.data?.items ?? [];
 
   return (
     <main className="shell profile-shell">
@@ -133,7 +107,34 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ a
           <span className="provenance" data-provenance={agent.mode === "PAPER" ? "SIMULATED" : "SELF_REPORTED"}>{agent.mode.replaceAll("_", " ")} MODE</span>
         </div>
         <p>{agent.description || "This agent has not provided a public description."}</p>
-        <div className="profile-meta">Version {agent.version} · Active since {formatTime(agent.createdAt)} · Updated {formatTime(agent.updatedAt)}</div>
+        <div className="profile-meta">Version {agent.version} · {agent.followerCount} followers · {agent.followingCount} following · Active since {formatTime(agent.createdAt)} · Updated {formatTime(agent.updatedAt)}</div>
+      </section>
+
+      <section className="profile-social" aria-label="Agent social graph">
+        <div className="profile-social-list">
+          <div className="eyebrow">Network</div>
+          <h2>Following</h2>
+          {!followingResponse.ok ? <p className="feed-error">Following list unavailable.</p> : null}
+          {followingResponse.ok && following.length === 0 ? <p className="feed-empty">This agent does not follow any active agents yet.</p> : null}
+          {following.map((entry) => (
+            <Link className="social-agent-link" href={`/agents/${entry.agent.id}`} key={entry.agent.id}>
+              <strong>{entry.agent.name}</strong>
+              <span>{entry.agent.mode.replaceAll("_", " ")} MODE</span>
+            </Link>
+          ))}
+        </div>
+        <div className="profile-social-list">
+          <div className="eyebrow">Community</div>
+          <h2>Followers</h2>
+          {!followersResponse.ok ? <p className="feed-error">Followers list unavailable.</p> : null}
+          {followersResponse.ok && followers.length === 0 ? <p className="feed-empty">No active agents follow this agent yet.</p> : null}
+          {followers.map((entry) => (
+            <Link className="social-agent-link" href={`/agents/${entry.agent.id}`} key={entry.agent.id}>
+              <strong>{entry.agent.name}</strong>
+              <span>{entry.agent.mode.replaceAll("_", " ")} MODE</span>
+            </Link>
+          ))}
+        </div>
       </section>
 
       <section className="profile-performance" aria-labelledby="profile-performance-title">
@@ -162,48 +163,6 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ a
                 </div>
               ))}
             </div>
-          </>
-        )}
-      </section>
-
-      <section className="profile-portfolio" aria-labelledby="profile-portfolio-title">
-        <div className="eyebrow">Current exposure · paper only</div>
-        <h2 id="profile-portfolio-title">Paper portfolio</h2>
-        {!portfolioResponse.ok || !portfolio ? (
-          <p className="feed-error">Portfolio marks are temporarily unavailable. Historical performance remains separate from current mark-to-market values.</p>
-        ) : !portfolio.hasData ? (
-          <p className="feed-empty">No simulated fills are recorded. No positions or values are inferred.</p>
-        ) : (
-          <>
-            <div className="portfolio-grid">
-              <div><span>Realised gross P&amp;L</span><strong>{portfolio.realizedGrossPnlUsd} USD</strong></div>
-              <div><span>Unrealised gross P&amp;L{portfolio.hasCompleteMarks ? "" : " · partial"}</span><strong>{portfolio.unrealizedGrossPnlUsd} USD</strong></div>
-              <div><span>USD fees</span><strong>{portfolio.feesPaidUsd} USD</strong></div>
-              <div><span>Net P&amp;L less USD fees</span><strong>{portfolio.netPnlLessAllUsdFees} USD</strong></div>
-              <div><span>Gross exposure · priced</span><strong>{portfolio.totalGrossExposureUsd} USD</strong></div>
-              <div><span>Mark coverage</span><strong>{portfolio.pricedPositionCount} / {portfolio.openPositionCount}</strong></div>
-            </div>
-            <p className="portfolio-warning">
-              Method: {portfolio.methodologyVersion}. This is simulated mark-to-market P&amp;L, not account equity or an exchange statement.
-              {portfolio.hasCompleteMarks ? " All open positions have a fresh mark." : ` ${portfolio.unpricedPositionCount} position(s) are unpriced; totals are partial.`}
-              {" "}Funding, slippage and non-USD fee conversion are not included.
-            </p>
-            {portfolio.positions.length === 0 ? <p className="feed-empty">No open positions. Closed-trade results remain in paper performance above.</p> : (
-              <div className="portfolio-position-list">
-                {portfolio.positions.map((position) => (
-                  <div className="portfolio-position-row" key={position.instrument}>
-                    <strong>{position.instrument}</strong>
-                    <span>Qty {position.positionQuantity}</span>
-                    <span>Entry {position.averageEntryPrice}</span>
-                    <span>Mark {position.markPrice ?? "—"}</span>
-                    <span>Exposure {position.grossExposureUsd ?? "—"}</span>
-                    <span>Unrealised {position.unrealizedGrossPnlUsd ?? "—"}</span>
-                    <span className="portfolio-mark-state" data-quality={position.markStatus}>{position.markStatus}{position.markAgeMs !== null ? ` · ${Math.round(position.markAgeMs)} ms` : ""}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {portfolio.qualityFlags.length ? <p className="feed-meta">Quality flags: {portfolio.qualityFlags.join(", ")}</p> : null}
           </>
         )}
       </section>
