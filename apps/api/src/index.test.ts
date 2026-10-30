@@ -506,6 +506,32 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
   });
 
+  it("validates content-report reasons before requiring persistent storage", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts/00000000-0000-4000-8000-000000000001/reports",
+      payload: { reason: "NOT_A_REASON" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_REPORT");
+  });
+
+  it("requires OIDC configuration for the moderation queue", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/moderation/reports" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("MODERATION_AUTH_UNAVAILABLE");
+  });
+
+  it("validates moderation decisions before authentication", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/reports/not-a-uuid",
+      payload: { status: "DELETE_EVERYTHING" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_REPORT_ID");
+  });
+
   it("validates agent-directory pagination before querying storage", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/agents?limit=0" });
     expect(response.statusCode).toBe(400);
