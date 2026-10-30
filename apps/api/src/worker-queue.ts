@@ -51,6 +51,8 @@ export class WorkerQueue {
     if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 100) throw new Error("maxAttempts must be an integer between 1 and 100");
     const priority = input.priority ?? 0;
     if (!Number.isInteger(priority) || priority < -1_000_000 || priority > 1_000_000) throw new Error("priority must be an integer between -1000000 and 1000000");
+    const serializedPayload = JSON.stringify(input.payload);
+    if (serializedPayload === undefined) throw new Error("payload must be JSON-serializable");
 
     const rows = await this.db.$queryRawUnsafe<WorkerJob<TPayload>[]>(
       `INSERT INTO "WorkerJob" ("id","queue","kind","payload","status","priority","maxAttempts","availableAt","idempotencyKey","updatedAt")
@@ -58,7 +60,7 @@ export class WorkerQueue {
        ON CONFLICT ("queue","idempotencyKey") DO UPDATE SET "idempotencyKey" = EXCLUDED."idempotencyKey"
          WHERE "WorkerJob"."kind" = EXCLUDED."kind" AND "WorkerJob"."payload" = EXCLUDED."payload"
        RETURNING *`,
-      randomUUID(), input.queue, input.kind, JSON.stringify(input.payload), priority, maxAttempts,
+      randomUUID(), input.queue, input.kind, serializedPayload, priority, maxAttempts,
       input.availableAt ?? new Date(), input.idempotencyKey ?? null,
     );
     if (!rows[0]) throw new Error("enqueue returned no persisted job");
