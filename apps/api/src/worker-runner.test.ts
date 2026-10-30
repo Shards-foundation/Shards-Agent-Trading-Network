@@ -112,4 +112,49 @@ describe("WorkerRunner", () => {
       jobId: job.id,
     });
   });
+  it("propagates shutdown abort to an active handler and retries cooperative cancellation", async () => {
+    const queue = queueMock();
+    queue.claim.mockResolvedValue(job);
+    queue.fail.mockResolvedValue("RETRY_WAIT");
+    const parent = new AbortController();
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const handler = vi.fn(
+      (_payload: unknown, context: { signal: AbortSignal }) =>
+        new Promise<void>((_resolve, reject) => {
+          markStarted();
+          context.signal.addEventListener(
+            "abort",
+            () => reject(context.signal.reason ?? new Error("aborted")),
+            { once: true },
+          );
+        }),
+    );
+    const runner = new WorkerRunner(
+      queue,
+      "default",
+      "worker-a",
+      new Map([["test", handler]]),
+      { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 },
+    );
+
+    const running = runner.runOne(parent.signal);
+    await started;
+    parent.abort(new Error("shutdown requested"));
+
+    await expect(running).resolves.toEqual({
+      outcome: "RETRY_WAIT",
+      jobId: job.id,
+    });
+    expect(queue.fail).toHaveBeenCalledWith(
+      job.id,
+      job.lockedBy,
+      job.lockedAt,
+      expect.any(Error),
+    );
+    expect(queue.complete).not.toHaveBeenCalled();
+  });
+
 });
