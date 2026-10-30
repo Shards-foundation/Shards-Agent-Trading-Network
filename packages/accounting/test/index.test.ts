@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculatePaperDailyLoss, calculatePaperPerformance, type PaperAccountingFill } from "../src/index.js";
+import { calculatePaperDailyLoss, calculatePaperPerformance, calculatePaperPortfolio, type PaperAccountingFill } from "../src/index.js";
 
 const fill = (overrides: Partial<PaperAccountingFill> = {}): PaperAccountingFill => ({
   instrument: "BTC",
@@ -108,8 +108,7 @@ describe("paper average-cost accounting", () => {
   });
 
 
-  it("marks long positions to market with exact fixed-point arithmetic", async () => {
-    const { calculatePaperPortfolio } = await import("../src/index.js");
+  it("marks long positions to market with exact fixed-point arithmetic", () => {
     const result = calculatePaperPortfolio([
       fill({ quantity: "2", price: "100", fee: "0.2" }),
       fill({ side: "SELL", quantity: "1", price: "110", fee: "0.1", filledAt: "2026-10-30T12:01:00.000Z" })
