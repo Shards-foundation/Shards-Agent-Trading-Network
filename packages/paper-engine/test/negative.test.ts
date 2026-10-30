@@ -21,7 +21,11 @@ const options = { nowMs, maxSnapshotAgeMs: 1000 };
 describe("paper execution negative and boundary cases", () => {
   it("rejects future snapshots and all non-live data qualities", () => {
     expect(() =>
-      simulateLimitOrder(buy, { ...market, observedAt: new Date(nowMs + 1).toISOString() }, options),
+      simulateLimitOrder(
+        buy,
+        { ...market, observedAt: new Date(nowMs + 1).toISOString() },
+        options,
+      ),
     ).toThrow(/fresh/);
     for (const dataQuality of ["DELAYED", "STALE", "UNKNOWN"]) {
       expect(() =>
@@ -36,12 +40,18 @@ describe("paper execution negative and boundary cases", () => {
       { bid: "99", ask: "0" },
       { bid: "101", ask: "100" },
     ]) {
-      expect(() => simulateLimitOrder(buy, { ...market, ...book }, options)).toThrow();
+      expect(() =>
+        simulateLimitOrder(buy, { ...market, ...book }, options),
+      ).toThrow();
     }
   });
 
   it("never fills a buy below the ask or a sell above the bid", () => {
-    const noBuy = simulateLimitOrder({ ...buy, limitPrice: "99.99999999" }, market, options);
+    const noBuy = simulateLimitOrder(
+      { ...buy, limitPrice: "99.99999999" },
+      market,
+      options,
+    );
     const noSell = simulateLimitOrder(
       { ...buy, side: "SELL", limitPrice: "99.00000001" },
       market,
@@ -62,10 +72,18 @@ describe("paper execution negative and boundary cases", () => {
   it("enforces the maximum fee and zero-fee boundaries", () => {
     const noFee = simulateLimitOrder({ ...buy, feeBps: 0 }, market, options);
     expect(noFee.fee).toBe("0");
-    const fullFee = simulateLimitOrder({ ...buy, feeBps: 10_000 }, market, options);
+    const fullFee = simulateLimitOrder(
+      { ...buy, feeBps: 10_000 },
+      market,
+      options,
+    );
     expect(fullFee.fee).toBe(fullFee.notional);
-    expect(() => simulateLimitOrder({ ...buy, feeBps: 10_001 }, market, options)).toThrow();
-    expect(() => simulateLimitOrder({ ...buy, feeBps: -1 }, market, options)).toThrow();
+    expect(() =>
+      simulateLimitOrder({ ...buy, feeBps: 10_001 }, market, options),
+    ).toThrow();
+    expect(() =>
+      simulateLimitOrder({ ...buy, feeBps: -1 }, market, options),
+    ).toThrow();
   });
 
   it("rejects untrusted order properties rather than accepting execution flags", () => {

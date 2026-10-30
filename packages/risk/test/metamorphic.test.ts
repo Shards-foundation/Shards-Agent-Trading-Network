@@ -5,7 +5,10 @@ const SCALE = 100_000_000n;
 
 function asDecimal(units: bigint): string {
   const whole = units / SCALE;
-  const fraction = (units % SCALE).toString().padStart(8, "0").replace(/0+$/, "");
+  const fraction = (units % SCALE)
+    .toString()
+    .padStart(8, "0")
+    .replace(/0+$/, "");
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
@@ -46,17 +49,27 @@ describe("risk-engine metamorphic and boundary regressions", () => {
       const price = BigInt(1 + (rand() % 100_000_000));
       const cap = BigInt(rand() % 100_000_000);
       const original = evaluateTradeIntent(
-        { ...intent, quantity: asDecimal(quantity), limitPrice: asDecimal(price) },
+        {
+          ...intent,
+          quantity: asDecimal(quantity),
+          limitPrice: asDecimal(price),
+        },
         { ...policy, maxOrderNotional: asDecimal(cap) },
         "metamorphic-v1",
       );
       const larger = evaluateTradeIntent(
-        { ...intent, quantity: asDecimal(quantity + 1n), limitPrice: asDecimal(price) },
+        {
+          ...intent,
+          quantity: asDecimal(quantity + 1n),
+          limitPrice: asDecimal(price),
+        },
         { ...policy, maxOrderNotional: asDecimal(cap) },
         "metamorphic-v1",
       );
       if (original.reasons.includes("ORDER_NOTIONAL_EXCEEDED")) {
-        expect(larger.reasons, `iteration=${i}`).toContain("ORDER_NOTIONAL_EXCEEDED");
+        expect(larger.reasons, `iteration=${i}`).toContain(
+          "ORDER_NOTIONAL_EXCEEDED",
+        );
       }
     }
   });
@@ -68,17 +81,27 @@ describe("risk-engine metamorphic and boundary regressions", () => {
       const price = BigInt(1 + (rand() % 100_000_000));
       const cap = BigInt(rand() % 100_000_000);
       const original = evaluateTradeIntent(
-        { ...intent, quantity: asDecimal(quantity), limitPrice: asDecimal(price) },
+        {
+          ...intent,
+          quantity: asDecimal(quantity),
+          limitPrice: asDecimal(price),
+        },
         { ...policy, maxOrderNotional: asDecimal(cap) },
         "metamorphic-v1",
       );
       const higher = evaluateTradeIntent(
-        { ...intent, quantity: asDecimal(quantity), limitPrice: asDecimal(price + 1n) },
+        {
+          ...intent,
+          quantity: asDecimal(quantity),
+          limitPrice: asDecimal(price + 1n),
+        },
         { ...policy, maxOrderNotional: asDecimal(cap) },
         "metamorphic-v1",
       );
       if (original.reasons.includes("ORDER_NOTIONAL_EXCEEDED")) {
-        expect(higher.reasons, `iteration=${i}`).toContain("ORDER_NOTIONAL_EXCEEDED");
+        expect(higher.reasons, `iteration=${i}`).toContain(
+          "ORDER_NOTIONAL_EXCEEDED",
+        );
       }
     }
   });
