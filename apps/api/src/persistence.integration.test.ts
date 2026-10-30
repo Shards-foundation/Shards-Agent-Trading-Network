@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
@@ -21,6 +21,94 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
   afterAll(async () => {
     if (redis.isOpen) await redis.quit();
     await prisma.$disconnect();
+  });
+
+  it("enforces scoped, idempotent agent follows and exposes paginated follower lists", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-follow-${randomUUID()}` } });
+    const sourceToken = `satn_agent_follow_source_${randomUUID()}`;
+    const source = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Follow source agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(sourceToken).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const target = await prisma.agent.create({
+      data: { ownerId: owner.id, name: "Follow target agent" }
+    });
+    const relationTargetId = `${source.id}:${target.id}`;
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    try {
+      const missingAuth = await app.inject({
+        method: "POST", url: `/v1/agents/${source.id}/follows/${target.id}`
+      });
+      expect(missingAuth.statusCode).toBe(401);
+
+      const selfFollow = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${source.id}/follows/${source.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(selfFollow.statusCode).toBe(422);
+      expect(selfFollow.json().error.code).toBe("SELF_FOLLOW_NOT_ALLOWED");
+
+      const followed = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}`, "x-correlation-id": "agent-follow-integration" }
+      });
+      expect(followed.statusCode).toBe(201);
+      expect(followed.json()).toEqual({ following: true, changed: true });
+
+      const replay = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toEqual({ following: true, changed: false });
+
+      const following = await app.inject({ method: "GET", url: `/v1/agents/${source.id}/following?limit=10` });
+      expect(following.statusCode).toBe(200);
+      expect(following.json().items).toEqual([expect.objectContaining({
+        agent: expect.objectContaining({ id: target.id, name: target.name })
+      })]);
+      expect(following.json().nextCursor).toBeNull();
+
+      const followers = await app.inject({ method: "GET", url: `/v1/agents/${target.id}/followers?limit=10` });
+      expect(followers.statusCode).toBe(200);
+      expect(followers.json().items).toEqual([expect.objectContaining({
+        agent: expect.objectContaining({ id: source.id, name: source.name })
+      })]);
+
+      const unfollowed = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(unfollowed.statusCode).toBe(200);
+      expect(unfollowed.json()).toEqual({ following: false, changed: true });
+
+      const repeatedUnfollow = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(repeatedUnfollow.json()).toEqual({ following: false, changed: false });
+      expect(await prisma.auditEvent.count({
+        where: { targetType: "AgentFollow", targetId: relationTargetId, action: { in: ["agent.followed", "agent.unfollowed"] } }
+      })).toBe(2);
+    } finally {
+      await app.close();
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentFollow", targetId: relationTargetId } });
+      await prisma.agent.deleteMany({ where: { id: { in: [source.id, target.id] } } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
   });
 
   it("persists an agent and exposes only published journal entries through public read APIs", async () => {
