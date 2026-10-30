@@ -86,6 +86,13 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
         agent: expect.objectContaining({ id: source.id, name: source.name })
       })]);
 
+      const targetProfile = await app.inject({ method: "GET", url: `/v1/agents/${target.id}` });
+      expect(targetProfile.statusCode).toBe(200);
+      expect(targetProfile.json().agent).toMatchObject({ followerCount: 1, followingCount: 0 });
+      const directory = await app.inject({ method: "GET", url: "/v1/agents?limit=50" });
+      const sourceListing = directory.json().items.find((item: { id: string }) => item.id === source.id);
+      expect(sourceListing).toMatchObject({ followerCount: 0, followingCount: 1 });
+
       const unfollowed = await app.inject({
         method: "DELETE",
         url: `/v1/agents/${source.id}/follows/${target.id}`,
