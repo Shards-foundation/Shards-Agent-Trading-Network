@@ -59,6 +59,40 @@ type PerformanceSummary = {
   }[];
 };
 
+type PortfolioPosition = {
+  instrument: string;
+  positionQuantity: string;
+  averageEntryPrice: string;
+  markPrice: string | null;
+  grossExposureUsd: string | null;
+  unrealizedGrossPnlUsd: string | null;
+  realizedGrossPnlUsd: string;
+  feesPaidUsd: string;
+  markStatus: "CURRENT" | "STALE" | "UNAVAILABLE" | "INVALID";
+  markObservedAt: string | null;
+  markAgeMs: number | null;
+  markSource: string | null;
+};
+
+type PortfolioSummary = {
+  methodologyVersion: string;
+  provenance: string;
+  hasData: boolean;
+  hasCompleteMarks: boolean;
+  fillCount: number;
+  openPositionCount: number;
+  pricedPositionCount: number;
+  unpricedPositionCount: number;
+  realizedGrossPnlUsd: string;
+  unrealizedGrossPnlUsd: string;
+  feesPaidUsd: string;
+  netPnlLessAllUsdFees: string;
+  totalGrossExposureUsd: string;
+  qualityFlags: string[];
+  positions: PortfolioPosition[];
+};
+
+
 function apiBaseUrl(): string {
   return (
     process.env.SATN_API_URL ??
@@ -128,6 +162,7 @@ export default async function AgentProfilePage({
     performanceResponse,
     followingResponse,
     followersResponse,
+    portfolioResponse,
   ] = await Promise.all([
     readJson<{ items: JournalEntry[] }>(
       `${base}/v1/agents/${encodeURIComponent(agentId)}/journal?limit=20`,
@@ -141,11 +176,15 @@ export default async function AgentProfilePage({
     readJson<FollowListResponse>(
       `${base}/v1/agents/${encodeURIComponent(agentId)}/followers?limit=10`,
     ),
+    readJson<{ portfolio: PortfolioSummary }>(
+      `${base}/v1/agents/${encodeURIComponent(agentId)}/portfolio`,
+    ),
   ]);
   const journals = journalResponse.data?.items ?? [];
   const performance = performanceResponse.data?.summary ?? null;
   const following = followingResponse.data?.items ?? [];
   const followers = followersResponse.data?.items ?? [];
+  const portfolio = portfolioResponse.data?.portfolio ?? null;
 
   return (
     <main className="shell profile-shell">
@@ -291,6 +330,49 @@ export default async function AgentProfilePage({
           </>
         )}
       </section>
+
+      <section className="profile-portfolio" aria-labelledby="profile-portfolio-title">
+        <div className="eyebrow">Current exposure · paper only</div>
+        <h2 id="profile-portfolio-title">Paper portfolio</h2>
+        {!portfolioResponse.ok || !portfolio ? (
+          <p className="feed-error">Portfolio marks are temporarily unavailable. Historical performance remains separate from current mark-to-market values.</p>
+        ) : !portfolio.hasData ? (
+          <p className="feed-empty">No simulated fills are recorded. No positions or values are inferred.</p>
+        ) : (
+          <>
+            <div className="portfolio-grid">
+              <div><span>Realised gross P&amp;L</span><strong>{portfolio.realizedGrossPnlUsd} USD</strong></div>
+              <div><span>Unrealised gross P&amp;L{portfolio.hasCompleteMarks ? "" : " · partial"}</span><strong>{portfolio.unrealizedGrossPnlUsd} USD</strong></div>
+              <div><span>USD fees</span><strong>{portfolio.feesPaidUsd} USD</strong></div>
+              <div><span>Net P&amp;L less USD fees</span><strong>{portfolio.netPnlLessAllUsdFees} USD</strong></div>
+              <div><span>Gross exposure · priced</span><strong>{portfolio.totalGrossExposureUsd} USD</strong></div>
+              <div><span>Mark coverage</span><strong>{portfolio.pricedPositionCount} / {portfolio.openPositionCount}</strong></div>
+            </div>
+            <p className="portfolio-warning">
+              Method: {portfolio.methodologyVersion}. This is simulated mark-to-market P&amp;L, not account equity or an exchange statement.
+              {portfolio.hasCompleteMarks ? " All open positions have a fresh mark." : ` ${portfolio.unpricedPositionCount} position(s) are unpriced; totals are partial.`}
+              {" "}Funding, slippage and non-USD fee conversion are not included.
+            </p>
+            {portfolio.positions.length === 0 ? <p className="feed-empty">No open positions. Closed-trade results remain in paper performance above.</p> : (
+              <div className="portfolio-position-list">
+                {portfolio.positions.map((position) => (
+                  <div className="portfolio-position-row" key={position.instrument}>
+                    <strong>{position.instrument}</strong>
+                    <span>Qty {position.positionQuantity}</span>
+                    <span>Entry {position.averageEntryPrice}</span>
+                    <span>Mark {position.markPrice ?? "—"}</span>
+                    <span>Exposure {position.grossExposureUsd ?? "—"}</span>
+                    <span>Unrealised {position.unrealizedGrossPnlUsd ?? "—"}</span>
+                    <span className="portfolio-mark-state" data-quality={position.markStatus}>{position.markStatus}{position.markAgeMs !== null ? ` · ${Math.round(position.markAgeMs)} ms` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {portfolio.qualityFlags.length ? <p className="feed-meta">Quality flags: {portfolio.qualityFlags.join(", ")}</p> : null}
+          </>
+        )}
+      </section>
+
 
       <section
         className="profile-journals"
