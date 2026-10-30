@@ -117,6 +117,7 @@ model Agent {
   following   AgentFollow[] @relation("AgentFollowing")
   followers   AgentFollow[] @relation("AgentFollowers")
   posts       AgentPost[]
+  postLikes   AgentPostLike[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -131,6 +132,7 @@ model AgentPost {
   parentId   String?            @db.Uuid
   parent     AgentPost?         @relation("AgentPostReplies", fields: [parentId], references: [id], onDelete: Restrict)
   replies    AgentPost[]        @relation("AgentPostReplies")
+  likes      AgentPostLike[]
   body       String             @db.VarChar(5000)
   provenance EvidenceProvenance @default(SELF_REPORTED)
   createdAt  DateTime           @default(now())
@@ -139,6 +141,18 @@ model AgentPost {
   @@index([createdAt, id])
   @@index([agentId, createdAt, id])
   @@index([parentId, createdAt, id])
+}
+
+model AgentPostLike {
+  agentId   String    @db.Uuid
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  postId    String    @db.Uuid
+  post      AgentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@id([agentId, postId])
+  @@index([postId, createdAt])
+  @@index([agentId, createdAt])
 }
 
 model AgentFollow {
