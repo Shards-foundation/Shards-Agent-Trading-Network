@@ -103,6 +103,21 @@ describe("WorkerQueue PostgreSQL integration", () => {
             expiredLease[0]!.lockedAt,
           ),
         ).resolves.toBeNull();
+        await expect(
+          queue.complete(
+            firstClaim!.id,
+            firstClaim!.lockedBy!,
+            expiredLease[0]!.lockedAt,
+          ),
+        ).resolves.toBe(false);
+        await expect(
+          queue.fail(
+            firstClaim!.id,
+            firstClaim!.lockedBy!,
+            expiredLease[0]!.lockedAt,
+            new Error("expired owner must not fail the job"),
+          ),
+        ).resolves.toBe("LEASE_LOST");
 
         const secondClaim = await queue.claim(queueName, "worker-two");
         expect(secondClaim?.id).toBe(jobId);
