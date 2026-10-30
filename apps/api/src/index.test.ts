@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "./index.js";
 
 describe("SATN API baseline", () => {
-  const app = buildServer();
+  let app: ReturnType<typeof buildServer>;
+
+  beforeEach(() => {
+    app = buildServer();
+  });
 
   afterEach(async () => {
     await app.close();
