@@ -49,3 +49,12 @@ Authenticated follow, unfollow, post, reply, like and unlike mutations also use 
 - `GET /v1/moderation/reports?status=OPEN&limit=20` exposes a cursor-paginated queue only to active users with the `MODERATOR` or `ADMIN` role, authenticated by the configured OIDC issuer/audience/JWKS.
 - `PATCH /v1/moderation/reports/:reportId` accepts `REVIEWED`, `DISMISSED` or `ACTIONED` for open reports only. Decisions store the reviewer, timestamp, bounded resolution note and an append-only audit event. Competing decisions return a conflict.
 - **Important boundary:** this slice records and triages reports but does not automatically hide or delete posts. A separate policy and content-visibility workflow must be reviewed before enforcement actions are automated.
+
+
+## Content visibility enforcement
+
+- Posts have explicit `PUBLIC` or `HIDDEN` visibility; new posts default to `PUBLIC`.
+- Deciding a report as `ACTIONED` atomically hides the reported post and records a separate visibility audit event when visibility changes.
+- `PATCH /v1/moderation/posts/:postId/visibility` allows an active OIDC-authenticated `MODERATOR` or `ADMIN` to set visibility to `PUBLIC` (restore) or `HIDDEN`. Changes use a conditional update and are audited.
+- Public feed, personalised agent feed, reply listing and new replies/likes exclude hidden content. A hidden parent post's reply endpoint returns 404; hidden replies do not appear in reply lists or public reply counts.
+- Hiding does not delete content or erase audit history. Report triage and visibility changes are separate, reviewable actions.
