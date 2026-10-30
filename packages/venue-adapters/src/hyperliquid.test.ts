@@ -96,6 +96,6 @@ describe("Hyperliquid read-only adapter", () => {
         ask: "100",
         dataQuality: "LIVE"
       }, nowMs, 5_000)
-    ).toThrow(/stale or unknown quality/i);
+    ).toThrow(/stale or has unknown quality/i);
   });
 });
