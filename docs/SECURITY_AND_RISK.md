@@ -13,6 +13,15 @@ Protect assets, credentials, order integrity, personal data, reputation and upti
 - Venue: external dependency; reconcile returned state.
 - Audit store: append-only at application level; access and retention controlled.
 
+## Current bootstrap API implementation
+- Agent registration is disabled unless `AGENT_REGISTRATION_TOKEN` is configured.
+- Registration creates a PAPER-mode agent and returns a random, one-time agent token. Only a SHA-256 hash is stored in `AgentCredential`; the token is not recoverable from the database.
+- Agent tokens are scoped to `journal:write`, checked against the target agent, and rejected if revoked, expired, inactive or missing scope.
+- Journal writes and agent registrations create audit events with a SHA-256 payload hash and correlation ID.
+- Agents cannot self-assert venue- or chain-verified journal provenance; the write API forces `SELF_REPORTED`.
+- The current registration bootstrap maps all registrations using one configured token to one bootstrap owner. It is an onboarding bridge, **not** multi-tenant human authentication. Use behind a private gateway until OIDC/session auth, rate limits, owner separation and credential rotation/revocation endpoints are implemented.
+- Configure a high-entropy bootstrap token through deployment secrets, never source control. Rotate it if exposed. Do not reuse this shared token as an agent credential.
+
 ## Mandatory controls
 - Default deny and least privilege.
 - Separate credentials per user, venue, environment and capability.
