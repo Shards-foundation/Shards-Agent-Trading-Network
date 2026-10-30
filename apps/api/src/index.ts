@@ -104,6 +104,36 @@ function registrationAuthSubject(token: string): string {
   return `bootstrap:${createHash("sha256").update(token).digest("hex")}`;
 }
 
+async function resolveAgentCredential(
+  prisma: PrismaClient,
+  authorization: unknown,
+  agentId: string,
+  requiredScope: string,
+  now: () => number
+) {
+  const bearer = typeof authorization === "string" && authorization.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+  if (!bearer || bearer.length > 256) return null;
+  const secretHash = createHash("sha256").update(bearer).digest("hex");
+  const credential = await prisma.agentCredential.findUnique({
+    where: { secretHash },
+    select: {
+      id: true, agentId: true, scopes: true, expiresAt: true, revokedAt: true,
+      agent: { select: { status: true } }
+    }
+  });
+  if (
+    !credential ||
+    credential.agentId !== agentId ||
+    credential.revokedAt ||
+    (credential.expiresAt && credential.expiresAt <= new Date(now())) ||
+    credential.agent.status !== "ACTIVE" ||
+    !credential.scopes.includes(requiredScope)
+  ) return null;
+  return credential;
+}
+
 function createDatabaseProbe(prisma: PrismaClient): DatabaseHealthProbe {
   return {
     async check() {
@@ -397,7 +427,7 @@ export function buildServer(options: BuildServerOptions = {}) {
             ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
             mode: "PAPER",
             credentials: {
-              create: { secretHash, scopes: ["journal:write", "trade-intent:write"] }
+              create: { secretHash, scopes: ["journal:write", "trade-intent:write", "social:write"] }
             }
           },
           select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true }
@@ -419,7 +449,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         agent,
         credential: {
           token: agentSecret,
-          scopes: ["journal:write", "trade-intent:write"],
+          scopes: ["journal:write", "trade-intent:write", "social:write"],
           warning: "This token is shown once. Store it securely; only its hash is stored."
         }
       });
@@ -897,6 +927,222 @@ export function buildServer(options: BuildServerOptions = {}) {
       });
     }
   });
+
+  app.post<{ Params: { agentId: string; targetAgentId: string } }>(
+    "/v1/agents/:agentId/follows/:targetAgentId",
+    async (request, reply) => {
+      const sourceId = uuidSchema.safeParse(request.params.agentId);
+      const targetId = uuidSchema.safeParse(request.params.targetAgentId);
+      if (!sourceId.success || !targetId.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_AGENT_ID", message: "Both agent identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (sourceId.data === targetId.data) {
+        return reply.code(422).send({
+          error: { code: "SELF_FOLLOW_NOT_ALLOWED", message: "An agent cannot follow itself.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!prismaClient) {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, sourceId.data, "social:write", now);
+        if (!credential) {
+          return reply.code(401).send({
+            error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+          });
+        }
+        const payloadHash = createHash("sha256").update(JSON.stringify({
+          followerAgentId: sourceId.data, followedAgentId: targetId.data
+        })).digest("hex");
+        const result = await prismaClient.$transaction(async (tx) => {
+          const target = await tx.agent.findUnique({ where: { id: targetId.data }, select: { id: true, status: true } });
+          if (!target || target.status !== "ACTIVE") return { notFound: true as const };
+          const existing = await tx.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: targetId.data } },
+            select: { followerAgentId: true }
+          });
+          if (existing) return { notFound: false as const, changed: false };
+          await tx.agentFollow.create({ data: { followerAgentId: sourceId.data, followedAgentId: targetId.data } });
+          await tx.auditEvent.create({
+            data: {
+              actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "agent.followed",
+              targetType: "AgentFollow", targetId: `${sourceId.data}:${targetId.data}`,
+              correlationId: request.id, payloadHash
+            }
+          });
+          return { notFound: false as const, changed: true };
+        });
+        if (result.notFound) {
+          return reply.code(404).send({
+            error: { code: "AGENT_NOT_FOUND", message: "The target agent does not exist.", correlationId: request.id, retryable: false }
+          });
+        }
+        return reply.code(result.changed ? 201 : 200).send({ following: true, changed: result.changed });
+      } catch (error) {
+        if (error !== null && typeof error === "object" && "code" in error && error.code === "P2002") {
+          const existing = await prismaClient.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: targetId.data } },
+            select: { followerAgentId: true }
+          }).catch(() => null);
+          if (existing) return reply.code(200).send({ following: true, changed: false });
+        }
+        request.log.error({ err: error, correlationId: request.id }, "agent follow failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The follow request could not be completed.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.delete<{ Params: { agentId: string; targetAgentId: string } }>(
+    "/v1/agents/:agentId/follows/:targetAgentId",
+    async (request, reply) => {
+      const sourceId = uuidSchema.safeParse(request.params.agentId);
+      const targetId = uuidSchema.safeParse(request.params.targetAgentId);
+      if (!sourceId.success || !targetId.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_AGENT_ID", message: "Both agent identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!prismaClient) {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, sourceId.data, "social:write", now);
+        if (!credential) {
+          return reply.code(401).send({
+            error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+          });
+        }
+        const payloadHash = createHash("sha256").update(JSON.stringify({
+          followerAgentId: sourceId.data, followedAgentId: targetId.data
+        })).digest("hex");
+        const changed = await prismaClient.$transaction(async (tx) => {
+          const result = await tx.agentFollow.deleteMany({
+            where: { followerAgentId: sourceId.data, followedAgentId: targetId.data }
+          });
+          if (result.count > 0) {
+            await tx.auditEvent.create({
+              data: {
+                actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "agent.unfollowed",
+                targetType: "AgentFollow", targetId: `${sourceId.data}:${targetId.data}`,
+                correlationId: request.id, payloadHash
+              }
+            });
+          }
+          return result.count > 0;
+        });
+        return reply.send({ following: false, changed });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "agent unfollow failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The unfollow request could not be completed.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/agents/:agentId/following",
+    async (request, reply) => {
+      const sourceId = uuidSchema.safeParse(request.params.agentId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!sourceId.success) return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The following pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const source = await prismaClient.agent.findUnique({ where: { id: sourceId.data }, select: { id: true, status: true } });
+        if (!source || source.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+        const { limit, cursor } = query.data;
+        if (cursor) {
+          const cursorRow = await prismaClient.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: cursor } },
+            select: { followedAgent: { select: { status: true } } }
+          });
+          if (!cursorRow || cursorRow.followedAgent.status !== "ACTIVE") return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The following cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+        const rows = await prismaClient.agentFollow.findMany({
+          where: { followerAgentId: sourceId.data, followedAgent: { status: "ACTIVE" } },
+          orderBy: [{ createdAt: "desc" }, { followedAgentId: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: cursor } }, skip: 1 } : {}),
+          select: { createdAt: true, followedAgent: { select: { id: true, name: true, description: true, mode: true, createdAt: true } } }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((row) => ({ followedAt: row.createdAt, agent: row.followedAgent }));
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.agent.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "following list failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The following list is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/agents/:agentId/followers",
+    async (request, reply) => {
+      const targetId = uuidSchema.safeParse(request.params.agentId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!targetId.success) return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The followers pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const target = await prismaClient.agent.findUnique({ where: { id: targetId.data }, select: { id: true, status: true } });
+        if (!target || target.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+        const { limit, cursor } = query.data;
+        if (cursor) {
+          const cursorRow = await prismaClient.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: cursor, followedAgentId: targetId.data } },
+            select: { followerAgent: { select: { status: true } } }
+          });
+          if (!cursorRow || cursorRow.followerAgent.status !== "ACTIVE") return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The followers cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+        const rows = await prismaClient.agentFollow.findMany({
+          where: { followedAgentId: targetId.data, followerAgent: { status: "ACTIVE" } },
+          orderBy: [{ createdAt: "desc" }, { followerAgentId: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { followerAgentId_followedAgentId: { followerAgentId: cursor, followedAgentId: targetId.data } }, skip: 1 } : {}),
+          select: { createdAt: true, followerAgent: { select: { id: true, name: true, description: true, mode: true, createdAt: true } } }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((row) => ({ followedAt: row.createdAt, agent: row.followerAgent }));
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.agent.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "followers list failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The followers list is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
 
   app.get<{ Params: { agentId: string } }>("/v1/agents/:agentId", async (request, reply) => {
     const parsedId = uuidSchema.safeParse(request.params.agentId);
