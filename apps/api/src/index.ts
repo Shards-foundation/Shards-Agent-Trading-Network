@@ -19,8 +19,8 @@ const envSchema = z.object({
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
   EXECUTION_MODE: z.enum(["PAPER", "READ_ONLY", "LIVE_RESTRICTED", "HALTED"]).default("PAPER"),
   LIVE_EXECUTION_ENABLED: z.literal("false").default("false"),
-  PAPER_MAX_ORDER_NOTIONAL: z.string().regex(/^(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/).default("1000"),
-  PAPER_MAX_DAILY_LOSS: z.string().regex(/^(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/).default("100")
+  PAPER_MAX_ORDER_NOTIONAL: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/).default("1000"),
+  PAPER_MAX_DAILY_LOSS: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/).default("100")
 });
 const env = envSchema.parse(process.env);
 
