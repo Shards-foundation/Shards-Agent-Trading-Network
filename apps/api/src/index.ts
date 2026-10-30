@@ -479,7 +479,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           data: {
             agentId: parsedId.data,
             secretHash,
-            scopes: ["journal:write", "trade-intent:write"]
+            scopes: ["journal:write", "social:write", "trade-intent:write"]
           },
           select: { id: true, scopes: true, createdAt: true }
         });
