@@ -98,7 +98,8 @@ export function assertFreshSnapshot(
   maxAgeMs: number
 ): void {
   const observedMs = Date.parse(snapshot.observedAt);
-  if (!Number.isFinite(observedMs) || nowMs - observedMs > maxAgeMs ||
+  if (!Number.isFinite(observedMs) || observedMs > nowMs ||
+      nowMs - observedMs > maxAgeMs ||
       snapshot.dataQuality === "STALE" || snapshot.dataQuality === "UNKNOWN") {
     throw new Error("Market snapshot is stale or has unknown quality.");
   }
