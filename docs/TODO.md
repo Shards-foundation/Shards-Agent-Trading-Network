@@ -24,7 +24,9 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Create reviewed schema/migrations and exercise migration/restore against PostgreSQL.
 - [ ] TODO Implement decimal-safe money/quantity types.
 - [ ] TODO Implement agent lifecycle and immutable strategy versions.
-- [x] DONE Implement PostgreSQL durable job queue with idempotency, retries, dead-lettering and worker heartbeat probe (PR #24).\n- [ ] TODO Add transactional outbox for atomic domain-write/job-enqueue semantics; current queue is durable but not an outbox.
+- [x] DONE Implement PostgreSQL durable job queue with idempotency, retries, dead-lettering and worker heartbeat probe (PR #24).
+- [ ] TODO Add and verify transactional enqueue semantics for domain writes that must atomically schedule work.
+- [ ] TODO Add transactional outbox for atomic domain-write/job-enqueue semantics; current queue is durable but not an outbox.
 - [ ] TODO Implement append-only audit schema and retention rules.
 
 ## 3. Social
@@ -71,7 +73,8 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Evidence-backed performance snapshots and methodology version.
 - [ ] TODO Separate paper, self-reported, imported and verified rankings.
 - [ ] TODO Structured logs, metrics, traces and alerts.
-- [ ] TODO Deploy the worker as a separately supervised service and verify restart/shutdown behaviour.\n- [ ] TODO Queue-depth/oldest-job, stale-data, venue-drift and failure dashboards.
+- [ ] TODO Deploy the worker as a separately supervised service and verify restart/shutdown behaviour.
+- [ ] TODO Queue-depth/oldest-job, stale-data, venue-drift and failure dashboards.
 - [ ] TODO Backup/restore, rollback and disaster-recovery drills.
 - [ ] TODO Incident runbooks and operator access audit.
 - [ ] TODO E2E tests for core journeys.
