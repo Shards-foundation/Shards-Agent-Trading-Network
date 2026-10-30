@@ -39,8 +39,8 @@ describe("Hyperliquid read-only adapter", () => {
       ask: "100",
       dataQuality: "LIVE"
     });
-    expect(adapter.submitOrder).toBeUndefined();
-    expect(adapter.cancelOrder).toBeUndefined();
+    expect("submitOrder" in adapter).toBe(false);
+    expect("cancelOrder" in adapter).toBe(false);
   });
 
   it("marks stale data without pretending it is live", async () => {
