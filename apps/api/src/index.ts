@@ -1239,6 +1239,99 @@ export function buildServer(options: BuildServerOptions = {}) {
     }
   );
 
+  app.post<{ Params: { agentId: string; postId: string } }>(
+    "/v1/agents/:agentId/posts/:postId/likes",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const postId = uuidSchema.safeParse(request.params.postId);
+      if (!agentId.success || !postId.success) return reply.code(400).send({
+        error: { code: "INVALID_ID", message: "The agent and post identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Post reactions are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        const post = await prismaClient.agentPost.findUnique({
+          where: { id: postId.data }, select: { id: true, agent: { select: { status: true } } }
+        });
+        if (!post || post.agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "POST_NOT_FOUND", message: "The post does not exist.", correlationId: request.id, retryable: false }
+        });
+        const existing = await prismaClient.agentPostLike.findUnique({
+          where: { agentId_postId: { agentId: agentId.data, postId: postId.data } },
+          select: { agentId: true }
+        });
+        if (existing) return reply.send({ liked: true, changed: false });
+        const payloadHash = createHash("sha256").update(JSON.stringify({ agentId: agentId.data, postId: postId.data })).digest("hex");
+        try {
+          await prismaClient.$transaction(async (tx) => {
+            await tx.agentPostLike.create({ data: { agentId: agentId.data, postId: postId.data } });
+            await tx.auditEvent.create({
+              data: {
+                actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "social.post_liked",
+                targetType: "AgentPostLike", targetId: `${agentId.data}:${postId.data}`,
+                correlationId: request.id, payloadHash
+              }
+            });
+          });
+          return reply.code(201).send({ liked: true, changed: true });
+        } catch (error) {
+          if (error !== null && typeof error === "object" && "code" in error && error.code === "P2002") {
+            return reply.send({ liked: true, changed: false });
+          }
+          throw error;
+        }
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "post like failed");
+        return reply.code(503).send({
+          error: { code: "REACTION_UNAVAILABLE", message: "The like could not be recorded.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.delete<{ Params: { agentId: string; postId: string } }>(
+    "/v1/agents/:agentId/posts/:postId/likes",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const postId = uuidSchema.safeParse(request.params.postId);
+      if (!agentId.success || !postId.success) return reply.code(400).send({
+        error: { code: "INVALID_ID", message: "The agent and post identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Post reactions are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        const payloadHash = createHash("sha256").update(JSON.stringify({ agentId: agentId.data, postId: postId.data })).digest("hex");
+        const changed = await prismaClient.$transaction(async (tx) => {
+          const deleted = await tx.agentPostLike.deleteMany({ where: { agentId: agentId.data, postId: postId.data } });
+          if (deleted.count > 0) await tx.auditEvent.create({
+            data: {
+              actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "social.post_unliked",
+              targetType: "AgentPostLike", targetId: `${agentId.data}:${postId.data}`,
+              correlationId: request.id, payloadHash
+            }
+          });
+          return deleted.count > 0;
+        });
+        return reply.send({ liked: false, changed });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "post unlike failed");
+        return reply.code(503).send({
+          error: { code: "REACTION_UNAVAILABLE", message: "The like could not be removed.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
   app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/posts", async (request, reply) => {
     const query = pageQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({
@@ -1265,13 +1358,13 @@ export function buildServer(options: BuildServerOptions = {}) {
         select: {
           id: true, body: true, provenance: true, createdAt: true,
           agent: { select: { id: true, name: true, description: true, mode: true } },
-          _count: { select: { replies: true } }
+          _count: { select: { replies: true, likes: true } }
         }
       });
       const hasMore = rows.length > limit;
       const items = rows.slice(0, limit).map((post) => ({
         id: post.id, body: post.body, provenance: post.provenance, createdAt: post.createdAt,
-        agent: post.agent, replyCount: post._count.replies
+        agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes
       }));
       return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
     } catch (error) {
