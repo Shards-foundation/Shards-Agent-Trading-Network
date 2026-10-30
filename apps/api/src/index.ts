@@ -2474,4 +2474,96 @@ export function buildServer(options: BuildServerOptions = {}) {
       try {
         let pending = inFlight.get(instrumentId);
         if (!pending) {
-          pending = marketDataProvider.getMarketSnapshot(instrumentId)
+          pending = marketDataProvider.getMarketSnapshot(instrumentId);
+          inFlight.set(instrumentId, pending);
+        }
+        const snapshot = await pending;
+        if (
+          snapshot.instrumentId !== instrumentId ||
+          snapshot.venue !== "hyperliquid"
+        ) {
+          throw new Error(
+            "Market-data provider returned a mismatched instrument or venue.",
+          );
+        }
+
+        if (cacheTtlMs > 0) {
+          if (
+            marketCache.size >= MAX_CACHE_ENTRIES &&
+            !marketCache.has(instrumentId)
+          ) {
+            const oldestKey = marketCache.keys().next().value;
+            if (oldestKey !== undefined) marketCache.delete(oldestKey);
+          }
+          marketCache.set(instrumentId, {
+            snapshot,
+            expiresAt: now() + cacheTtlMs,
+          });
+        }
+        return reply.header("x-cache", "MISS").send({ snapshot });
+      } catch {
+        return reply.code(502).send({
+          error: {
+            code: "MARKET_DATA_UNAVAILABLE",
+            message: "Market data is temporarily unavailable.",
+            correlationId: request.id,
+            retryable: true,
+          },
+        });
+      } finally {
+        inFlight.delete(instrumentId);
+      }
+    },
+  );
+
+  app.setNotFoundHandler(async (_request, reply) => {
+    return reply.code(404).send({
+      error: {
+        code: "NOT_FOUND",
+        message: "The requested resource does not exist.",
+        retryable: false,
+      },
+    });
+  });
+
+  app.setErrorHandler(async (error, request, reply) => {
+    request.log.error(
+      { err: error, correlationId: request.id },
+      "request failed",
+    );
+    const details: Record<string, unknown> =
+      error !== null && typeof error === "object"
+        ? (error as Record<string, unknown>)
+        : {};
+    const candidateStatus = details.statusCode;
+    const candidateMessage = details.message;
+    const status =
+      typeof candidateStatus === "number" &&
+      candidateStatus >= 400 &&
+      candidateStatus < 600
+        ? candidateStatus
+        : 500;
+    const message =
+      typeof candidateMessage === "string"
+        ? candidateMessage
+        : "An unexpected error occurred.";
+    return reply.code(status).send({
+      error: {
+        code: status === 500 ? "INTERNAL_ERROR" : "REQUEST_ERROR",
+        message: status === 500 ? "An unexpected error occurred." : message,
+        correlationId: request.id,
+        retryable: status >= 500,
+      },
+    });
+  });
+
+  return app;
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const app = buildServer();
+  app.listen({ host: env.API_HOST, port: env.API_PORT }).catch((error) => {
+    app.log.error(error);
+    process.exit(1);
+  });
+}
