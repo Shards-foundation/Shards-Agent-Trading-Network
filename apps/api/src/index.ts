@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { calculatePaperDailyLoss, calculatePaperPerformance, calculatePaperPortfolio } from "@satn/accounting";
+import { calculatePaperDailyLoss, calculatePaperPerformance } from "@satn/accounting";
 import { verifyOidcAccessToken } from "@satn/auth";
 import { evaluateTradeIntent, TradeIntentSchema } from "@satn/risk";
 import { simulateLimitOrder } from "@satn/paper-engine";
@@ -44,6 +44,8 @@ export interface BuildServerOptions {
   rateLimitReadLimit?: number;
   rateLimitWriteLimit?: number;
   rateLimitWindowSeconds?: number;
+  socialWriteLimit?: number;
+  socialWriteWindowSeconds?: number;
   prismaClient?: PrismaClient | null;
   now?: () => number;
 }
@@ -102,6 +104,36 @@ function hasValidRegistrationToken(suppliedToken: unknown, expectedToken: string
 
 function registrationAuthSubject(token: string): string {
   return `bootstrap:${createHash("sha256").update(token).digest("hex")}`;
+}
+
+async function resolveAgentCredential(
+  prisma: PrismaClient,
+  authorization: unknown,
+  agentId: string,
+  requiredScope: string,
+  now: () => number
+) {
+  const bearer = typeof authorization === "string" && authorization.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+  if (!bearer || bearer.length > 256) return null;
+  const secretHash = createHash("sha256").update(bearer).digest("hex");
+  const credential = await prisma.agentCredential.findUnique({
+    where: { secretHash },
+    select: {
+      id: true, agentId: true, scopes: true, expiresAt: true, revokedAt: true,
+      agent: { select: { status: true } }
+    }
+  });
+  if (
+    !credential ||
+    credential.agentId !== agentId ||
+    credential.revokedAt ||
+    (credential.expiresAt && credential.expiresAt <= new Date(now())) ||
+    credential.agent.status !== "ACTIVE" ||
+    !credential.scopes.includes(requiredScope)
+  ) return null;
+  return credential;
 }
 
 function createDatabaseProbe(prisma: PrismaClient): DatabaseHealthProbe {
@@ -213,6 +245,17 @@ const journalCreateSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
   publish: z.boolean().default(true)
 }).strict();
+const postCreateSchema = z.object({ body: z.string().trim().min(1).max(5_000) }).strict();
+const contentReportSchema = z.object({
+  reason: z.enum(["SPAM", "SCAM", "IMPERSONATION", "HARASSMENT", "ABUSE", "OTHER"]),
+  details: z.string().trim().max(1000).optional()
+}).strict();
+const moderationDecisionSchema = z.object({
+  status: z.enum(["REVIEWED", "DISMISSED", "ACTIONED"]),
+  resolutionNote: z.string().trim().max(1000).optional()
+}).strict();
+const reportStatusSchema = z.enum(["OPEN", "REVIEWED", "DISMISSED", "ACTIONED"]);
+
 const idempotencyKeySchema = z.string().min(1).max(200).regex(/^[\x21-\x7E]+$/);
 export function resolvePaperTradePolicy(
   executionMode: "PAPER" | "READ_ONLY" | "LIVE_RESTRICTED" | "HALTED",
@@ -233,8 +276,6 @@ export function resolvePaperTradePolicy(
 const paperTradePolicy = resolvePaperTradePolicy(env.EXECUTION_MODE, env.PAPER_MAX_ORDER_NOTIONAL, env.PAPER_MAX_DAILY_LOSS);
 const DEFAULT_CACHE_TTL_MS = 1_000;
 const MAX_CACHE_ENTRIES = 500;
-const MAX_PAPER_PORTFOLIO_FILLS = 50_000;
-const MAX_PAPER_PORTFOLIO_MARKS = 25;
 
 export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({
@@ -250,7 +291,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   const rateLimitReadLimit = options.rateLimitReadLimit ?? 120;
   const rateLimitWriteLimit = options.rateLimitWriteLimit ?? 30;
   const rateLimitWindowSeconds = options.rateLimitWindowSeconds ?? 60;
-  if (![rateLimitReadLimit, rateLimitWriteLimit, rateLimitWindowSeconds].every((value) => Number.isInteger(value) && value > 0)) {
+  const socialWriteLimit = options.socialWriteLimit ?? 20;
+  const socialWriteWindowSeconds = options.socialWriteWindowSeconds ?? 60;
+  if (![rateLimitReadLimit, rateLimitWriteLimit, rateLimitWindowSeconds, socialWriteLimit, socialWriteWindowSeconds].every((value) => Number.isInteger(value) && value > 0)) {
     throw new Error("Rate-limit values must be positive integers.");
   }
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
@@ -310,6 +353,34 @@ export function buildServer(options: BuildServerOptions = {}) {
     ]);
     if (ownsPrismaClient) await prismaClient?.$disconnect();
   });
+
+  async function enforceSocialWriteLimit(agentId: string, request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+    if (!rateLimitStore) {
+      reply.code(503).send({
+        error: { code: "RATE_LIMIT_UNAVAILABLE", message: "The social write limit service is unavailable.", correlationId: request.id, retryable: true }
+      });
+      return false;
+    }
+    try {
+      const digest = createHash("sha256").update(agentId).digest("hex").slice(0, 32);
+      const count = await rateLimitStore.consume(`satn:agent-social:v1:${digest}`, socialWriteWindowSeconds);
+      reply.header("x-agent-social-limit", String(socialWriteLimit));
+      reply.header("x-agent-social-remaining", String(Math.max(0, socialWriteLimit - count)));
+      if (count > socialWriteLimit) {
+        reply.header("retry-after", String(socialWriteWindowSeconds));
+        reply.code(429).send({
+          error: { code: "AGENT_SOCIAL_RATE_LIMITED", message: "The agent social write limit has been exceeded.", correlationId: request.id, retryable: true }
+        });
+        return false;
+      }
+      return true;
+    } catch {
+      reply.code(503).send({
+        error: { code: "RATE_LIMIT_UNAVAILABLE", message: "The social write limit service is unavailable.", correlationId: request.id, retryable: true }
+      });
+      return false;
+    }
+  }
 
   app.get("/health/live", async () => ({
     status: "ok",
@@ -399,7 +470,7 @@ export function buildServer(options: BuildServerOptions = {}) {
             ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
             mode: "PAPER",
             credentials: {
-              create: { secretHash, scopes: ["journal:write", "trade-intent:write"] }
+              create: { secretHash, scopes: ["journal:write", "trade-intent:write", "social:write"] }
             }
           },
           select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true }
@@ -421,7 +492,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         agent,
         credential: {
           token: agentSecret,
-          scopes: ["journal:write", "trade-intent:write"],
+          scopes: ["journal:write", "trade-intent:write", "social:write"],
           warning: "This token is shown once. Store it securely; only its hash is stored."
         }
       });
@@ -474,7 +545,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           data: {
             agentId: parsedId.data,
             secretHash,
-            scopes: ["journal:write", "trade-intent:write"]
+            scopes: ["journal:write", "trade-intent:write", "social:write"]
           },
           select: { id: true, scopes: true, createdAt: true }
         });
@@ -873,7 +944,9 @@ export function buildServer(options: BuildServerOptions = {}) {
             select: {
               journals: { where: { publishedAt: { not: null } } },
               tradeIntents: true,
-              strategies: true
+              strategies: true,
+              followers: { where: { followerAgent: { status: "ACTIVE" } } },
+              following: { where: { followedAgent: { status: "ACTIVE" } } }
             }
           }
         }
@@ -890,7 +963,9 @@ export function buildServer(options: BuildServerOptions = {}) {
         updatedAt: agent.updatedAt,
         journalCount: agent._count.journals,
         tradeIntentCount: agent._count.tradeIntents,
-        strategyVersionCount: agent._count.strategies
+        strategyVersionCount: agent._count.strategies,
+        followerCount: agent._count.followers,
+        followingCount: agent._count.following
       }));
       return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
     } catch {
@@ -899,6 +974,913 @@ export function buildServer(options: BuildServerOptions = {}) {
       });
     }
   });
+
+  app.post<{ Params: { agentId: string; targetAgentId: string } }>(
+    "/v1/agents/:agentId/follows/:targetAgentId",
+    async (request, reply) => {
+      const sourceId = uuidSchema.safeParse(request.params.agentId);
+      const targetId = uuidSchema.safeParse(request.params.targetAgentId);
+      if (!sourceId.success || !targetId.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_AGENT_ID", message: "Both agent identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (sourceId.data === targetId.data) {
+        return reply.code(422).send({
+          error: { code: "SELF_FOLLOW_NOT_ALLOWED", message: "An agent cannot follow itself.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!prismaClient) {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, sourceId.data, "social:write", now);
+        if (!credential) {
+          return reply.code(401).send({
+            error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+          });
+        }
+        if (!await enforceSocialWriteLimit(sourceId.data, request, reply)) return;
+        const payloadHash = createHash("sha256").update(JSON.stringify({
+          followerAgentId: sourceId.data, followedAgentId: targetId.data
+        })).digest("hex");
+        const result = await prismaClient.$transaction(async (tx) => {
+          const target = await tx.agent.findUnique({ where: { id: targetId.data }, select: { id: true, status: true } });
+          if (!target || target.status !== "ACTIVE") return { notFound: true as const };
+          const existing = await tx.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: targetId.data } },
+            select: { followerAgentId: true }
+          });
+          if (existing) return { notFound: false as const, changed: false };
+          await tx.agentFollow.create({ data: { followerAgentId: sourceId.data, followedAgentId: targetId.data } });
+          await tx.auditEvent.create({
+            data: {
+              actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "agent.followed",
+              targetType: "AgentFollow", targetId: `${sourceId.data}:${targetId.data}`,
+              correlationId: request.id, payloadHash
+            }
+          });
+          return { notFound: false as const, changed: true };
+        });
+        if (result.notFound) {
+          return reply.code(404).send({
+            error: { code: "AGENT_NOT_FOUND", message: "The target agent does not exist.", correlationId: request.id, retryable: false }
+          });
+        }
+        return reply.code(result.changed ? 201 : 200).send({ following: true, changed: result.changed });
+      } catch (error) {
+        if (error !== null && typeof error === "object" && "code" in error && error.code === "P2002") {
+          const existing = await prismaClient.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: targetId.data } },
+            select: { followerAgentId: true }
+          }).catch(() => null);
+          if (existing) return reply.code(200).send({ following: true, changed: false });
+        }
+        request.log.error({ err: error, correlationId: request.id }, "agent follow failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The follow request could not be completed.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.delete<{ Params: { agentId: string; targetAgentId: string } }>(
+    "/v1/agents/:agentId/follows/:targetAgentId",
+    async (request, reply) => {
+      const sourceId = uuidSchema.safeParse(request.params.agentId);
+      const targetId = uuidSchema.safeParse(request.params.targetAgentId);
+      if (!sourceId.success || !targetId.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_AGENT_ID", message: "Both agent identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!prismaClient) {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, sourceId.data, "social:write", now);
+        if (!credential) {
+          return reply.code(401).send({
+            error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+          });
+        }
+        if (!await enforceSocialWriteLimit(sourceId.data, request, reply)) return;
+        const payloadHash = createHash("sha256").update(JSON.stringify({
+          followerAgentId: sourceId.data, followedAgentId: targetId.data
+        })).digest("hex");
+        const changed = await prismaClient.$transaction(async (tx) => {
+          const result = await tx.agentFollow.deleteMany({
+            where: { followerAgentId: sourceId.data, followedAgentId: targetId.data }
+          });
+          if (result.count > 0) {
+            await tx.auditEvent.create({
+              data: {
+                actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "agent.unfollowed",
+                targetType: "AgentFollow", targetId: `${sourceId.data}:${targetId.data}`,
+                correlationId: request.id, payloadHash
+              }
+            });
+          }
+          return result.count > 0;
+        });
+        return reply.send({ following: false, changed });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "agent unfollow failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The unfollow request could not be completed.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/agents/:agentId/following",
+    async (request, reply) => {
+      const sourceId = uuidSchema.safeParse(request.params.agentId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!sourceId.success) return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The following pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const source = await prismaClient.agent.findUnique({ where: { id: sourceId.data }, select: { id: true, status: true } });
+        if (!source || source.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+        const { limit, cursor } = query.data;
+        if (cursor) {
+          const cursorRow = await prismaClient.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: cursor } },
+            select: { followedAgent: { select: { status: true } } }
+          });
+          if (!cursorRow || cursorRow.followedAgent.status !== "ACTIVE") return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The following cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+        const rows = await prismaClient.agentFollow.findMany({
+          where: { followerAgentId: sourceId.data, followedAgent: { status: "ACTIVE" } },
+          orderBy: [{ createdAt: "desc" }, { followedAgentId: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { followerAgentId_followedAgentId: { followerAgentId: sourceId.data, followedAgentId: cursor } }, skip: 1 } : {}),
+          select: { createdAt: true, followedAgent: { select: { id: true, name: true, description: true, mode: true, createdAt: true } } }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((row) => ({ followedAt: row.createdAt, agent: row.followedAgent }));
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.agent.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "following list failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The following list is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/agents/:agentId/followers",
+    async (request, reply) => {
+      const targetId = uuidSchema.safeParse(request.params.agentId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!targetId.success) return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The followers pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent follows are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const target = await prismaClient.agent.findUnique({ where: { id: targetId.data }, select: { id: true, status: true } });
+        if (!target || target.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+        const { limit, cursor } = query.data;
+        if (cursor) {
+          const cursorRow = await prismaClient.agentFollow.findUnique({
+            where: { followerAgentId_followedAgentId: { followerAgentId: cursor, followedAgentId: targetId.data } },
+            select: { followerAgent: { select: { status: true } } }
+          });
+          if (!cursorRow || cursorRow.followerAgent.status !== "ACTIVE") return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The followers cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+        const rows = await prismaClient.agentFollow.findMany({
+          where: { followedAgentId: targetId.data, followerAgent: { status: "ACTIVE" } },
+          orderBy: [{ createdAt: "desc" }, { followerAgentId: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { followerAgentId_followedAgentId: { followerAgentId: cursor, followedAgentId: targetId.data } }, skip: 1 } : {}),
+          select: { createdAt: true, followerAgent: { select: { id: true, name: true, description: true, mode: true, createdAt: true } } }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((row) => ({ followedAt: row.createdAt, agent: row.followerAgent }));
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.agent.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "followers list failed");
+        return reply.code(503).send({
+          error: { code: "FOLLOW_UNAVAILABLE", message: "The followers list is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/posts", async (request, reply) => {
+    const agentId = uuidSchema.safeParse(request.params.agentId);
+    const body = postCreateSchema.safeParse(request.body);
+    if (!agentId.success) return reply.code(400).send({
+      error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+    });
+    if (!body.success) return reply.code(400).send({
+      error: { code: "INVALID_POST", message: "Post content must be non-empty and no longer than 5000 characters.", correlationId: request.id, retryable: false }
+    });
+    if (!prismaClient) return reply.code(503).send({
+      error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent posts are temporarily unavailable.", correlationId: request.id, retryable: true }
+    });
+    try {
+      const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+      if (!credential) return reply.code(401).send({
+        error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+      });
+      if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
+        const payloadHash = createHash("sha256").update(JSON.stringify({ body: body.data.body, parentId: null })).digest("hex");
+      const post = await prismaClient.$transaction(async (tx) => {
+        const created = await tx.agentPost.create({
+          data: { agentId: agentId.data, body: body.data.body, provenance: "SELF_REPORTED" },
+          select: { id: true, agentId: true, body: true, provenance: true, parentId: true, createdAt: true }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "social.post_created",
+            targetType: "AgentPost", targetId: created.id, correlationId: request.id, payloadHash
+          }
+        });
+        return created;
+      });
+      return reply.code(201).send({ post });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "agent post creation failed");
+      return reply.code(503).send({
+        error: { code: "POST_UNAVAILABLE", message: "The post could not be created.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.post<{ Params: { agentId: string; postId: string } }>(
+    "/v1/agents/:agentId/posts/:postId/replies",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const postId = uuidSchema.safeParse(request.params.postId);
+      const body = postCreateSchema.safeParse(request.body);
+      if (!agentId.success || !postId.success) return reply.code(400).send({
+        error: { code: "INVALID_ID", message: "The agent and post identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+      });
+      if (!body.success) return reply.code(400).send({
+        error: { code: "INVALID_POST", message: "Reply content must be non-empty and no longer than 5000 characters.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent replies are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
+        const parent = await prismaClient.agentPost.findUnique({
+          where: { id: postId.data }, select: { id: true, hiddenAt: true, agent: { select: { status: true } } }
+        });
+        if (!parent || parent.hiddenAt || parent.agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "POST_NOT_FOUND", message: "The post does not exist.", correlationId: request.id, retryable: false }
+        });
+        const payloadHash = createHash("sha256").update(JSON.stringify({ body: body.data.body, parentId: postId.data })).digest("hex");
+        const post = await prismaClient.$transaction(async (tx) => {
+          const created = await tx.agentPost.create({
+            data: { agentId: agentId.data, parentId: postId.data, body: body.data.body, provenance: "SELF_REPORTED" },
+            select: { id: true, agentId: true, parentId: true, body: true, provenance: true, createdAt: true }
+          });
+          await tx.auditEvent.create({
+            data: {
+              actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "social.reply_created",
+              targetType: "AgentPost", targetId: created.id, correlationId: request.id, payloadHash
+            }
+          });
+          return created;
+        });
+        return reply.code(201).send({ post });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "agent reply creation failed");
+        return reply.code(503).send({
+          error: { code: "POST_UNAVAILABLE", message: "The reply could not be created.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.post<{ Params: { agentId: string; postId: string } }>(
+    "/v1/agents/:agentId/posts/:postId/likes",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const postId = uuidSchema.safeParse(request.params.postId);
+      if (!agentId.success || !postId.success) return reply.code(400).send({
+        error: { code: "INVALID_ID", message: "The agent and post identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Post reactions are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
+        const post = await prismaClient.agentPost.findUnique({
+          where: { id: postId.data }, select: { id: true, hiddenAt: true, agent: { select: { status: true } } }
+        });
+        if (!post || post.hiddenAt || post.agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "POST_NOT_FOUND", message: "The post does not exist.", correlationId: request.id, retryable: false }
+        });
+        const existing = await prismaClient.agentPostLike.findUnique({
+          where: { agentId_postId: { agentId: agentId.data, postId: postId.data } },
+          select: { agentId: true }
+        });
+        if (existing) return reply.send({ liked: true, changed: false });
+        const payloadHash = createHash("sha256").update(JSON.stringify({ agentId: agentId.data, postId: postId.data })).digest("hex");
+        try {
+          await prismaClient.$transaction(async (tx) => {
+            await tx.agentPostLike.create({ data: { agentId: agentId.data, postId: postId.data } });
+            await tx.auditEvent.create({
+              data: {
+                actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "social.post_liked",
+                targetType: "AgentPostLike", targetId: `${agentId.data}:${postId.data}`,
+                correlationId: request.id, payloadHash
+              }
+            });
+          });
+          return reply.code(201).send({ liked: true, changed: true });
+        } catch (error) {
+          if (error !== null && typeof error === "object" && "code" in error && error.code === "P2002") {
+            return reply.send({ liked: true, changed: false });
+          }
+          throw error;
+        }
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "post like failed");
+        return reply.code(503).send({
+          error: { code: "REACTION_UNAVAILABLE", message: "The like could not be recorded.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.delete<{ Params: { agentId: string; postId: string } }>(
+    "/v1/agents/:agentId/posts/:postId/likes",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const postId = uuidSchema.safeParse(request.params.postId);
+      if (!agentId.success || !postId.success) return reply.code(400).send({
+        error: { code: "INVALID_ID", message: "The agent and post identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Post reactions are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
+        const payloadHash = createHash("sha256").update(JSON.stringify({ agentId: agentId.data, postId: postId.data })).digest("hex");
+        const changed = await prismaClient.$transaction(async (tx) => {
+          const deleted = await tx.agentPostLike.deleteMany({ where: { agentId: agentId.data, postId: postId.data } });
+          if (deleted.count > 0) await tx.auditEvent.create({
+            data: {
+              actorType: "AGENT_CREDENTIAL", actorId: credential.id, action: "social.post_unliked",
+              targetType: "AgentPostLike", targetId: `${agentId.data}:${postId.data}`,
+              correlationId: request.id, payloadHash
+            }
+          });
+          return deleted.count > 0;
+        });
+        return reply.send({ liked: false, changed });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "post unlike failed");
+        return reply.code(503).send({
+          error: { code: "REACTION_UNAVAILABLE", message: "The like could not be removed.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/agents/:agentId/home-feed",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!agentId.success) return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The home-feed pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent home feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        const agent = await prismaClient.agent.findUnique({ where: { id: agentId.data }, select: { id: true, status: true } });
+        if (!agent || agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+        const { limit, cursor } = query.data;
+        if (cursor) {
+          const cursorPost = await prismaClient.agentPost.findUnique({
+            where: { id: cursor },
+            select: { id: true, parentId: true, agentId: true, hiddenAt: true, agent: { select: { status: true } } }
+          });
+          if (!cursorPost || cursorPost.hiddenAt || cursorPost.parentId !== null || cursorPost.agent.status !== "ACTIVE") return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The home-feed cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+          if (cursorPost.agentId !== agentId.data) {
+            const followed = await prismaClient.agentFollow.findUnique({
+              where: { followerAgentId_followedAgentId: { followerAgentId: agentId.data, followedAgentId: cursorPost.agentId } },
+              select: { followerAgentId: true }
+            });
+            if (!followed) return reply.code(400).send({
+              error: { code: "INVALID_CURSOR", message: "The home-feed cursor is not part of this agent's feed.", correlationId: request.id, retryable: false }
+            });
+          }
+        }
+        const rows = await prismaClient.agentPost.findMany({
+          where: {
+            parentId: null,
+            hiddenAt: null,
+            agent: {
+              status: "ACTIVE",
+              OR: [
+                { id: agentId.data },
+                { followers: { some: { followerAgentId: agentId.data } } }
+              ]
+            }
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: {
+            id: true, body: true, provenance: true, createdAt: true,
+            agent: { select: { id: true, name: true, description: true, mode: true } },
+            _count: { select: { replies: true, likes: true } }
+          }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((post) => ({
+          id: post.id, body: post.body, provenance: post.provenance, createdAt: post.createdAt,
+          agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes
+        }));
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "agent home feed failed");
+        return reply.code(503).send({
+          error: { code: "POST_UNAVAILABLE", message: "The agent home feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.post<{ Params: { agentId: string; postId: string } }>(
+    "/v1/agents/:agentId/posts/:postId/reports",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const postId = uuidSchema.safeParse(request.params.postId);
+      const body = contentReportSchema.safeParse(request.body);
+      if (!agentId.success || !postId.success) return reply.code(400).send({
+        error: { code: "INVALID_ID", message: "The agent and post identifiers must be valid UUIDs.", correlationId: request.id, retryable: false }
+      });
+      if (!body.success) return reply.code(400).send({
+        error: { code: "INVALID_REPORT", message: "A valid report reason and at most 1000 characters of detail are required.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Content reporting is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
+        const target = await prismaClient.agentPost.findUnique({
+          where: { id: postId.data },
+          select: { id: true, agentId: true, hiddenAt: true, agent: { select: { status: true } } }
+        });
+        if (!target || target.hiddenAt || target.agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "POST_NOT_FOUND", message: "The reported post does not exist.", correlationId: request.id, retryable: false }
+        });
+        if (target.agentId === agentId.data) return reply.code(422).send({
+          error: { code: "SELF_REPORT_NOT_ALLOWED", message: "An agent cannot report its own post.", correlationId: request.id, retryable: false }
+        });
+        const existing = await prismaClient.agentPostReport.findUnique({
+          where: { reporterAgentId_postId: { reporterAgentId: agentId.data, postId: postId.data } },
+          select: { id: true, reason: true, status: true, createdAt: true }
+        });
+        if (existing) return reply.code(200).send({ report: existing, changed: false });
+        const payloadHash = createHash("sha256").update(JSON.stringify({
+          reporterAgentId: agentId.data, postId: postId.data, reason: body.data.reason, details: body.data.details ?? null
+        })).digest("hex");
+        try {
+          const report = await prismaClient.$transaction(async (tx) => {
+            const created = await tx.agentPostReport.create({
+              data: {
+                reporterAgentId: agentId.data,
+                postId: postId.data,
+                reason: body.data.reason,
+                ...(body.data.details !== undefined ? { details: body.data.details } : {})
+              },
+              select: { id: true, reason: true, status: true, createdAt: true }
+            });
+            await tx.auditEvent.create({
+              data: {
+                actorType: "AGENT_CREDENTIAL", actorId: credential.id,
+                action: "social.content_reported", targetType: "AgentPost",
+                targetId: postId.data, correlationId: request.id, payloadHash
+              }
+            });
+            return created;
+          });
+          return reply.code(201).send({ report, changed: true });
+        } catch (error) {
+          if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+            const duplicate = await prismaClient.agentPostReport.findUnique({
+              where: { reporterAgentId_postId: { reporterAgentId: agentId.data, postId: postId.data } },
+              select: { id: true, reason: true, status: true, createdAt: true }
+            });
+            if (duplicate) return reply.code(200).send({ report: duplicate, changed: false });
+          }
+          throw error;
+        }
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "content report submission failed");
+        return reply.code(503).send({
+          error: { code: "REPORT_UNAVAILABLE", message: "The content report could not be saved.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Querystring: { limit?: string; cursor?: string; status?: string } }>(
+    "/v1/moderation/reports",
+    async (request, reply) => {
+      const query = z.object({
+        limit: z.coerce.number().int().min(1).max(50).default(20),
+        cursor: uuidSchema.optional(),
+        status: reportStatusSchema.default("OPEN")
+      }).safeParse(request.query);
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The moderation queue query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!process.env.OIDC_ISSUER || !process.env.OIDC_AUDIENCE || !process.env.OIDC_JWKS_URL) return reply.code(503).send({
+        error: { code: "MODERATION_AUTH_UNAVAILABLE", message: "OIDC moderator authentication is not configured.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The moderation queue is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      const identity = await resolveOwnerIdentity(request.headers.authorization, undefined);
+      if ("error" in identity) {
+        const failure = ownerAuthFailure(identity.error, request.id);
+        return reply.code(failure.statusCode).send(failure.body);
+      }
+      if (identity.actorType !== "OIDC_USER") return reply.code(401).send({
+        error: { code: "INVALID_MODERATOR_CREDENTIAL", message: "A valid OIDC moderator identity is required.", correlationId: request.id, retryable: false }
+      });
+      try {
+        const moderator = await prismaClient.user.findUnique({
+          where: { authSubject: identity.subject },
+          select: { id: true, role: true, status: true }
+        });
+        if (!moderator || moderator.status !== "ACTIVE" || !["MODERATOR", "ADMIN"].includes(moderator.role)) {
+          return reply.code(403).send({
+            error: { code: "MODERATOR_ROLE_REQUIRED", message: "An active moderator or administrator role is required.", correlationId: request.id, retryable: false }
+          });
+        }
+        const { limit, cursor, status } = query.data;
+        const rows = await prismaClient.agentPostReport.findMany({
+          where: { status },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: {
+            id: true, reason: true, details: true, status: true, createdAt: true, updatedAt: true,
+            post: { select: { id: true, body: true, provenance: true, parentId: true, createdAt: true, hiddenAt: true, agent: { select: { id: true, name: true, status: true } } } },
+            reporterAgent: { select: { id: true, name: true, status: true } }
+          }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit);
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "moderation queue read failed");
+        return reply.code(503).send({
+          error: { code: "MODERATION_QUEUE_UNAVAILABLE", message: "The moderation queue is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.patch<{ Params: { reportId: string } }>(
+    "/v1/moderation/reports/:reportId",
+    async (request, reply) => {
+      const reportId = uuidSchema.safeParse(request.params.reportId);
+      const body = moderationDecisionSchema.safeParse(request.body);
+      if (!reportId.success) return reply.code(400).send({
+        error: { code: "INVALID_REPORT_ID", message: "The report identifier must be a valid UUID.", correlationId: request.id, retryable: false }
+      });
+      if (!body.success) return reply.code(400).send({
+        error: { code: "INVALID_DECISION", message: "A valid moderation decision and at most 1000 characters of resolution note are required.", correlationId: request.id, retryable: false }
+      });
+      if (!process.env.OIDC_ISSUER || !process.env.OIDC_AUDIENCE || !process.env.OIDC_JWKS_URL) return reply.code(503).send({
+        error: { code: "MODERATION_AUTH_UNAVAILABLE", message: "OIDC moderator authentication is not configured.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The moderation service is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      const identity = await resolveOwnerIdentity(request.headers.authorization, undefined);
+      if ("error" in identity) {
+        const failure = ownerAuthFailure(identity.error, request.id);
+        return reply.code(failure.statusCode).send(failure.body);
+      }
+      if (identity.actorType !== "OIDC_USER") return reply.code(401).send({
+        error: { code: "INVALID_MODERATOR_CREDENTIAL", message: "A valid OIDC moderator identity is required.", correlationId: request.id, retryable: false }
+      });
+      try {
+        const moderator = await prismaClient.user.findUnique({
+          where: { authSubject: identity.subject },
+          select: { id: true, role: true, status: true }
+        });
+        if (!moderator || moderator.status !== "ACTIVE" || !["MODERATOR", "ADMIN"].includes(moderator.role)) {
+          return reply.code(403).send({
+            error: { code: "MODERATOR_ROLE_REQUIRED", message: "An active moderator or administrator role is required.", correlationId: request.id, retryable: false }
+          });
+        }
+        const result = await prismaClient.$transaction(async (tx) => {
+          const report = await tx.agentPostReport.findUnique({
+            where: { id: reportId.data },
+            select: { id: true, status: true, postId: true }
+          });
+          if (!report) return { notFound: true as const };
+          if (report.status !== "OPEN") return { conflict: true as const, status: report.status };
+          const changed = await tx.agentPostReport.updateMany({
+            where: { id: report.id, status: "OPEN" },
+            data: {
+              status: body.data.status,
+              reviewedByUserId: moderator.id,
+              reviewedAt: new Date(now()),
+              resolutionNote: body.data.resolutionNote ?? null
+            }
+          });
+          if (changed.count !== 1) {
+            const latest = await tx.agentPostReport.findUnique({ where: { id: report.id }, select: { status: true } });
+            return latest
+              ? { conflict: true as const, status: latest.status }
+              : { notFound: true as const };
+          }
+          if (body.data.status === "ACTIONED") {
+            const hiddenAt = new Date(now());
+            const hidden = await tx.agentPost.updateMany({
+              where: { id: report.postId, hiddenAt: null },
+              data: { hiddenAt, hiddenByUserId: moderator.id }
+            });
+            if (hidden.count === 1) {
+              const hideHash = createHash("sha256").update(JSON.stringify({
+                postId: report.postId, reportId: report.id, hidden: true
+              })).digest("hex");
+              await tx.auditEvent.create({
+                data: {
+                  actorType: "USER", actorId: moderator.id,
+                  action: "moderation.post_hidden", targetType: "AgentPost",
+                  targetId: report.postId, correlationId: request.id, payloadHash: hideHash
+                }
+              });
+            }
+          }
+          const updated = await tx.agentPostReport.findUniqueOrThrow({
+            where: { id: report.id },
+            select: { id: true, status: true, reviewedAt: true, resolutionNote: true, postId: true }
+          });
+          const payloadHash = createHash("sha256").update(JSON.stringify({
+            reportId: report.id, from: report.status, to: body.data.status, resolutionNote: body.data.resolutionNote ?? null
+          })).digest("hex");
+          await tx.auditEvent.create({
+            data: {
+              actorType: "USER", actorId: moderator.id,
+              action: "moderation.report_decided", targetType: "AgentPostReport",
+              targetId: report.id, correlationId: request.id, payloadHash
+            }
+          });
+          return { updated } as const;
+        });
+        if ("notFound" in result) return reply.code(404).send({
+          error: { code: "REPORT_NOT_FOUND", message: "The report does not exist.", correlationId: request.id, retryable: false }
+        });
+        if ("conflict" in result) return reply.code(409).send({
+          error: { code: "REPORT_ALREADY_REVIEWED", message: "Only open reports can be decided.", correlationId: request.id, retryable: false }
+        });
+        return reply.send({ report: result.updated });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "moderation decision failed");
+        return reply.code(503).send({
+          error: { code: "MODERATION_DECISION_UNAVAILABLE", message: "The moderation decision could not be saved.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.patch<{ Params: { postId: string } }>(
+    "/v1/moderation/posts/:postId/visibility",
+    async (request, reply) => {
+      const postId = uuidSchema.safeParse(request.params.postId);
+      const body = z.object({
+        hidden: z.boolean(),
+        resolutionNote: z.string().trim().max(1000).optional()
+      }).strict().safeParse(request.body);
+      if (!postId.success) return reply.code(400).send({
+        error: { code: "INVALID_POST_ID", message: "The post identifier must be a valid UUID.", correlationId: request.id, retryable: false }
+      });
+      if (!body.success) return reply.code(400).send({
+        error: { code: "INVALID_VISIBILITY_DECISION", message: "A boolean hidden value and optional note up to 1000 characters are required.", correlationId: request.id, retryable: false }
+      });
+      if (!process.env.OIDC_ISSUER || !process.env.OIDC_AUDIENCE || !process.env.OIDC_JWKS_URL) return reply.code(503).send({
+        error: { code: "MODERATION_AUTH_UNAVAILABLE", message: "OIDC moderator authentication is not configured.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The moderation service is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      const identity = await resolveOwnerIdentity(request.headers.authorization, undefined);
+      if ("error" in identity) {
+        const failure = ownerAuthFailure(identity.error, request.id);
+        return reply.code(failure.statusCode).send(failure.body);
+      }
+      if (identity.actorType !== "OIDC_USER") return reply.code(401).send({
+        error: { code: "INVALID_MODERATOR_CREDENTIAL", message: "A valid OIDC moderator identity is required.", correlationId: request.id, retryable: false }
+      });
+      try {
+        const moderator = await prismaClient.user.findUnique({
+          where: { authSubject: identity.subject },
+          select: { id: true, role: true, status: true }
+        });
+        if (!moderator || moderator.status !== "ACTIVE" || !["MODERATOR", "ADMIN"].includes(moderator.role)) {
+          return reply.code(403).send({
+            error: { code: "MODERATOR_ROLE_REQUIRED", message: "An active moderator or administrator role is required.", correlationId: request.id, retryable: false }
+          });
+        }
+        const result = await prismaClient.$transaction(async (tx) => {
+          const post = await tx.agentPost.findUnique({
+            where: { id: postId.data }, select: { id: true, hiddenAt: true }
+          });
+          if (!post) return { notFound: true as const };
+          const wasHidden = post.hiddenAt !== null;
+          if (wasHidden === body.data.hidden) return { changed: false as const, hiddenAt: post.hiddenAt };
+          const changedAt = body.data.hidden ? new Date(now()) : null;
+          const updated = await tx.agentPost.updateMany({
+            where: { id: post.id, hiddenAt: post.hiddenAt },
+            data: { hiddenAt: changedAt, hiddenByUserId: body.data.hidden ? moderator.id : null }
+          });
+          if (updated.count !== 1) return { conflict: true as const };
+          const payloadHash = createHash("sha256").update(JSON.stringify({
+            postId: post.id, hidden: body.data.hidden, resolutionNote: body.data.resolutionNote ?? null
+          })).digest("hex");
+          await tx.auditEvent.create({
+            data: {
+              actorType: "USER", actorId: moderator.id,
+              action: body.data.hidden ? "moderation.post_hidden" : "moderation.post_restored",
+              targetType: "AgentPost", targetId: post.id, correlationId: request.id, payloadHash
+            }
+          });
+          return { changed: true as const, hiddenAt: changedAt };
+        });
+        if ("notFound" in result) return reply.code(404).send({
+          error: { code: "POST_NOT_FOUND", message: "The post does not exist.", correlationId: request.id, retryable: false }
+        });
+        if ("conflict" in result) return reply.code(409).send({
+          error: { code: "VISIBILITY_CHANGED", message: "The post visibility changed concurrently; refresh and retry.", correlationId: request.id, retryable: false }
+        });
+        return reply.send({ postId: postId.data, hidden: result.hiddenAt !== null, changed: result.changed });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "moderation visibility update failed");
+        return reply.code(503).send({
+          error: { code: "MODERATION_VISIBILITY_UNAVAILABLE", message: "The post visibility could not be updated.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/posts", async (request, reply) => {
+    const query = pageQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({
+      error: { code: "INVALID_QUERY", message: "The post-feed pagination query is invalid.", correlationId: request.id, retryable: false }
+    });
+    if (!prismaClient) return reply.code(503).send({
+      error: { code: "DATA_STORE_UNAVAILABLE", message: "The post feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+    });
+    try {
+      const { limit, cursor } = query.data;
+      if (cursor) {
+        const cursorPost = await prismaClient.agentPost.findUnique({
+          where: { id: cursor }, select: { id: true, parentId: true, hiddenAt: true, agent: { select: { status: true } } }
+        });
+        if (!cursorPost || cursorPost.hiddenAt || cursorPost.parentId !== null || cursorPost.agent.status !== "ACTIVE") return reply.code(400).send({
+          error: { code: "INVALID_CURSOR", message: "The post-feed cursor is invalid.", correlationId: request.id, retryable: false }
+        });
+      }
+      const rows = await prismaClient.agentPost.findMany({
+        where: { parentId: null, hiddenAt: null, agent: { status: "ACTIVE" } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true, body: true, provenance: true, createdAt: true,
+          agent: { select: { id: true, name: true, description: true, mode: true } },
+          _count: { select: { replies: true, likes: true } }
+        }
+      });
+      const hasMore = rows.length > limit;
+      const items = rows.slice(0, limit).map((post) => ({
+        id: post.id, body: post.body, provenance: post.provenance, createdAt: post.createdAt,
+        agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes
+      }));
+      return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "post feed failed");
+      return reply.code(503).send({
+        error: { code: "POST_UNAVAILABLE", message: "The post feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.get<{ Params: { postId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/posts/:postId/replies",
+    async (request, reply) => {
+      const postId = uuidSchema.safeParse(request.params.postId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!postId.success) return reply.code(400).send({
+        error: { code: "INVALID_POST_ID", message: "The post identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The reply pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Post replies are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const parent = await prismaClient.agentPost.findUnique({
+          where: { id: postId.data }, select: { id: true, hiddenAt: true, agent: { select: { status: true } } }
+        });
+        if (!parent || parent.hiddenAt || parent.agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "POST_NOT_FOUND", message: "The post does not exist.", correlationId: request.id, retryable: false }
+        });
+        const { limit, cursor } = query.data;
+        if (cursor) {
+          const cursorReply = await prismaClient.agentPost.findUnique({
+            where: { id: cursor }, select: { id: true, parentId: true, hiddenAt: true, agent: { select: { status: true } } }
+          });
+          if (!cursorReply || cursorReply.hiddenAt || cursorReply.parentId !== postId.data || cursorReply.agent.status !== "ACTIVE") return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The reply cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+        const rows = await prismaClient.agentPost.findMany({
+          where: { parentId: postId.data, hiddenAt: null, agent: { status: "ACTIVE" } },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: {
+            id: true, body: true, provenance: true, createdAt: true,
+            agent: { select: { id: true, name: true, description: true, mode: true } },
+            _count: { select: { replies: true, likes: true } }
+          }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((post) => ({
+          id: post.id, body: post.body, provenance: post.provenance, createdAt: post.createdAt,
+          agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes
+        }));
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "post replies failed");
+        return reply.code(503).send({
+          error: { code: "POST_UNAVAILABLE", message: "Post replies are temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
 
   app.get<{ Params: { agentId: string } }>("/v1/agents/:agentId", async (request, reply) => {
     const parsedId = uuidSchema.safeParse(request.params.agentId);
@@ -915,14 +1897,23 @@ export function buildServer(options: BuildServerOptions = {}) {
     try {
       const agent = await prismaClient.agent.findUnique({
         where: { id: parsedId.data },
-        select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true }
+        select: {
+          id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true,
+          _count: {
+            select: {
+              followers: { where: { followerAgent: { status: "ACTIVE" } } },
+              following: { where: { followedAgent: { status: "ACTIVE" } } }
+            }
+          }
+        }
       });
       if (!agent || agent.status !== "ACTIVE") {
         return reply.code(404).send({
           error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
         });
       }
-      return reply.send({ agent });
+      const { _count, ...publicAgent } = agent;
+      return reply.send({ agent: { ...publicAgent, followerCount: _count.followers, followingCount: _count.following } });
     } catch {
       return reply.code(503).send({
         error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent profiles are temporarily unavailable.", correlationId: request.id, retryable: true }
@@ -987,119 +1978,6 @@ export function buildServer(options: BuildServerOptions = {}) {
       } catch {
         return reply.code(503).send({
           error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent journal is temporarily unavailable.", correlationId: request.id, retryable: true }
-        });
-      }
-    }
-  );
-
-  app.get<{ Params: { agentId: string } }>(
-    "/v1/agents/:agentId/portfolio",
-    async (request, reply) => {
-      const parsedId = uuidSchema.safeParse(request.params.agentId);
-      if (!parsedId.success) return reply.code(400).send({
-        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
-      });
-      if (!prismaClient) return reply.code(503).send({
-        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent portfolio data is temporarily unavailable.", correlationId: request.id, retryable: true }
-      });
-      try {
-        const agent = await prismaClient.agent.findUnique({
-          where: { id: parsedId.data },
-          select: { id: true, status: true }
-        });
-        if (!agent || agent.status !== "ACTIVE") return reply.code(404).send({
-          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
-        });
-        const fills = await prismaClient.fill.findMany({
-          where: { venueOrder: { is: { intent: { is: { agentId: parsedId.data, mode: "PAPER" } } } } },
-          orderBy: [{ filledAt: "asc" }, { id: "asc" }],
-          take: MAX_PAPER_PORTFOLIO_FILLS + 1,
-          select: {
-            price: true, quantity: true, fee: true, feeAsset: true, filledAt: true,
-            venueOrder: { select: { intent: { select: { instrument: true, side: true } } } }
-          }
-        });
-        if (fills.length > MAX_PAPER_PORTFOLIO_FILLS) return reply.code(413).send({
-          error: {
-            code: "PORTFOLIO_HISTORY_LIMIT_EXCEEDED",
-            message: "The paper fill history exceeds the supported portfolio calculation limit.",
-            correlationId: request.id,
-            retryable: false
-          }
-        });
-        const ledger = fills.map((fill) => ({
-          instrument: fill.venueOrder.intent.instrument,
-          side: fill.venueOrder.intent.side,
-          quantity: fill.quantity.toString(),
-          price: fill.price.toString(),
-          fee: fill.fee.toString(),
-          feeAsset: fill.feeAsset,
-          filledAt: fill.filledAt.toISOString()
-        }));
-        const performance = calculatePaperPerformance(ledger);
-        const marks: Record<string, { bid: string; ask: string } | undefined> = {};
-        const markMeta: Record<string, { status: "CURRENT" | "STALE" | "UNAVAILABLE" | "INVALID"; observedAt: string | null; ageMs: number | null; source: string | null }> = {};
-        const openPositions = performance.instruments.filter((item) => item.positionQuantity !== "0");
-        await Promise.all(openPositions.slice(0, MAX_PAPER_PORTFOLIO_MARKS).map(async (position) => {
-          try {
-            const snapshot = await marketDataProvider.getMarketSnapshot(position.instrument);
-            const observedMs = Date.parse(snapshot.observedAt);
-            const ageMs = Number.isFinite(observedMs) ? now() - observedMs : Number.POSITIVE_INFINITY;
-            const validPrice = (value: string) => /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(value) && Number.isFinite(Number(value)) && Number(value) > 0;
-            if (
-              snapshot.venue !== "hyperliquid" ||
-              snapshot.instrumentId !== position.instrument ||
-              !snapshot.bid ||
-              !snapshot.ask ||
-              !validPrice(snapshot.bid) ||
-              !validPrice(snapshot.ask) ||
-              Number(snapshot.ask) < Number(snapshot.bid)
-            ) {
-              markMeta[position.instrument] = { status: "INVALID", observedAt: snapshot.observedAt ?? null, ageMs: null, source: snapshot.source ?? null };
-              return;
-            }
-            if (snapshot.dataQuality !== "LIVE" || ageMs < 0 || ageMs > paperTradePolicy.maxMarketDataAgeMs) {
-              markMeta[position.instrument] = {
-                status: "STALE",
-                observedAt: snapshot.observedAt,
-                ageMs: Number.isFinite(ageMs) ? ageMs : null,
-                source: snapshot.source
-              };
-              return;
-            }
-            marks[position.instrument] = { bid: snapshot.bid, ask: snapshot.ask };
-            markMeta[position.instrument] = {
-              status: "CURRENT", observedAt: snapshot.observedAt, ageMs, source: snapshot.source
-            };
-          } catch {
-            markMeta[position.instrument] = { status: "UNAVAILABLE", observedAt: null, ageMs: null, source: null };
-          }
-        }));
-        const markLimitReached = openPositions.length > MAX_PAPER_PORTFOLIO_MARKS;
-        for (const position of openPositions.slice(MAX_PAPER_PORTFOLIO_MARKS)) {
-          markMeta[position.instrument] = { status: "UNAVAILABLE", observedAt: null, ageMs: null, source: null };
-        }
-        const portfolio = calculatePaperPortfolio(ledger, marks);
-        const qualityFlags = markLimitReached
-          ? [...new Set([...portfolio.qualityFlags, "MARK_LIMIT_REACHED"])].sort()
-          : portfolio.qualityFlags;
-        const positions = portfolio.positions.map((position) => ({
-          ...position,
-          markStatus: markMeta[position.instrument]?.status ?? "UNAVAILABLE",
-          markObservedAt: markMeta[position.instrument]?.observedAt ?? null,
-          markAgeMs: markMeta[position.instrument]?.ageMs ?? null,
-          markSource: markMeta[position.instrument]?.source ?? null
-        }));
-        return reply.send({
-          agentId: parsedId.data,
-          asOf: new Date(now()).toISOString(),
-          accountingScope: "PAPER_ONLY",
-          portfolio: { ...portfolio, qualityFlags, positions }
-        });
-      } catch (error) {
-        request.log.error({ err: error, correlationId: request.id }, "paper portfolio calculation failed");
-        return reply.code(503).send({
-          error: { code: "PORTFOLIO_UNAVAILABLE", message: "The paper portfolio could not be calculated.", correlationId: request.id, retryable: true }
         });
       }
     }
