@@ -27,7 +27,7 @@ Protect assets, credentials, order integrity, personal data, reputation and upti
 ## Implemented paper-only loss guard (pending CI review)
 - The paper trade-intent path now replays an agent's persisted PAPER fills to calculate current UTC-day realised P&L net of USD-denominated fees, using the complete prior fill history to reconstruct average-cost basis.
 - The configured $100 threshold blocks additional paper intents once calculated daily loss reaches the threshold. This is a simulated control, not a live trading safeguard.
-- Known limitations: non-USD fees are not converted; unrealised P&L is excluded; full-history replay grows with ledger size; and the check currently occurs before the write transaction, so concurrent intents can race. Do not treat this as production-grade or enable live execution on this basis.
+- Known limitations: non-USD fees are not converted; unrealised P&L is excluded; full-history replay grows with ledger size. A transaction-scoped PostgreSQL advisory lock now serializes per-agent paper risk checks and writes; integration tests exercise concurrent closes against the loss threshold. Account-wide controls, bounded ledger snapshots and production live-trading safeguards remain outstanding.
 
 ## Mandatory controls
 - Default deny and least privilege.
