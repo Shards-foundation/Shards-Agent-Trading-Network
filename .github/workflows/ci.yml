@@ -103,3 +103,11 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Built API and worker lifecycle smoke
+        env:
+          NODE_ENV: production
+          DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
+          REDIS_URL: redis://127.0.0.1:6379
+          EXECUTION_MODE: PAPER
+          LIVE_EXECUTION_ENABLED: "false"
+        run: pnpm --filter @satn/api exec node scripts/worker-lifecycle-smoke.mjs
