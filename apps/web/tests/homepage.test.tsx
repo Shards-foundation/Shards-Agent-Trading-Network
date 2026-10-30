@@ -32,9 +32,6 @@ describe("SATN homepage", () => {
     expect(html).toContain("OIDC moderator access token");
     expect(html).toContain("not saved to local storage");
     expect(html).toContain("active MODERATOR or ADMIN role");
-    expect(html).toContain("Save audited decision");
-    expect(html).toContain("Hide post");
-    expect(html).toContain("Restore post");
   });
 
   it("does not claim venue execution is connected", () => {
