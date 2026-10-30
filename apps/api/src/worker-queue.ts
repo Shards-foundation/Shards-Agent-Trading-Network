@@ -87,14 +87,14 @@ export class WorkerQueue {
     return rows[0] ?? null;
   }
 
-  async heartbeat(jobId: string, leaseOwnerToken: string, leaseAt: Date): Promise<boolean> {
+  async heartbeat(jobId: string, leaseOwnerToken: string, leaseAt: Date): Promise<Date | null> {
     const renewedAt = new Date();
-    const rows = await this.db.$queryRawUnsafe<Array<{ id: string }>>(
+    const rows = await this.db.$queryRawUnsafe<Array<{ lockedAt: Date }>>(
       `UPDATE "WorkerJob" SET "lockedAt" = $4, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND "lockedAt" = $3 RETURNING "id"`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND "lockedAt" = $3 RETURNING "lockedAt"`,
       jobId, leaseOwnerToken, leaseAt, renewedAt,
     );
-    return rows.length === 1;
+    return rows[0]?.lockedAt ?? null;
   }
 
   async complete(jobId: string, leaseOwnerToken: string, leaseAt: Date): Promise<boolean> {
