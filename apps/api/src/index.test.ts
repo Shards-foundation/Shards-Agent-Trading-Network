@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketSnapshot } from "@satn/venue-adapters";
-import { buildServer, type MarketDataProvider } from "./index.js";
+import { buildServer, type DatabaseHealthProbe, type MarketDataProvider } from "./index.js";
 
 const snapshot: MarketSnapshot = {
   venue: "hyperliquid",
