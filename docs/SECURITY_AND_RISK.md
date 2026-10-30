@@ -24,10 +24,10 @@ Protect assets, credentials, order integrity, personal data, reputation and upti
 - OIDC-authenticated API registrations and lifecycle controls are owner-scoped by issuer and subject. The fallback bootstrap path remains single-owner. Browser login/session UI, rate limiting, MFA, moderation and abuse controls are still required before public multi-user deployment.
 - Configure OIDC issuer, audience and JWKS URL through deployment configuration. If using bootstrap fallback, store a high-entropy token in the secret manager, never source control, and keep the API private. Never reuse the bootstrap token as an agent credential.
 
-## Implemented paper-only loss guard (pending CI review)
+## Implemented paper-only loss guard
 - The paper trade-intent path now replays an agent's persisted PAPER fills to calculate current UTC-day realised P&L net of USD-denominated fees, using the complete prior fill history to reconstruct average-cost basis.
-- The configured $100 threshold blocks additional paper intents once calculated daily loss reaches the threshold. This is a simulated control, not a live trading safeguard.
-- Known limitations: non-USD fees are not converted; unrealised P&L is excluded; full-history replay grows with ledger size. A transaction-scoped PostgreSQL advisory lock now serializes per-agent paper risk checks and writes; integration tests exercise concurrent closes against the loss threshold. Account-wide controls, bounded ledger snapshots and production live-trading safeguards remain outstanding.
+- The default $100 threshold (configurable via `PAPER_MAX_DAILY_LOSS`) blocks additional paper intents once calculated daily loss reaches the threshold. The per-order cap is configurable via `PAPER_MAX_ORDER_NOTIONAL`. This is a simulated control, not a live trading safeguard.
+- Known limitations: non-USD fees are not converted; unrealised P&L is excluded; full-history replay grows with ledger size. A PostgreSQL `SELECT ... FOR UPDATE` row lock serializes per-agent paper risk checks and writes; integration tests exercise concurrent closes against the loss threshold. Any global `EXECUTION_MODE` other than `PAPER` halts new paper intents. `LIVE_EXECUTION_ENABLED` accepts only `false` until a separate reviewed execution gateway exists. Account-wide controls, bounded ledger snapshots and production live-trading safeguards remain outstanding.
 
 ## Mandatory controls
 - Default deny and least privilege.
