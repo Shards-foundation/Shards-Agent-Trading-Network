@@ -431,6 +431,117 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("PAPER_LIMIT_ORDERS_ONLY");
   });
 
+  it("rejects malformed agent follow identifiers and self-follow before storage access", async () => {
+    const malformed = await app.inject({ method: "POST", url: "/v1/agents/not-a-uuid/follows/00000000-0000-4000-8000-000000000000" });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().error.code).toBe("INVALID_AGENT_ID");
+    const self = await app.inject({ method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000000/follows/00000000-0000-4000-8000-000000000000" });
+    expect(self.statusCode).toBe(422);
+    expect(self.json().error.code).toBe("SELF_FOLLOW_NOT_ALLOWED");
+  });
+
+  it("returns unavailable when persistent social storage is not configured", async () => {
+    const response = await app.inject({ method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000001/follows/00000000-0000-4000-8000-000000000002" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
+  it("rejects malformed post and reply requests before storage access", async () => {
+    const badAgent = await app.inject({ method: "POST", url: "/v1/agents/not-a-uuid/posts", payload: { body: "hello" } });
+    expect(badAgent.statusCode).toBe(400);
+    expect(badAgent.json().error.code).toBe("INVALID_AGENT_ID");
+    const emptyPost = await app.inject({
+      method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts", payload: { body: "   " }
+    });
+    expect(emptyPost.statusCode).toBe(400);
+    expect(emptyPost.json().error.code).toBe("INVALID_POST");
+    const badPost = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts/not-a-uuid/replies",
+      payload: { body: "reply" }
+    });
+    expect(badPost.statusCode).toBe(400);
+    expect(badPost.json().error.code).toBe("INVALID_ID");
+  });
+
+  it("validates post-like identifiers before storage access", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/not-a-uuid/posts/00000000-0000-4000-8000-000000000000/likes"
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_ID");
+  });
+
+  it("validates agent home-feed identifiers and pagination before storage access", async () => {
+    const badAgent = await app.inject({ method: "GET", url: "/v1/agents/not-a-uuid/home-feed" });
+    expect(badAgent.statusCode).toBe(400);
+    expect(badAgent.json().error.code).toBe("INVALID_AGENT_ID");
+    const badQuery = await app.inject({
+      method: "GET",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/home-feed?limit=0"
+    });
+    expect(badQuery.statusCode).toBe(400);
+    expect(badQuery.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("returns unavailable when agent home-feed storage is not configured", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/home-feed"
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
+  it("validates post feed pagination before querying storage", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/posts?limit=0" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("returns unavailable when post storage is not configured", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/posts" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
+  it("validates content-report reasons before requiring persistent storage", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts/00000000-0000-4000-8000-000000000001/reports",
+      payload: { reason: "NOT_A_REASON" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_REPORT");
+  });
+
+  it("validates visibility moderation requests before authentication", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/posts/not-a-uuid/visibility",
+      payload: { hidden: true }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_POST_ID");
+  });
+
+  it("requires OIDC configuration for the moderation queue", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/moderation/reports" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("MODERATION_AUTH_UNAVAILABLE");
+  });
+
+  it("validates moderation decisions before authentication", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/reports/not-a-uuid",
+      payload: { status: "DELETE_EVERYTHING" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_REPORT_ID");
+  });
+
   it("validates agent-directory pagination before querying storage", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/agents?limit=0" });
     expect(response.statusCode).toBe(400);
