@@ -85,8 +85,8 @@ const heartbeatTimer = setInterval(() => {
 }, heartbeatMs);
 heartbeatTimer.unref();
 
-process.once("SIGTERM", () => { void stop("SIGTERM"); });
-process.once("SIGINT", () => { void stop("SIGINT"); });
+process.once("SIGTERM", () => { shutdown.abort(); });
+process.once("SIGINT", () => { shutdown.abort(); });
 
 try {
   await persistHeartbeat("RUNNING");
