@@ -3,9 +3,7 @@ import { z } from "zod";
 // Matches PostgreSQL Decimal(38,18) integer capacity while retaining the
 // platform's current eight-decimal order precision. Bounds also avoid costly
 // BigInt parsing of untrusted multi-megabyte numeric strings.
-const decimal = z
-  .string()
-  .regex(/^(?:0|[1-9]\d{0,19})(?:\.\d{1,8})?$/);
+const decimal = z.string().regex(/^(?:0|[1-9]\d{0,19})(?:\.\d{1,8})?$/);
 const SCALE = 100_000_000n;
 
 export const TradeIntentSchema = z

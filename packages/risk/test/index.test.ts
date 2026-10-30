@@ -175,8 +175,6 @@ describe("deterministic risk gate", () => {
       policy,
       "v1",
     );
-    expect(decision.reasons).toContain(
-      "MARKET_ORDER_REQUIRES_REFERENCE_PRICE",
-    );
+    expect(decision.reasons).toContain("MARKET_ORDER_REQUIRES_REFERENCE_PRICE");
   });
 });
