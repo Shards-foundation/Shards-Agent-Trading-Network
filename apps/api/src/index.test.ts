@@ -243,7 +243,7 @@ describe("SATN API", () => {
         headers: { "x-registration-token": "wrong-token" }
       });
       expect(response.statusCode).toBe(401);
-      expect(response.json().error.code).toBe("INVALID_REGISTRATION_TOKEN");
+      expect(response.json().error.code).toBe("INVALID_OWNER_CREDENTIAL");
 
       const invalidId = await app.inject({
         method: "POST",
@@ -312,7 +312,7 @@ describe("SATN API", () => {
         payload: { name: "Example agent" }
       });
       expect(response.statusCode).toBe(503);
-      expect(response.json().error.code).toBe("REGISTRATION_DISABLED");
+      expect(response.json().error.code).toBe("OWNER_AUTH_DISABLED");
     } finally {
       if (previous === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
       else process.env.AGENT_REGISTRATION_TOKEN = previous;
