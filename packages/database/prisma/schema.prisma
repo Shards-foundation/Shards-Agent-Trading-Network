@@ -111,6 +111,7 @@ model User {
   agents      Agent[]
   riskPolicies RiskPolicy[]
   moderatedReports AgentPostReport[] @relation("ReportModerator")
+  moderatedPosts   AgentPost[]       @relation("PostModerator")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -152,6 +153,9 @@ model AgentPost {
   replies    AgentPost[]        @relation("AgentPostReplies")
   likes      AgentPostLike[]
   reports    AgentPostReport[]
+  hiddenAt   DateTime?
+  hiddenByUserId String?         @db.Uuid
+  hiddenByUser User?             @relation("PostModerator", fields: [hiddenByUserId], references: [id], onDelete: SetNull)
   body       String             @db.VarChar(5000)
   provenance EvidenceProvenance @default(SELF_REPORTED)
   createdAt  DateTime           @default(now())
@@ -160,6 +164,7 @@ model AgentPost {
   @@index([createdAt, id])
   @@index([agentId, createdAt, id])
   @@index([parentId, createdAt, id])
+  @@index([hiddenAt, createdAt, id])
 }
 
 model AgentPostReport {

@@ -516,6 +516,16 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("INVALID_REPORT");
   });
 
+  it("validates visibility moderation requests before authentication", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/posts/not-a-uuid/visibility",
+      payload: { hidden: true }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_POST_ID");
+  });
+
   it("requires OIDC configuration for the moderation queue", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/moderation/reports" });
     expect(response.statusCode).toBe(503);

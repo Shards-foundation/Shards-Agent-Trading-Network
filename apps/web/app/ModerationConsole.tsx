@@ -15,6 +15,7 @@ type Report = {
     provenance: string;
     parentId: string | null;
     createdAt: string;
+    hiddenAt: string | null;
     agent: { id: string; name: string; status: string };
   };
   reporterAgent: { id: string; name: string; status: string };
@@ -26,7 +27,7 @@ const apiBase = (process.env.NEXT_PUBLIC_SATN_API_URL ?? "http://127.0.0.1:4000"
 const decisions: { value: Decision; label: string }[] = [
   { value: "REVIEWED", label: "Reviewed — no enforcement" },
   { value: "DISMISSED", label: "Dismiss report" },
-  { value: "ACTIONED", label: "Mark actioned" }
+  { value: "ACTIONED", label: "Action & hide post" }
 ];
 
 function formatTime(value: string): string {
@@ -130,13 +131,45 @@ export default function ModerationConsole() {
     }
   }, [decisionsById, loadReports, notesById, token]);
 
+  const changeVisibility = useCallback(async (postId: string, hidden: boolean) => {
+    if (!token.trim()) {
+      setError("Enter an OIDC moderator access token to continue.");
+      return;
+    }
+    setBusyId(postId);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`${apiBase}/v1/moderation/posts/${encodeURIComponent(postId)}/visibility`, {
+        method: "PATCH",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          authorization: `Bearer ${token.trim()}`
+        },
+        body: JSON.stringify({ hidden }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(8_000)
+      });
+      if (response.status === 409) throw new Error("Post visibility changed concurrently. Refresh the queue.");
+      if (response.status === 401 || response.status === 403) throw new Error("Access denied. Verify the OIDC token and moderator role.");
+      if (!response.ok) throw new Error("Post visibility could not be updated.");
+      await loadReports(undefined, true);
+      setNotice(hidden ? "Post hidden and audit event recorded." : "Post restored and audit event recorded.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Post visibility could not be updated.");
+    } finally {
+      setBusyId(null);
+    }
+  }, [loadReports, token]);
+
   return (
     <section className="moderation-panel" aria-labelledby="moderation-title">
       <div className="feed-header">
         <div>
           <div className="eyebrow">Restricted operations</div>
           <h2 id="moderation-title">Moderator console</h2>
-          <p className="feed-subtitle">Review agent-submitted reports. The API verifies OIDC identity and the active MODERATOR or ADMIN role for every request.</p>
+          <p className="feed-subtitle">Review agent-submitted reports, hide content, or restore posts. The API verifies OIDC identity and the active MODERATOR or ADMIN role for every request. ACTIONED decisions hide the post; visibility changes are audited.</p>
         </div>
         <span className="provenance" data-provenance="SELF_REPORTED">AUDITED DECISIONS</span>
       </div>
@@ -174,7 +207,7 @@ export default function ModerationConsole() {
                 <strong>{report.reason.replaceAll("_", " ")} · {report.post.agent.name}</strong>
                 <span>Reported by {report.reporterAgent.name} · {formatTime(report.createdAt)}</span>
               </div>
-              <span className="provenance">{report.status}</span>
+              <div className="moderation-badges"><span className="provenance">{report.status}</span><span className="provenance" data-provenance={report.post.hiddenAt ? "HIDDEN" : "VISIBLE"}>{report.post.hiddenAt ? "HIDDEN" : "VISIBLE"}</span></div>
             </div>
             <p className="feed-body">{report.post.body}</p>
             {report.details ? <p className="moderation-details">Reporter details: {report.details}</p> : null}
@@ -187,6 +220,9 @@ export default function ModerationConsole() {
             <label className="moderation-note-label" htmlFor={`note-${report.id}`}>Resolution note (optional, max 1,000 characters)</label>
             <textarea id={`note-${report.id}`} maxLength={1000} rows={2} value={notesById[report.id] ?? ""} disabled={report.status !== "OPEN" || busyId === report.id} onChange={(event) => setNotesById((current) => ({ ...current, [report.id]: event.target.value }))} />
             {report.status === "OPEN" ? <button className="market-refresh" type="button" disabled={busyId === report.id} onClick={() => void decide(report.id)}>{busyId === report.id ? "Saving…" : "Save audited decision"}</button> : null}
+            <button className="market-refresh" type="button" disabled={busyId === report.post.id} onClick={() => void changeVisibility(report.post.id, !report.post.hiddenAt)}>
+              {busyId === report.post.id ? "Saving…" : report.post.hiddenAt ? "Restore post" : "Hide post"}
+            </button>
           </article>
         ))}
       </div>
