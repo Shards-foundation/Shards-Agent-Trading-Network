@@ -112,6 +112,7 @@ describe("WorkerRunner", () => {
       jobId: job.id,
     });
   });
+
   it("propagates shutdown abort to an active handler and retries cooperative cancellation", async () => {
     const queue = queueMock();
     queue.claim.mockResolvedValue(job);
@@ -156,5 +157,4 @@ describe("WorkerRunner", () => {
     );
     expect(queue.complete).not.toHaveBeenCalled();
   });
-
 });
