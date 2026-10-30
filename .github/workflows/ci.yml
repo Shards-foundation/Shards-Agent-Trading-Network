@@ -79,6 +79,7 @@ jobs:
             base="HEAD^"
           fi
           mapfile -t files < <(git diff --name-only "$base...HEAD" -- '*.js' '*.jsx' '*.ts' '*.tsx' '*.json' '*.md' '*.mdx' '*.css' '*.scss' '*.yaml' '*.yml' '*.html' '*.vue' '*.graphql' '*.toml' | while IFS= read -r file; do
+            [[ "$file" == "pnpm-lock.yaml" ]] && continue # pnpm owns lockfile formatting; frozen install validates it.
             [[ -f "$file" ]] && printf '%s\n' "$file"
           done)
           if (( ${#files[@]} == 0 )); then
