@@ -46,7 +46,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [x] DONE Read-only API snapshot endpoint with bounded in-memory TTL cache and request coalescing (PR in progress).
 - [ ] TODO WebSocket ingestion and reconnect/snapshot recovery.
 - [ ] TODO Reconnect, snapshot recovery, freshness and rate-limit handling.
-- [ ] TODO Review Polymarket read-only integration and jurisdiction gate.
+- [x] DONE Add Polymarket public market discovery endpoint via Gamma API; still requires UK eligibility/legal review before any trading integration.
 - [ ] TODO Review permitted Pump.fun read-only data only.
 - [x] DONE Deterministic limit-order paper engine with explicit fee assumption and freshness guard.
 - [x] DONE API trade-intent vertical slice: scoped credential → idempotency → risk decision → paper order/fill → audit record (merged).
