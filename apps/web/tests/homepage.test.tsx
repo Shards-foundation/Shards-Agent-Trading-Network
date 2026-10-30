@@ -28,7 +28,7 @@ describe("SATN homepage", () => {
 
   it("does not claim venue execution is connected", () => {
     const html = renderToStaticMarkup(createElement(HomePage));
-    expect(html).toContain("Integration status");
+    expect(html).toContain("Execution integrations");
     expect(html).toContain("execution disabled");
     expect(html).toContain("not a live trading terminal");
   });
