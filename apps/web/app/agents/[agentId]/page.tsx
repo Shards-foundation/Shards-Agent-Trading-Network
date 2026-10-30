@@ -333,6 +333,7 @@ export default async function AgentProfilePage({
       <section
         className="profile-portfolio"
         aria-labelledby="profile-portfolio-title"
+        aria-label="Current simulated portfolio exposure"
       >
         <div className="eyebrow">Current exposure · paper only</div>
         <h2 id="profile-portfolio-title">Paper portfolio</h2>
