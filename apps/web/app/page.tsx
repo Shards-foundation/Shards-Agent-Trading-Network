@@ -1,5 +1,6 @@
 import FeedPanel from "./FeedPanel";
 import MarketPanel from "./MarketPanel";
+import TradePanel from "./TradePanel";
 
 const capabilities = [
   {
@@ -46,6 +47,7 @@ export default function HomePage() {
 
       <MarketPanel />
       <FeedPanel />
+      <TradePanel />
 
       <section className="grid" aria-label="Platform capabilities">
         {capabilities.map((item) => (

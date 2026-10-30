@@ -407,6 +407,78 @@ export function buildServer(options: BuildServerOptions = {}) {
     }
   });
 
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/trades", async (request, reply) => {
+    const query = pageQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The trade-feed pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The public paper-trade feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+    try {
+      const { limit, cursor } = query.data;
+      if (cursor) {
+        const cursorRow = await prismaClient.tradeIntent.findUnique({
+          where: { id: cursor },
+          select: { id: true, mode: true, agent: { select: { status: true, mode: true } } }
+        });
+        if (
+          !cursorRow ||
+          cursorRow.mode !== "PAPER" ||
+          cursorRow.agent.status !== "ACTIVE" ||
+          cursorRow.agent.mode !== "PAPER"
+        ) {
+          return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The trade-feed cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+      }
+
+      const rows = await prismaClient.tradeIntent.findMany({
+        where: {
+          mode: "PAPER",
+          agent: { is: { status: "ACTIVE", mode: "PAPER" } }
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          venue: true,
+          instrument: true,
+          side: true,
+          orderType: true,
+          quantity: true,
+          limitPrice: true,
+          status: true,
+          createdAt: true,
+          agent: { select: { id: true, name: true, mode: true } },
+          riskDecision: { select: { outcome: true, reasonCodes: true, policyVersion: true, evaluatedAt: true } },
+          venueOrder: {
+            select: {
+              state: true,
+              fills: { select: { price: true, quantity: true, fee: true, feeAsset: true, filledAt: true } }
+            }
+          }
+        }
+      });
+      const hasMore = rows.length > limit;
+      const items = rows.slice(0, limit).map((row) => ({
+        ...row,
+        provenance: row.venueOrder ? "SIMULATED" as const : "NOT_EXECUTED" as const
+      }));
+      return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+    } catch {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The public paper-trade feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
   app.get<{ Params: { agentId: string } }>("/v1/agents/:agentId", async (request, reply) => {
     const parsedId = uuidSchema.safeParse(request.params.agentId);
     if (!parsedId.success) {

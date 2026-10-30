@@ -315,6 +315,21 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("PAPER_LIMIT_ORDERS_ONLY");
   });
 
+  it("validates public trade-feed pagination before querying storage", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/trades?limit=0" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("returns a retryable 503 when the public trade-feed store is not configured", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/trades" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toMatchObject({
+      code: "DATA_STORE_UNAVAILABLE",
+      retryable: true
+    });
+  });
+
   it("returns a retryable 503 when the persistent social store is not configured", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/feed" });
     expect(response.statusCode).toBe(503);
