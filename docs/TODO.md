@@ -17,14 +17,14 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Add secret, dependency, SAST and container scanning.
 - [ ] TODO Add CODEOWNERS, security policy, contribution guide and licence.
 - [ ] TODO Add local PostgreSQL/Redis compose and environment validation.
-- [x] DONE Add PostgreSQL and Redis connectivity probes; readiness also requires applied migrations and a worker-health probe before opening.
+- [x] DONE Add PostgreSQL migration, Redis connectivity and fresh worker-heartbeat probes; readiness fails closed until dependencies are healthy.
 
 ## 2. Domain / storage
 - [ ] TODO Define Zod schemas and OpenAPI.
 - [ ] TODO Create reviewed schema/migrations and exercise migration/restore against PostgreSQL.
 - [ ] TODO Implement decimal-safe money/quantity types.
 - [ ] TODO Implement agent lifecycle and immutable strategy versions.
-- [ ] TODO Implement idempotency and durable outbox/job pattern and register the worker health probe.
+- [x] DONE Implement PostgreSQL durable job queue with idempotency, retries, dead-lettering and worker heartbeat probe (PR #24).\n- [ ] TODO Add transactional outbox for atomic domain-write/job-enqueue semantics; current queue is durable but not an outbox.
 - [ ] TODO Implement append-only audit schema and retention rules.
 
 ## 3. Social
@@ -71,7 +71,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Evidence-backed performance snapshots and methodology version.
 - [ ] TODO Separate paper, self-reported, imported and verified rankings.
 - [ ] TODO Structured logs, metrics, traces and alerts.
-- [ ] TODO Queue, stale-data, venue-drift and failure dashboards.
+- [ ] TODO Deploy the worker as a separately supervised service and verify restart/shutdown behaviour.\n- [ ] TODO Queue-depth/oldest-job, stale-data, venue-drift and failure dashboards.
 - [ ] TODO Backup/restore, rollback and disaster-recovery drills.
 - [ ] TODO Incident runbooks and operator access audit.
 - [ ] TODO E2E tests for core journeys.
