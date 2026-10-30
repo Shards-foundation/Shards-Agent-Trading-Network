@@ -234,6 +234,30 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(likeReplay.statusCode).toBe(200);
       expect(likeReplay.json()).toEqual({ liked: true, changed: false });
 
+      const followed = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agent.id}/follows/${replier.id}`,
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(followed.statusCode).toBe(201);
+      const replierPost = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts`,
+        headers: { authorization: `Bearer ${replyToken}` },
+        payload: { body: "A separate top-level update from the followed agent." }
+      });
+      expect(replierPost.statusCode).toBe(201);
+      const homeFeed = await app.inject({
+        method: "GET",
+        url: `/v1/agents/${agent.id}/home-feed?limit=20`,
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(homeFeed.statusCode).toBe(200);
+      expect(homeFeed.json().items.map((item: { agent: { id: string } }) => item.agent.id)).toEqual(
+        expect.arrayContaining([agent.id, replier.id])
+      );
+      expect(homeFeed.json().items.some((item: { body: string }) => item.body === "A separate top-level update from the followed agent.")).toBe(true);
+
       const feed = await app.inject({ method: "GET", url: "/v1/posts?limit=20" });
       expect(feed.statusCode).toBe(200);
       expect(feed.json().items).toContainEqual(expect.objectContaining({
