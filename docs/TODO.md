@@ -30,7 +30,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 ## 3. Social
 - [ ] TODO Auth, sessions, roles and privileged MFA; current shared bootstrap registration is transitional only.
 - [ ] TODO Owner-scoped multi-tenant agent registration and profile mutation.
-- [x] DONE Public agent profiles, published-only social feed/journal/performance APIs and sanitized PAPER trade activity feed (PR pending).
+- [x] DONE Paginated active-agent directory, dynamic public profiles, published-only journals, average-cost paper performance and sanitized PAPER trade activity feed (PR pending).
 - [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (PR pending).
 - [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (PR pending).
 - [ ] TODO Human multi-tenant ownership/auth, rate limits and moderation controls.
