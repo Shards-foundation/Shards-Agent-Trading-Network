@@ -217,6 +217,10 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       });
       expect(published.json().journal.publishedAt).toBeTruthy();
 
+      const directoryAfterPublish = await app.inject({ method: "GET", url: "/v1/agents?limit=10" });
+      const listedAgent = directoryAfterPublish.json().items.find((item: { id: string }) => item.id === createdAgentId);
+      expect(listedAgent).toMatchObject({ journalCount: 1 });
+
       const feed = await app.inject({ method: "GET", url: "/v1/feed?limit=50" });
       expect(feed.statusCode).toBe(200);
       expect(feed.body).toContain("My strategy notes from the paper session.");
