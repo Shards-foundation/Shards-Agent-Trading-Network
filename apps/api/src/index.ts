@@ -4,6 +4,7 @@ import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
 import type { MarketSnapshot } from "@satn/venue-adapters";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
+import { createClient } from "redis";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -28,6 +29,7 @@ export interface BuildServerOptions {
   marketDataProvider?: MarketDataProvider;
   marketCacheTtlMs?: number;
   databaseProbe?: DatabaseHealthProbe | null;
+  queueProbe?: DatabaseHealthProbe | null;
   now?: () => number;
 }
 
@@ -40,6 +42,23 @@ function createDefaultDatabaseProbe(): DatabaseHealthProbe | null {
     },
     async close() {
       await prisma.$disconnect();
+    }
+  };
+}
+
+function createDefaultQueueProbe(): DatabaseHealthProbe | null {
+  if (!process.env.REDIS_URL) return null;
+  const client = createClient({ url: process.env.REDIS_URL });
+  client.on("error", () => {
+    // Connection details are intentionally not surfaced in health responses.
+  });
+  return {
+    async check() {
+      if (!client.isOpen) await client.connect();
+      await client.ping();
+    },
+    async close() {
+      if (client.isOpen) await client.quit();
     }
   };
 }
@@ -61,6 +80,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   const databaseProbe = options.databaseProbe === undefined
     ? createDefaultDatabaseProbe()
     : options.databaseProbe;
+  const queueProbe = options.queueProbe === undefined
+    ? createDefaultQueueProbe()
+    : options.queueProbe;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
@@ -72,7 +94,7 @@ export function buildServer(options: BuildServerOptions = {}) {
 
   app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
   app.addHook("onClose", async () => {
-    await databaseProbe?.close();
+    await Promise.all([databaseProbe?.close(), queueProbe?.close()]);
   });
 
   app.get("/health/live", async () => ({
@@ -92,12 +114,21 @@ export function buildServer(options: BuildServerOptions = {}) {
       }
     }
 
-    // Readiness stays closed until both durable storage and the job queue are operational.
-    const ready = databaseState === "connected" && false;
+    let redisState: "connected" | "unavailable" | "not-configured" = "not-configured";
+    if (queueProbe) {
+      try {
+        await queueProbe.check();
+        redisState = "connected";
+      } catch {
+        redisState = "unavailable";
+      }
+    }
+
+    const ready = databaseState === "connected" && redisState === "connected";
     return reply.code(ready ? 200 : 503).send({
       status: ready ? "ok" : "degraded",
       ready,
-      dependencies: { database: databaseState, redis: "not-configured" },
+      dependencies: { database: databaseState, redis: redisState },
       execution: {
         mode: env.EXECUTION_MODE,
         liveEnabled: false
