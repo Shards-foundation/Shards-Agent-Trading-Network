@@ -18,7 +18,9 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
   EXECUTION_MODE: z.enum(["PAPER", "READ_ONLY", "LIVE_RESTRICTED", "HALTED"]).default("PAPER"),
-  LIVE_EXECUTION_ENABLED: z.string().default("false")
+  LIVE_EXECUTION_ENABLED: z.literal("false").default("false"),
+  PAPER_MAX_ORDER_NOTIONAL: z.string().regex(/^(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/).default("1000"),
+  PAPER_MAX_DAILY_LOSS: z.string().regex(/^(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/).default("100")
 });
 const env = envSchema.parse(process.env);
 
@@ -149,15 +151,23 @@ const journalCreateSchema = z.object({
   publish: z.boolean().default(true)
 }).strict();
 const idempotencyKeySchema = z.string().min(1).max(200).regex(/^[\x21-\x7E]+$/);
-const paperTradePolicy = {
-  allowedVenues: ["hyperliquid"],
-  maxOrderNotional: "1000",
-  liveExecutionEnabled: false,
-  halted: false,
-  maxMarketDataAgeMs: 5_000,
-  maxDailyLoss: "100",
-  dailyLoss: "0"
-} as const;
+export function resolvePaperTradePolicy(
+  executionMode: "PAPER" | "READ_ONLY" | "LIVE_RESTRICTED" | "HALTED",
+  maxOrderNotional: string,
+  maxDailyLoss: string
+) {
+  return {
+    allowedVenues: ["hyperliquid"],
+    maxOrderNotional,
+    liveExecutionEnabled: false,
+    // This API endpoint is paper-only. Any non-PAPER global mode blocks new intents.
+    halted: executionMode !== "PAPER",
+    maxMarketDataAgeMs: 5_000,
+    maxDailyLoss,
+    dailyLoss: "0"
+  } as const;
+}
+const paperTradePolicy = resolvePaperTradePolicy(env.EXECUTION_MODE, env.PAPER_MAX_ORDER_NOTIONAL, env.PAPER_MAX_DAILY_LOSS);
 const DEFAULT_CACHE_TTL_MS = 1_000;
 const MAX_CACHE_ENTRIES = 500;
 
@@ -1071,8 +1081,8 @@ export function buildServer(options: BuildServerOptions = {}) {
           ? observedAgeMs
           : paperTradePolicy.maxMarketDataAgeMs + 1
       };
-      // Preliminary evaluation is repeated under a per-agent PostgreSQL
-      // advisory lock inside the write transaction before any order is stored.
+      // Preliminary evaluation is repeated under an owning-agent row lock
+      // inside the write transaction before any order is stored.
       let policy = { ...policyBase, dailyLoss: "0" };
       let decision = evaluateTradeIntent(intentData, policy, "paper-default-v1");
       let simulatedAt = now();
