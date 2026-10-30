@@ -510,6 +510,74 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+  it("returns decimal-safe paper portfolio exposure and mark-to-market P&L", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-portfolio-${randomUUID()}` } });
+    const agent = await prisma.agent.create({ data: { ownerId: owner.id, name: "Portfolio agent" } });
+    const intent = await prisma.tradeIntent.create({
+      data: {
+        agentId: agent.id, venue: "hyperliquid", instrument: "BTC", side: "BUY", orderType: "LIMIT",
+        quantity: "2", limitPrice: "100", mode: "PAPER", idempotencyKey: `portfolio-${randomUUID()}`,
+        payloadHash: "b".repeat(64), status: "FILLED"
+      }
+    });
+    const order = await prisma.venueOrder.create({
+      data: {
+        intentId: intent.id, venue: "hyperliquid", clientOrderId: `portfolio-client-${randomUUID()}`,
+        venueOrderId: `portfolio-order-${randomUUID()}`, state: "FILLED", submittedAt: new Date()
+      }
+    });
+    await prisma.fill.create({
+      data: {
+        venueOrderId: order.id, fillRef: `portfolio-fill-${randomUUID()}`,
+        price: "100", quantity: "2", fee: "0.2", feeAsset: "USD", filledAt: new Date()
+      }
+    });
+    const snapshot: MarketSnapshot = {
+      venue: "hyperliquid", instrumentId: "BTC",
+      observedAt: new Date(Date.now() - 100).toISOString(),
+      receivedAt: new Date().toISOString(),
+      source: "https://api.hyperliquid.xyz/info",
+      sequence: `portfolio-${randomUUID()}`,
+      bid: "109", ask: "111", dataQuality: "LIVE"
+    };
+    const app = buildServer({
+      prismaClient: prisma,
+      marketDataProvider: { getMarketSnapshot: async () => snapshot },
+      rateLimitStore: { consume: async () => 1, close: async () => undefined },
+      databaseProbe: null, queueProbe: null, workerProbe: null
+    });
+    try {
+      const response = await app.inject({ method: "GET", url: `/v1/agents/${agent.id}/portfolio` });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        agentId: agent.id,
+        accountingScope: "PAPER_ONLY",
+        portfolio: {
+          methodologyVersion: "paper-average-cost-mtm-v1",
+          hasCompleteMarks: true,
+          realizedGrossPnlUsd: "0",
+          unrealizedGrossPnlUsd: "20",
+          feesPaidUsd: "0.2",
+          netPnlLessAllUsdFees: "19.8",
+          totalGrossExposureUsd: "220",
+          positions: [{
+            instrument: "BTC", positionQuantity: "2", averageEntryPrice: "100",
+            markPrice: "110", grossExposureUsd: "220", unrealizedGrossPnlUsd: "20",
+            markStatus: "CURRENT"
+          }]
+        }
+      });
+      expect(response.body).not.toContain(owner.id);
+    } finally {
+      await app.close();
+      await prisma.fill.deleteMany({ where: { venueOrderId: order.id } });
+      await prisma.venueOrder.delete({ where: { id: order.id } });
+      await prisma.tradeIntent.delete({ where: { id: intent.id } });
+      await prisma.agent.delete({ where: { id: agent.id } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
   it("registers OIDC-owned agents and enforces owner isolation on lifecycle controls", async () => {
     const previous = {
       issuer: process.env.OIDC_ISSUER,
