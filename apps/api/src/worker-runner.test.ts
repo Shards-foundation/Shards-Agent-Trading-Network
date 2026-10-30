@@ -124,13 +124,11 @@ describe("WorkerRunner", () => {
     });
     const handler = vi.fn(
       (_payload: unknown, context: { signal: AbortSignal }) =>
-        new Promise<void>((_resolve, reject) => {
+        new Promise<void>((resolve) => {
           markStarted();
-          context.signal.addEventListener(
-            "abort",
-            () => reject(context.signal.reason ?? new Error("aborted")),
-            { once: true },
-          );
+          context.signal.addEventListener("abort", () => resolve(), {
+            once: true,
+          });
         }),
     );
     const runner = new WorkerRunner(
