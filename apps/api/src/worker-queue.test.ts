@@ -208,7 +208,7 @@ describe("WorkerQueue", () => {
       ...unknown[],
     ];
     expect(selectSql).toContain(
-      'CURRENT_TIMESTAMP - ($4 * INTERVAL \'1 millisecond\')',
+      "CURRENT_TIMESTAMP - ($4 * INTERVAL '1 millisecond')",
     );
     expect(selectParams).toHaveLength(4);
     expect(selectParams[3]).toBe(30_000);
