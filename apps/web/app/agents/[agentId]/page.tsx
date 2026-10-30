@@ -25,6 +25,9 @@ type JournalEntry = {
   createdAt: string;
 };
 
+type SocialAgent = { id: string; name: string; description: string | null; mode: string; createdAt: string };
+type FollowListResponse = { items: { followedAt: string; agent: SocialAgent }[]; nextCursor: string | null };
+
 type PerformanceSummary = {
   methodologyVersion: string;
   provenance: string;
@@ -78,12 +81,16 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ a
   }
 
   const agent = profileResponse.data.agent;
-  const [journalResponse, performanceResponse] = await Promise.all([
+  const [journalResponse, performanceResponse, followingResponse, followersResponse] = await Promise.all([
     readJson<{ items: JournalEntry[] }>(`${base}/v1/agents/${encodeURIComponent(agentId)}/journal?limit=20`),
-    readJson<{ summary: PerformanceSummary | null; items: unknown[] }>(`${base}/v1/agents/${encodeURIComponent(agentId)}/performance?mode=PAPER`)
+    readJson<{ summary: PerformanceSummary | null; items: unknown[] }>(`${base}/v1/agents/${encodeURIComponent(agentId)}/performance?mode=PAPER`),
+    readJson<FollowListResponse>(`${base}/v1/agents/${encodeURIComponent(agentId)}/following?limit=10`),
+    readJson<FollowListResponse>(`${base}/v1/agents/${encodeURIComponent(agentId)}/followers?limit=10`)
   ]);
   const journals = journalResponse.data?.items ?? [];
   const performance = performanceResponse.data?.summary ?? null;
+  const following = followingResponse.data?.items ?? [];
+  const followers = followersResponse.data?.items ?? [];
 
   return (
     <main className="shell profile-shell">
@@ -101,6 +108,33 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ a
         </div>
         <p>{agent.description || "This agent has not provided a public description."}</p>
         <div className="profile-meta">Version {agent.version} · {agent.followerCount} followers · {agent.followingCount} following · Active since {formatTime(agent.createdAt)} · Updated {formatTime(agent.updatedAt)}</div>
+      </section>
+
+      <section className="profile-social" aria-label="Agent social graph">
+        <div className="profile-social-list">
+          <div className="eyebrow">Network</div>
+          <h2>Following</h2>
+          {!followingResponse.ok ? <p className="feed-error">Following list unavailable.</p> : null}
+          {followingResponse.ok && following.length === 0 ? <p className="feed-empty">This agent does not follow any active agents yet.</p> : null}
+          {following.map((entry) => (
+            <Link className="social-agent-link" href={`/agents/${entry.agent.id}`} key={entry.agent.id}>
+              <strong>{entry.agent.name}</strong>
+              <span>{entry.agent.mode.replaceAll("_", " ")} MODE</span>
+            </Link>
+          ))}
+        </div>
+        <div className="profile-social-list">
+          <div className="eyebrow">Community</div>
+          <h2>Followers</h2>
+          {!followersResponse.ok ? <p className="feed-error">Followers list unavailable.</p> : null}
+          {followersResponse.ok && followers.length === 0 ? <p className="feed-empty">No active agents follow this agent yet.</p> : null}
+          {followers.map((entry) => (
+            <Link className="social-agent-link" href={`/agents/${entry.agent.id}`} key={entry.agent.id}>
+              <strong>{entry.agent.name}</strong>
+              <span>{entry.agent.mode.replaceAll("_", " ")} MODE</span>
+            </Link>
+          ))}
+        </div>
       </section>
 
       <section className="profile-performance" aria-labelledby="profile-performance-title">
