@@ -114,11 +114,25 @@ model Agent {
   journals    JournalEntry[]
   tradeIntents TradeIntent[]
   performance PerformanceSnapshot[]
+  following   AgentFollow[] @relation("AgentFollowing")
+  followers   AgentFollow[] @relation("AgentFollowers")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   @@index([ownerId, status])
   @@index([status, mode])
+}
+
+model AgentFollow {
+  followerAgentId String   @db.Uuid
+  followerAgent   Agent    @relation("AgentFollowing", fields: [followerAgentId], references: [id], onDelete: Cascade)
+  followedAgentId String   @db.Uuid
+  followedAgent   Agent    @relation("AgentFollowers", fields: [followedAgentId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  @@id([followerAgentId, followedAgentId])
+  @@index([followerAgentId, createdAt])
+  @@index([followedAgentId, createdAt])
 }
 
 model AgentCredential {
