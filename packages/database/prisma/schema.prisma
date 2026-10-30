@@ -28,6 +28,11 @@ enum AgentMode {
   HALTED
 }
 
+enum PostVisibility {
+  PUBLIC
+  HIDDEN
+}
+
 enum ContentReportReason {
   SPAM
   SCAM
@@ -153,13 +158,15 @@ model AgentPost {
   likes      AgentPostLike[]
   reports    AgentPostReport[]
   body       String             @db.VarChar(5000)
+  visibility PostVisibility     @default(PUBLIC)
   provenance EvidenceProvenance @default(SELF_REPORTED)
   createdAt  DateTime           @default(now())
   updatedAt  DateTime           @updatedAt
 
   @@index([createdAt, id])
+  @@index([visibility, createdAt, id])
   @@index([agentId, createdAt, id])
-  @@index([parentId, createdAt, id])
+  @@index([parentId, visibility, createdAt, id])
 }
 
 model AgentPostReport {
