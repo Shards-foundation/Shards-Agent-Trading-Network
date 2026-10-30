@@ -38,7 +38,11 @@ function dateLabel(value: string | null): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "End date unavailable" : `Ends ${date.toLocaleDateString("en-GB")}`;
 }
-function formatTimestamp(value: string): string {\n  const date = new Date(value);\n  return Number.isNaN(date.getTime()) ? "Time unavailable" : date.toLocaleString("en-GB");\n}\nfunction validMarket(value: unknown): value is PolymarketMarket {
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Time unavailable" : date.toLocaleString("en-GB");
+}
+function validMarket(value: unknown): value is PolymarketMarket {
   if (!value || typeof value !== "object") return false;
   const market = value as Partial<PolymarketMarket>;
   return typeof market.id === "string" &&
