@@ -138,6 +138,36 @@ describe("WorkerQueue", () => {
     expect(message).toBe("too-l");
   });
 
+  it("returns bounded operational queue metrics and validates aggregate values", async () => {
+    const db = fakeDb();
+    fakeDbRef = db;
+    db.query.mockResolvedValue([{
+      queued: 2, retryWait: "3", running: 1, succeeded: 9,
+      deadLetter: 1, cancelled: 0, oldestPendingAgeMs: "1250.5", expiredLeases: 1,
+    }]);
+    const queue = new WorkerQueue(db, { leaseMs: 30_000 });
+    const stats = await queue.stats("default");
+    expect(stats).toMatchObject({
+      queue: "default", queued: 2, retryWait: 3, running: 1, succeeded: 9,
+      deadLetter: 1, cancelled: 0, queueDepth: 5, oldestPendingAgeMs: 1250.5, expiredLeases: 1,
+    });
+    expect(stats.sampledAt).toMatch(/^\\d{4}-\\d{2}-\\d{2}T/);
+    const [sql, ...params] = db.query.mock.calls[0]![0] as [string, ...unknown[]];
+    expect(sql).toContain('COUNT(*) FILTER (WHERE "status" = \'DEAD_LETTER\')');
+    expect(sql).toContain('"oldestPendingAgeMs"');
+    expect(params).toEqual(["default", 30_000]);
+  });
+
+  it("rejects malformed queue metrics rather than logging misleading values", async () => {
+    const db = fakeDb();
+    fakeDbRef = db;
+    db.query.mockResolvedValue([{
+      queued: -1, retryWait: 0, running: 0, succeeded: 0,
+      deadLetter: 0, cancelled: 0, oldestPendingAgeMs: null, expiredLeases: 0,
+    }]);
+    await expect(new WorkerQueue(db).stats("default")).rejects.toThrow("invalid numeric values");
+  });
+
   it("dead-letters exhausted jobs and allows cancellation only before claim", async () => {
     const db = fakeDb();
     fakeDbRef = db;
