@@ -29,6 +29,31 @@ Delivery is **at least once**, not exactly once. Handlers must be idempotent. Th
 
 Enqueue idempotency is scoped to `(queue, idempotencyKey)`. Reusing a key with a different job kind or payload returns no row and fails closed. Payloads must be validated by the registered handler before side effects.
 
+### Atomic domain write + enqueue
+
+The queue can participate in a Prisma interactive transaction because it accepts the transaction client's raw-query interface. Use the transaction-scoped client for both the domain mutation and the enqueue; do not instantiate a queue against the global Prisma client inside the transaction.
+
+```ts
+await prisma.$transaction(async (tx) => {
+  // 1. Persist the domain transition with tx.
+  await tx.agent.update({
+    where: { id: agentId },
+    data: { status: "PAUSED" }
+  });
+
+  // 2. Persist its follow-up job on the same transaction.
+  const queue = new WorkerQueue(tx);
+  await queue.enqueue({
+    queue: "default",
+    kind: "agent.paused",
+    payload: { agentId },
+    idempotencyKey: `agent.paused:${agentId}:${transitionId}`
+  });
+});
+```
+
+If either write throws, PostgreSQL rolls back both. The integration suite verifies that aborting the surrounding transaction leaves no queued job. This provides atomic transaction-bound enqueue; it is not a separate outbox table or CDC publisher.
+
 ## Safety invariants
 
 - A job is not acknowledged before its durable state transition commits.
@@ -43,5 +68,4 @@ Enqueue idempotency is scoped to `(queue, idempotencyKey)`. Reusing a key with a
 1. Deploy the worker as a separately supervised service and configure restart policy, resource limits and log shipping.
 2. Add queue-depth/oldest-job metrics and alerts; a fresh heartbeat alone does not prove useful jobs are completing.
 3. Add deployment-level restart, stale-heartbeat and lease-expiry/reclaim tests.
-4. Add a transactional outbox or document and test transaction-bound enqueue for domain writes that must atomically schedule work.
 5. Keep live trading disabled until the isolated execution/risk/permit path has passed end-to-end review.
