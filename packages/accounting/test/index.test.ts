@@ -107,6 +107,66 @@ describe("paper average-cost accounting", () => {
     expect(result).toEqual({ dailyNetPnl: "-1", dailyLoss: "1" });
   });
 
+
+  it("marks long positions to market with exact fixed-point arithmetic", async () => {
+    const { calculatePaperPortfolio } = await import("../src/index.js");
+    const result = calculatePaperPortfolio([
+      fill({ quantity: "2", price: "100", fee: "0.2" }),
+      fill({ side: "SELL", quantity: "1", price: "110", fee: "0.1", filledAt: "2026-10-30T12:01:00.000Z" })
+    ], { BTC: { bid: "119", ask: "121" } });
+    expect(result).toMatchObject({
+      methodologyVersion: "paper-average-cost-mtm-v1",
+      hasCompleteMarks: true,
+      openPositionCount: 1,
+      pricedPositionCount: 1,
+      unpricedPositionCount: 0,
+      realizedGrossPnlUsd: "10",
+      unrealizedGrossPnlUsd: "20",
+      feesPaidUsd: "0.3",
+      netPnlLessAllUsdFees: "29.7",
+      totalGrossExposureUsd: "120"
+    });
+    expect(result.positions[0]).toMatchObject({
+      instrument: "BTC",
+      positionQuantity: "1",
+      averageEntryPrice: "100",
+      markPrice: "120",
+      grossExposureUsd: "120",
+      unrealizedGrossPnlUsd: "20"
+    });
+    expect(result.qualityFlags).not.toContain("UNREALISED_PNL_EXCLUDED");
+  });
+
+  it("marks short positions and flags incomplete market data instead of inventing a value", async () => {
+    const { calculatePaperPortfolio } = await import("../src/index.js");
+    const result = calculatePaperPortfolio([
+      fill({ side: "SELL", quantity: "2", price: "100", fee: "0.2" }),
+      fill({ side: "BUY", quantity: "1", price: "90", fee: "0.1", filledAt: "2026-10-30T12:01:00.000Z" }),
+      fill({ instrument: "ETH", side: "BUY", quantity: "1", price: "2000", fee: "0.2", filledAt: "2026-10-30T12:02:00.000Z" })
+    ], { BTC: { bid: "89", ask: "91" } });
+    expect(result).toMatchObject({
+      hasCompleteMarks: false,
+      openPositionCount: 2,
+      pricedPositionCount: 1,
+      unpricedPositionCount: 1,
+      unrealizedGrossPnlUsd: "10",
+      totalGrossExposureUsd: "90"
+    });
+    expect(result.positions.find((position) => position.instrument === "ETH")).toMatchObject({
+      markPrice: null,
+      grossExposureUsd: null,
+      unrealizedGrossPnlUsd: null
+    });
+    expect(result.qualityFlags).toContain("UNPRICED_POSITIONS");
+    expect(result.qualityFlags).toContain("PARTIAL_MARK_TO_MARKET");
+  });
+
+  it("rejects crossed or non-positive portfolio marks", async () => {
+    const { calculatePaperPortfolio } = await import("../src/index.js");
+    expect(() => calculatePaperPortfolio([fill()], { BTC: { bid: "101", ask: "100" } })).toThrow();
+    expect(() => calculatePaperPortfolio([fill()], { BTC: { bid: "0", ask: "100" } })).toThrow();
+  });
+
   it("handles an empty ledger without inventing performance", () => {
     expect(calculatePaperPerformance([])).toMatchObject({
       hasData: false,
