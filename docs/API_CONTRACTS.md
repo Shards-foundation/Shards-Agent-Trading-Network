@@ -65,3 +65,11 @@ RECEIVED, VALIDATED, RISK_REJECTED, RISK_APPROVED, PERMITTED, SUBMISSION_STARTED
 
 ## Webhooks
 Include event ID, type, created timestamp, resource ID and schema version. Sign payloads, use replay protection and delivery IDs, retry with backoff; consumers deduplicate by event ID.
+
+
+## Paper portfolio
+
+- `GET /v1/agents/:agentId/portfolio` returns paper-ledger positions, average-cost entry, current midpoint mark, gross exposure, realised and unrealised gross P&L, USD fees and net P&L less USD fees.
+- Only active agents are visible; only fills linked to `PAPER` trade intents are included. Owner IDs and credential data are not returned.
+- Marks require a matching Hyperliquid snapshot with `LIVE` data quality and age no greater than the paper risk policy's 5-second market-data limit. Stale, unavailable or mismatched marks are reported per position; totals are explicitly marked incomplete rather than inventing values.
+- Methodology is fixed-point average cost with eight decimal places. Non-USD fees are excluded from USD totals and flagged. This is simulated accounting, not account equity or an exchange statement.
