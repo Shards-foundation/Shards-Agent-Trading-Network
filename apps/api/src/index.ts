@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
 import type { MarketSnapshot } from "@satn/venue-adapters";
 import { z } from "zod";
+import { PrismaClient } from "@prisma/client";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -18,10 +19,29 @@ export interface MarketDataProvider {
   getMarketSnapshot(instrumentId: string): Promise<MarketSnapshot>;
 }
 
+export interface DatabaseHealthProbe {
+  check(): Promise<void>;
+  close(): Promise<void>;
+}
+
 export interface BuildServerOptions {
   marketDataProvider?: MarketDataProvider;
   marketCacheTtlMs?: number;
+  databaseProbe?: DatabaseHealthProbe | null;
   now?: () => number;
+}
+
+function createDefaultDatabaseProbe(): DatabaseHealthProbe | null {
+  if (!process.env.DATABASE_URL) return null;
+  const prisma = new PrismaClient();
+  return {
+    async check() {
+      await prisma.$queryRaw`SELECT 1`;
+    },
+    async close() {
+      await prisma.$disconnect();
+    }
+  };
 }
 
 const instrumentSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9@._/-]+$/);
@@ -38,6 +58,9 @@ export function buildServer(options: BuildServerOptions = {}) {
     disableRequestLogging: false
   });
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
+  const databaseProbe = options.databaseProbe === undefined
+    ? createDefaultDatabaseProbe()
+    : options.databaseProbe;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
@@ -48,6 +71,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   }
 
   app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  app.addHook("onClose", async () => {
+    await databaseProbe?.close();
+  });
 
   app.get("/health/live", async () => ({
     status: "ok",
@@ -56,14 +82,25 @@ export function buildServer(options: BuildServerOptions = {}) {
   }));
 
   app.get("/health/ready", async (_request, reply) => {
-    // This service is not ready for traffic until durable dependencies are implemented.
-    return reply.code(503).send({
-      status: "degraded",
-      ready: false,
-      dependencies: { database: "not-configured", redis: "not-configured" },
+    let databaseState: "connected" | "unavailable" | "not-configured" = "not-configured";
+    if (databaseProbe) {
+      try {
+        await databaseProbe.check();
+        databaseState = "connected";
+      } catch {
+        databaseState = "unavailable";
+      }
+    }
+
+    // Readiness stays closed until both durable storage and the job queue are operational.
+    const ready = databaseState === "connected" && false;
+    return reply.code(ready ? 200 : 503).send({
+      status: ready ? "ok" : "degraded",
+      ready,
+      dependencies: { database: databaseState, redis: "not-configured" },
       execution: {
         mode: env.EXECUTION_MODE,
-        liveEnabled: env.LIVE_EXECUTION_ENABLED === "true" && env.EXECUTION_MODE === "LIVE_RESTRICTED"
+        liveEnabled: false
       }
     });
   });
