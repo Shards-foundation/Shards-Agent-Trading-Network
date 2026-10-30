@@ -99,3 +99,26 @@ h1 { font-size: clamp(38px, 6vw, 68px); line-height: 1.02; letter-spacing: -.055
 .directory-link:hover { text-decoration: underline; }
 @media (max-width: 900px) { .directory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .directory-panel { padding: 16px; } .directory-grid { grid-template-columns: 1fr; } }
+
+.profile-shell { padding-bottom: 60px; }
+.profile-brand { color: var(--text); text-decoration: none; }
+.profile-hero { border: 1px solid var(--panel-border); background: var(--panel); border-radius: 16px; padding: 26px; margin: 18px 0 22px; }
+.profile-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin: 10px 0; }
+.profile-title-row h1 { font-size: clamp(26px, 4vw, 40px); letter-spacing: -.04em; margin: 0; overflow-wrap: anywhere; }
+.profile-hero > p { color: var(--muted); font-size: 14px; line-height: 1.7; max-width: 780px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.profile-meta { color: var(--muted); font-size: 11px; line-height: 1.6; margin-top: 18px; }
+.profile-performance, .profile-journals { border: 1px solid var(--panel-border); background: var(--panel); border-radius: 16px; padding: 22px; margin: 0 0 22px; }
+.profile-performance h2, .profile-journals h2 { font-size: 22px; margin: 8px 0 18px; }
+.performance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.performance-grid > div { display: grid; gap: 8px; border: 1px solid var(--panel-border); border-radius: 10px; padding: 14px; min-width: 0; }
+.performance-grid span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.performance-grid strong { font-size: 17px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.performance-warning { color: var(--muted); font-size: 11px; line-height: 1.7; margin: 16px 0; }
+.position-list { display: grid; gap: 8px; }
+.position-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; border-top: 1px solid var(--panel-border); padding: 12px 0; font-size: 11px; color: var(--muted); }
+.position-row strong { color: var(--text); font-size: 12px; }
+.profile-error { border: 1px solid var(--panel-border); background: var(--panel); border-radius: 16px; padding: 24px; margin-top: 18px; }
+.profile-error h1 { font-size: 24px; }
+.profile-error p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+@media (max-width: 700px) { .profile-hero, .profile-performance, .profile-journals { padding: 16px; } .performance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .performance-grid { grid-template-columns: 1fr; } }
