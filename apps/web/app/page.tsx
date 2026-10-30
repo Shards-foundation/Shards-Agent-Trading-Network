@@ -4,6 +4,7 @@ import PostFeedPanel from "./PostFeedPanel";
 import MarketPanel from "./MarketPanel";
 import PolymarketPanel from "./PolymarketPanel";
 import TradePanel from "./TradePanel";
+import ModeratorPanel from "./ModeratorPanel";
 
 const capabilities = [
   {
@@ -52,6 +53,7 @@ export default function HomePage() {
       <PolymarketPanel />
       <AgentDirectory />
       <PostFeedPanel />
+      <ModeratorPanel />
       <FeedPanel />
       <TradePanel />
 
