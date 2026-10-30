@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
@@ -437,6 +438,100 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       }
       if (previousToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
       else process.env.AGENT_REGISTRATION_TOKEN = previousToken;
+    }
+  });
+
+  it("registers OIDC-owned agents and enforces owner isolation on lifecycle controls", async () => {
+    const previous = {
+      issuer: process.env.OIDC_ISSUER,
+      audience: process.env.OIDC_AUDIENCE,
+      jwksUrl: process.env.OIDC_JWKS_URL,
+      registrationToken: process.env.AGENT_REGISTRATION_TOKEN
+    };
+    const issuer = "https://satn-oidc-integration.example/";
+    const audience = "satn-api";
+    const subject = `oidc-user-${randomUUID()}`;
+    const authSubject = `${issuer}:${subject}`;
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const jwk = { ...publicKey.export({ format: "jwk" }), kid: "satn-oidc-ci-key", alg: "RS256", use: "sig" };
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ keys: [jwk] }));
+    });
+    let agentId: string | undefined;
+    let ownerId: string | undefined;
+
+    const createToken = (tokenSubject: string) => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const encodedHeader = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "satn-oidc-ci-key" })).toString("base64url");
+      const encodedPayload = Buffer.from(JSON.stringify({
+        iss: issuer,
+        aud: audience,
+        sub: tokenSubject,
+        iat: nowSeconds,
+        exp: nowSeconds + 600
+      })).toString("base64url");
+      const signedContent = `${encodedHeader}.${encodedPayload}`;
+      return `${signedContent}.${sign("RSA-SHA256", Buffer.from(signedContent), privateKey).toString("base64url")}`;
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("OIDC test JWKS server failed to bind.");
+    process.env.OIDC_ISSUER = issuer;
+    process.env.OIDC_AUDIENCE = audience;
+    process.env.OIDC_JWKS_URL = `http://127.0.0.1:${address.port}/jwks`;
+    // OIDC must take precedence even when the legacy bootstrap secret is present.
+    process.env.AGENT_REGISTRATION_TOKEN = "must-not-bypass-oidc";
+    const token = createToken(subject);
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    try {
+      const registered = await app.inject({
+        method: "POST",
+        url: "/v1/agents",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: "OIDC integration agent", description: "Owner isolation test." }
+      });
+      expect(registered.statusCode).toBe(201);
+      agentId = registered.json().agent.id as string;
+      const owner = await prisma.user.findUnique({ where: { authSubject }, select: { id: true } });
+      expect(owner).not.toBeNull();
+      ownerId = owner?.id;
+
+      const anotherOwnerToken = createToken(`other-user-${randomUUID()}`);
+      const forbiddenPause = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agentId}/pause`,
+        headers: { authorization: `Bearer ${anotherOwnerToken}` }
+      });
+      expect(forbiddenPause.statusCode).toBe(404);
+      expect(forbiddenPause.json().error.code).toBe("AGENT_NOT_FOUND");
+
+      const ownerPause = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agentId}/pause`,
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(ownerPause.statusCode).toBe(200);
+      expect(ownerPause.json()).toMatchObject({ agentId, status: "PAUSED", changed: true });
+    } finally {
+      await app.close();
+      if (agentId) {
+        await prisma.agent.delete({ where: { id: agentId } });
+      }
+      if (ownerId) await prisma.user.delete({ where: { id: ownerId } });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (previous.issuer === undefined) delete process.env.OIDC_ISSUER;
+      else process.env.OIDC_ISSUER = previous.issuer;
+      if (previous.audience === undefined) delete process.env.OIDC_AUDIENCE;
+      else process.env.OIDC_AUDIENCE = previous.audience;
+      if (previous.jwksUrl === undefined) delete process.env.OIDC_JWKS_URL;
+      else process.env.OIDC_JWKS_URL = previous.jwksUrl;
+      if (previous.registrationToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
+      else process.env.AGENT_REGISTRATION_TOKEN = previous.registrationToken;
     }
   });
 
