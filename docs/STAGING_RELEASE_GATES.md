@@ -12,16 +12,14 @@ Do not expose the API until access controls, secrets and network restrictions ha
 
 Set the following through the deployment platform's secret manager, never by committing a populated `.env` file. Use actual managed-service addresses and least-privilege accounts.
 
-| Area | Required settings |
-| --- | --- |
-| API | `NODE_ENV=production`, `API_HOST=0.0.0.0`, `API_PORT` matching the service's listening port |
-| Execution | `EXECUTION_MODE=PAPER`, `LIVE_EXECUTION_ENABLED=false` |
-| Frontend | `WEB_ORIGIN=https://...`, `NEXT_PUBLIC_SATN_API_URL=https://...` |
-| Identity | `OIDC_ISSUER`, `OIDC_JWKS_URL` with HTTPS and a non-empty `OIDC_AUDIENCE` |
-| Bootstrap fallback | `AGENT_REGISTRATION_TOKEN` must be absent in internet-facing staging |
-| Storage | `DATABASE_URL` with PostgreSQL TLS (`sslmode=require` or stricter), `REDIS_URL` using `rediss://` |
-| Worker | `WORKER_QUEUE`, `WORKER_HEARTBEAT_MS`, `WORKER_STALE_AFTER_MS`, `WORKER_LEASE_MS`, `WORKER_SHUTDOWN_GRACE_MS` |
-| Timing | heartbeat shorter than stale threshold; shutdown grace shorter than half the lease |
+- **API:** `NODE_ENV=production`, `API_HOST=0.0.0.0`, and `API_PORT` matching the service's listening port.
+- **Execution:** `EXECUTION_MODE=PAPER`, `LIVE_EXECUTION_ENABLED=false`.
+- **Frontend:** `WEB_ORIGIN=https://...` and `NEXT_PUBLIC_SATN_API_URL=https://...`.
+- **Identity:** `OIDC_ISSUER`, `OIDC_JWKS_URL` with HTTPS, plus a non-empty `OIDC_AUDIENCE`.
+- **Bootstrap fallback:** `AGENT_REGISTRATION_TOKEN` must be absent in internet-facing staging.
+- **Storage:** `DATABASE_URL` with PostgreSQL TLS (`sslmode=require` or stricter) and `REDIS_URL` using `rediss://`.
+- **Worker:** `WORKER_QUEUE`, `WORKER_HEARTBEAT_MS`, `WORKER_STALE_AFTER_MS`, `WORKER_LEASE_MS`, and `WORKER_SHUTDOWN_GRACE_MS`.
+- **Timing:** Heartbeat shorter than stale threshold; shutdown grace shorter than half the lease.
 
 Before deploying a candidate, run `node scripts/staging-preflight.mjs` with its real staging environment variables loaded in the process environment. It emits only fixed issue codes and an explicit `operationalVerification: "NOT_PERFORMED"` flag. A successful exit confirms **configuration shape only**, not operational readiness, security posture or legal eligibility. The preflight is tested in CI against synthetic, intentionally non-operational examples.
 
