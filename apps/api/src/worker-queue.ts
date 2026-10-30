@@ -19,6 +19,19 @@ export interface EnqueueJob<TPayload> {
 export interface WorkerQueueOptions {
   leaseMs?: number; baseRetryMs?: number; maxRetryMs?: number; maxErrorLength?: number;
 }
+export interface WorkerQueueStats {
+  queue: string;
+  queued: number;
+  retryWait: number;
+  running: number;
+  succeeded: number;
+  deadLetter: number;
+  cancelled: number;
+  queueDepth: number;
+  oldestPendingAgeMs: number | null;
+  expiredLeases: number;
+  sampledAt: string;
+}
 const DEFAULTS: Required<WorkerQueueOptions> = { leaseMs: 30_000, baseRetryMs: 1_000, maxRetryMs: 300_000, maxErrorLength: 2_000 };
 
 function requireBoundedString(value: string, label: string, max: number): void {
@@ -140,6 +153,55 @@ export class WorkerQueue {
       jobId, leaseOwnerToken, leaseAt, status, delay, message,
     );
     return result === 1 ? status : "LEASE_LOST";
+  }
+
+  async stats(queue: string): Promise<WorkerQueueStats> {
+    requireBoundedString(queue, "queue", 100);
+    type StatsRow = {
+      queued: number | string;
+      retryWait: number | string;
+      running: number | string;
+      succeeded: number | string;
+      deadLetter: number | string;
+      cancelled: number | string;
+      oldestPendingAgeMs: number | string | null;
+      expiredLeases: number | string;
+    };
+    const rows = await this.db.$queryRawUnsafe<StatsRow[]>(
+      `SELECT
+         COUNT(*) FILTER (WHERE "status" = 'QUEUED')::int AS "queued",
+         COUNT(*) FILTER (WHERE "status" = 'RETRY_WAIT')::int AS "retryWait",
+         COUNT(*) FILTER (WHERE "status" = 'RUNNING')::int AS "running",
+         COUNT(*) FILTER (WHERE "status" = 'SUCCEEDED')::int AS "succeeded",
+         COUNT(*) FILTER (WHERE "status" = 'DEAD_LETTER')::int AS "deadLetter",
+         COUNT(*) FILTER (WHERE "status" = 'CANCELLED')::int AS "cancelled",
+         EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN("createdAt") FILTER (WHERE "status" IN ('QUEUED','RETRY_WAIT')))) * 1000 AS "oldestPendingAgeMs",
+         COUNT(*) FILTER (WHERE "status" = 'RUNNING' AND "lockedAt" < CURRENT_TIMESTAMP - ($2 * INTERVAL '1 millisecond'))::int AS "expiredLeases"
+       FROM "WorkerJob" WHERE "queue" = $1`,
+      queue, this.options.leaseMs,
+    );
+    const row = rows[0];
+    if (!row) throw new Error("queue stats query returned no aggregate row");
+    const queued = Number(row.queued);
+    const retryWait = Number(row.retryWait);
+    const running = Number(row.running);
+    const succeeded = Number(row.succeeded);
+    const deadLetter = Number(row.deadLetter);
+    const cancelled = Number(row.cancelled);
+    const oldestPendingAgeMs = row.oldestPendingAgeMs === null
+      ? null
+      : Math.max(0, Number(row.oldestPendingAgeMs));
+    const expiredLeases = Number(row.expiredLeases);
+    if (![queued, retryWait, running, succeeded, deadLetter, cancelled, expiredLeases].every(Number.isSafeInteger) ||
+        [queued, retryWait, running, succeeded, deadLetter, cancelled, expiredLeases].some((value) => value < 0) ||
+        (oldestPendingAgeMs !== null && (!Number.isFinite(oldestPendingAgeMs) || oldestPendingAgeMs < 0))) {
+      throw new Error("queue stats query returned invalid numeric values");
+    }
+    return {
+      queue, queued, retryWait, running, succeeded, deadLetter, cancelled,
+      queueDepth: queued + retryWait, oldestPendingAgeMs, expiredLeases,
+      sampledAt: new Date().toISOString(),
+    };
   }
 
   async cancel(jobId: string): Promise<boolean> {
