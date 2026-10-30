@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { calculatePaperPerformance } from "@satn/accounting";
 import { evaluateTradeIntent, TradeIntentSchema } from "@satn/risk";
 import { simulateLimitOrder } from "@satn/paper-engine";
 import Fastify from "fastify";
@@ -575,7 +576,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     "/v1/agents/:agentId/performance",
     async (request, reply) => {
       const parsedId = uuidSchema.safeParse(request.params.agentId);
-      const querySchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(30), mode: z.enum(["PAPER", "READ_ONLY", "LIVE_RESTRICTED"]).optional() });
+      const querySchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(30), mode: z.enum(["PAPER", "READ_ONLY", "LIVE_RESTRICTED"]).default("PAPER") });
       const query = querySchema.safeParse(request.query);
       if (!parsedId.success) {
         return reply.code(400).send({
@@ -603,7 +604,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           });
         }
         const snapshots = await prismaClient.performanceSnapshot.findMany({
-          where: { agentId: parsedId.data, ...(query.data.mode ? { mode: query.data.mode } : {}) },
+          where: { agentId: parsedId.data, mode: query.data.mode },
           orderBy: [{ windowEnd: "desc" }, { calculatedAt: "desc" }],
           take: query.data.limit,
           select: {
@@ -612,7 +613,42 @@ export function buildServer(options: BuildServerOptions = {}) {
             qualityFlags: true, calculatedAt: true
           }
         });
-        return reply.send({ agentId: parsedId.data, items: snapshots });
+        const paperFills = query.data.mode === "PAPER"
+          ? await prismaClient.fill.findMany({
+              where: {
+                venueOrder: {
+                  is: {
+                    intent: { is: { agentId: parsedId.data, mode: "PAPER" } }
+                  }
+                }
+              },
+              orderBy: [{ filledAt: "asc" }, { id: "asc" }],
+              select: {
+                price: true,
+                quantity: true,
+                fee: true,
+                feeAsset: true,
+                filledAt: true,
+                venueOrder: {
+                  select: {
+                    intent: { select: { instrument: true, side: true } }
+                  }
+                }
+              }
+            })
+          : [];
+        const summary = query.data.mode === "PAPER"
+          ? calculatePaperPerformance(paperFills.map((fill) => ({
+              instrument: fill.venueOrder.intent.instrument,
+              side: fill.venueOrder.intent.side,
+              quantity: fill.quantity.toString(),
+              price: fill.price.toString(),
+              fee: fill.fee.toString(),
+              feeAsset: fill.feeAsset,
+              filledAt: fill.filledAt.toISOString()
+            })))
+          : null;
+        return reply.send({ agentId: parsedId.data, summary, items: snapshots });
       } catch {
         return reply.code(503).send({
           error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent performance is temporarily unavailable.", correlationId: request.id, retryable: true }
