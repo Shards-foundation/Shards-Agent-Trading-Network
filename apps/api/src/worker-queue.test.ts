@@ -89,7 +89,7 @@ describe("WorkerQueue", () => {
     expect(result).toEqual(row);
     const [sql] = db.query.mock.calls[0]![0] as [string];
     expect(sql).toContain("FOR UPDATE SKIP LOCKED");
-    expect(sql).toContain('"status" = \'RUNNING\' AND "lockedAt" <');
+    expect(sql).toContain('"status" = \'RUNNING\' AND "attempts" < "maxAttempts" AND "lockedAt" <');
   });
 
   it("returns the renewed timestamp so a worker can complete with the current lease", async () => {
