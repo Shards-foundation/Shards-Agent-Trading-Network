@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { calculatePaperDailyLoss, calculatePaperPerformance } from "@satn/accounting";
+import { calculatePaperDailyLoss, calculatePaperPerformance, calculatePaperPortfolio } from "@satn/accounting";
 import { verifyOidcAccessToken } from "@satn/auth";
 import { evaluateTradeIntent, TradeIntentSchema } from "@satn/risk";
 import { simulateLimitOrder } from "@satn/paper-engine";
@@ -275,6 +275,8 @@ export function resolvePaperTradePolicy(
 }
 const paperTradePolicy = resolvePaperTradePolicy(env.EXECUTION_MODE, env.PAPER_MAX_ORDER_NOTIONAL, env.PAPER_MAX_DAILY_LOSS);
 const DEFAULT_CACHE_TTL_MS = 1_000;
+const MAX_PAPER_PORTFOLIO_FILLS = 50_000;
+const MAX_PAPER_PORTFOLIO_MARKS = 25;
 const MAX_CACHE_ENTRIES = 500;
 
 export function buildServer(options: BuildServerOptions = {}) {
@@ -1978,6 +1980,119 @@ export function buildServer(options: BuildServerOptions = {}) {
       } catch {
         return reply.code(503).send({
           error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent journal is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { agentId: string } }>(
+    "/v1/agents/:agentId/portfolio",
+    async (request, reply) => {
+      const parsedId = uuidSchema.safeParse(request.params.agentId);
+      if (!parsedId.success) return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent portfolio data is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const agent = await prismaClient.agent.findUnique({
+          where: { id: parsedId.data },
+          select: { id: true, status: true }
+        });
+        if (!agent || agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+        const fills = await prismaClient.fill.findMany({
+          where: { venueOrder: { is: { intent: { is: { agentId: parsedId.data, mode: "PAPER" } } } } },
+          orderBy: [{ filledAt: "asc" }, { id: "asc" }],
+          take: MAX_PAPER_PORTFOLIO_FILLS + 1,
+          select: {
+            price: true, quantity: true, fee: true, feeAsset: true, filledAt: true,
+            venueOrder: { select: { intent: { select: { instrument: true, side: true } } } }
+          }
+        });
+        if (fills.length > MAX_PAPER_PORTFOLIO_FILLS) return reply.code(413).send({
+          error: {
+            code: "PORTFOLIO_HISTORY_LIMIT_EXCEEDED",
+            message: "The paper fill history exceeds the supported portfolio calculation limit.",
+            correlationId: request.id,
+            retryable: false
+          }
+        });
+        const ledger = fills.map((fill) => ({
+          instrument: fill.venueOrder.intent.instrument,
+          side: fill.venueOrder.intent.side,
+          quantity: fill.quantity.toString(),
+          price: fill.price.toString(),
+          fee: fill.fee.toString(),
+          feeAsset: fill.feeAsset,
+          filledAt: fill.filledAt.toISOString()
+        }));
+        const performance = calculatePaperPerformance(ledger);
+        const marks: Record<string, { bid: string; ask: string } | undefined> = {};
+        const markMeta: Record<string, { status: "CURRENT" | "STALE" | "UNAVAILABLE" | "INVALID"; observedAt: string | null; ageMs: number | null; source: string | null }> = {};
+        const openPositions = performance.instruments.filter((item) => item.positionQuantity !== "0");
+        await Promise.all(openPositions.slice(0, MAX_PAPER_PORTFOLIO_MARKS).map(async (position) => {
+          try {
+            const snapshot = await marketDataProvider.getMarketSnapshot(position.instrument);
+            const observedMs = Date.parse(snapshot.observedAt);
+            const ageMs = Number.isFinite(observedMs) ? now() - observedMs : Number.POSITIVE_INFINITY;
+            const validPrice = (value: string) => /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(value) && Number.isFinite(Number(value)) && Number(value) > 0;
+            if (
+              snapshot.venue !== "hyperliquid" ||
+              snapshot.instrumentId !== position.instrument ||
+              !snapshot.bid ||
+              !snapshot.ask ||
+              !validPrice(snapshot.bid) ||
+              !validPrice(snapshot.ask) ||
+              Number(snapshot.ask) < Number(snapshot.bid)
+            ) {
+              markMeta[position.instrument] = { status: "INVALID", observedAt: snapshot.observedAt ?? null, ageMs: null, source: snapshot.source ?? null };
+              return;
+            }
+            if (snapshot.dataQuality !== "LIVE" || ageMs < 0 || ageMs > paperTradePolicy.maxMarketDataAgeMs) {
+              markMeta[position.instrument] = {
+                status: "STALE",
+                observedAt: snapshot.observedAt,
+                ageMs: Number.isFinite(ageMs) ? ageMs : null,
+                source: snapshot.source
+              };
+              return;
+            }
+            marks[position.instrument] = { bid: snapshot.bid, ask: snapshot.ask };
+            markMeta[position.instrument] = {
+              status: "CURRENT", observedAt: snapshot.observedAt, ageMs, source: snapshot.source
+            };
+          } catch {
+            markMeta[position.instrument] = { status: "UNAVAILABLE", observedAt: null, ageMs: null, source: null };
+          }
+        }));
+        const markLimitReached = openPositions.length > MAX_PAPER_PORTFOLIO_MARKS;
+        for (const position of openPositions.slice(MAX_PAPER_PORTFOLIO_MARKS)) {
+          markMeta[position.instrument] = { status: "UNAVAILABLE", observedAt: null, ageMs: null, source: null };
+        }
+        const portfolio = calculatePaperPortfolio(ledger, marks);
+        const qualityFlags = markLimitReached
+          ? [...new Set([...portfolio.qualityFlags, "MARK_LIMIT_REACHED"])].sort()
+          : portfolio.qualityFlags;
+        const positions = portfolio.positions.map((position) => ({
+          ...position,
+          markStatus: markMeta[position.instrument]?.status ?? "UNAVAILABLE",
+          markObservedAt: markMeta[position.instrument]?.observedAt ?? null,
+          markAgeMs: markMeta[position.instrument]?.ageMs ?? null,
+          markSource: markMeta[position.instrument]?.source ?? null
+        }));
+        return reply.send({
+          agentId: parsedId.data,
+          asOf: new Date(now()).toISOString(),
+          accountingScope: "PAPER_ONLY",
+          portfolio: { ...portfolio, qualityFlags, positions }
+        });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "paper portfolio calculation failed");
+        return reply.code(503).send({
+          error: { code: "PORTFOLIO_UNAVAILABLE", message: "The paper portfolio could not be calculated.", correlationId: request.id, retryable: true }
         });
       }
     }
