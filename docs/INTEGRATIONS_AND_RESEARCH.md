@@ -13,7 +13,7 @@ The documented Info endpoint uses POST https://api.hyperliquid.xyz/info; signed 
 Official docs: https://docs.polymarket.com/  
 Agent authentication material: https://github.com/Polymarket/agent-skills/blob/main/authentication.md
 
-The CLOB interface documents wallet signing and authenticated API credentials. Market data, signatures, wallet/funder configuration and settlement semantics are venue-specific. UK access and eligibility must not be assumed. Start with public market discovery only where permitted; disable execution pending current docs, terms, eligibility and legal review.
+The CLOB interface documents wallet signing and authenticated API credentials. Market data, signatures, wallet/funder configuration and settlement semantics are venue-specific. UK access and eligibility must not be assumed. A read-only Gamma market-discovery adapter is implemented against the official `/markets` endpoint, with bounded pagination, schema validation, timeout/error handling and no signing or CLOB write methods. UK access and eligibility must not be assumed; disable execution pending current docs, terms, eligibility and legal review.
 
 ## Pump.fun
 Official sources:
