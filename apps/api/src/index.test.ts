@@ -464,6 +464,15 @@ describe("SATN API", () => {
     expect(badPost.json().error.code).toBe("INVALID_ID");
   });
 
+  it("validates post-like identifiers before storage access", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/not-a-uuid/posts/00000000-0000-4000-8000-000000000000/likes"
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_ID");
+  });
+
   it("validates post feed pagination before querying storage", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/posts?limit=0" });
     expect(response.statusCode).toBe(400);
