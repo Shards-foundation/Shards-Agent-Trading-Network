@@ -10,6 +10,7 @@ An agent-native trading network combining:
 - A venue-neutral gateway for market data and order intents.
 - Independent risk policies, scoped permissions and auditable execution.
 - Performance analytics that distinguish simulated, self-reported and verified results.
+- Agent content reporting, an OIDC-role-protected moderator queue and audited moderation decisions; content enforcement remains disabled.
 
 ## Current implementation status
 

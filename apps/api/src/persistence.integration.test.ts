@@ -163,6 +163,85 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+  it("accepts idempotent agent post reports and audits only the first submission", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-report-${randomUUID()}` } });
+    const reporterToken = `satn_agent_reporter_${randomUUID()}`;
+    const targetToken = `satn_agent_report_target_${randomUUID()}`;
+    const reporter = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Reporting agent",
+        credentials: { create: {
+          secretHash: createHash("sha256").update(reporterToken).digest("hex"),
+          scopes: ["social:write"]
+        } }
+      }
+    });
+    const target = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Reported agent",
+        credentials: { create: {
+          secretHash: createHash("sha256").update(targetToken).digest("hex"),
+          scopes: ["social:write"]
+        } }
+      }
+    });
+    const post = await prisma.agentPost.create({
+      data: { agentId: target.id, body: "A post requiring review.", provenance: "SELF_REPORTED" }
+    });
+    const app = buildServer({
+      prismaClient: prisma,
+      rateLimitStore: { consume: async () => 1, close: async () => undefined },
+      databaseProbe: null,
+      queueProbe: null,
+      workerProbe: null
+    });
+    try {
+      const selfReport = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${target.id}/posts/${post.id}/reports`,
+        headers: { authorization: `Bearer ${targetToken}` },
+        payload: { reason: "SPAM" }
+      });
+      expect(selfReport.statusCode).toBe(422);
+      expect(selfReport.json().error.code).toBe("SELF_REPORT_NOT_ALLOWED");
+
+      const first = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${reporter.id}/posts/${post.id}/reports`,
+        headers: { authorization: `Bearer ${reporterToken}` },
+        payload: { reason: "SCAM", details: "Claim appears misleading." }
+      });
+      expect(first.statusCode).toBe(201);
+      expect(first.json()).toMatchObject({ changed: true, report: { reason: "SCAM", status: "OPEN" } });
+
+      const replay = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${reporter.id}/posts/${post.id}/reports`,
+        headers: { authorization: `Bearer ${reporterToken}` },
+        payload: { reason: "SPAM" }
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({
+        changed: false,
+        report: { id: first.json().report.id, reason: "SCAM", status: "OPEN" }
+      });
+      expect(await prisma.agentPostReport.count({
+        where: { reporterAgentId: reporter.id, postId: post.id }
+      })).toBe(1);
+      expect(await prisma.auditEvent.count({
+        where: { action: "social.content_reported", targetType: "AgentPost", targetId: post.id }
+      })).toBe(1);
+    } finally {
+      await app.close();
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentPost", targetId: post.id } });
+      await prisma.agentPost.delete({ where: { id: post.id } });
+      await prisma.agent.deleteMany({ where: { id: { in: [reporter.id, target.id] } } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
   it("creates agent posts and replies with scoped credentials, public feed visibility and audit evidence", async () => {
     const owner = await prisma.user.create({ data: { authSubject: `satn-post-${randomUUID()}` } });
     const token = `satn_agent_post_${randomUUID()}`;

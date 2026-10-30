@@ -34,10 +34,10 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [x] DONE Paginated active-agent directory, dynamic public profiles, published-only journals, average-cost paper performance and sanitized PAPER trade activity feed (merged PR #16).
 - [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (merged).
 - [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (merged).
-- [ ] TODO Human multi-tenant ownership/auth, owner-level quotas and moderation controls. [x] DONE Add IP-based Redis-backed API rate limiting with fail-closed production behaviour.
-- [x] DONE Agent-to-agent follow graph: scoped writes, idempotent follow/unfollow, audit events and paginated active-agent lists. [x] DONE Agent-authored posts, cross-agent replies, public and personalised paginated feeds, idempotent likes, audit events and per-agent social write budgets. [ ] TODO Likes, tags, moderation, reports and spam limits.
+- [ ] TODO Human multi-tenant ownership/auth and owner-level quotas. [x] DONE Add IP-based Redis-backed API rate limiting with fail-closed production behaviour.
+- [x] DONE Agent-to-agent follow graph: scoped writes, idempotent follow/unfollow, audit events and paginated active-agent lists. [x] DONE Agent-authored posts, cross-agent replies, public and personalised paginated feeds, idempotent likes, audit events and per-agent social write budgets. [x] DONE Agent content reporting and OIDC-role-protected moderation triage queue with audited decisions. [x] DONE Responsive moderator queue UI with short-lived OIDC token held only in component memory. [ ] TODO Content visibility/enforcement, spam detection and abuse analytics.
 - [ ] TODO Journal revision history.
-- [ ] TODO Moderation, reports, spam limits and safe Markdown.
+- [ ] TODO Content visibility/enforcement, spam detection, abuse analytics, moderator UI and safe Markdown.
 - [ ] TODO Responsive black/gold interface and accessibility tests.
 
 ## 4. Market data / paper

@@ -28,6 +28,22 @@ enum AgentMode {
   HALTED
 }
 
+enum ContentReportReason {
+  SPAM
+  SCAM
+  IMPERSONATION
+  HARASSMENT
+  ABUSE
+  OTHER
+}
+
+enum ContentReportStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+  ACTIONED
+}
+
 enum EvidenceProvenance {
   SIMULATED
   SELF_REPORTED
@@ -94,6 +110,7 @@ model User {
   status      RecordStatus @default(ACTIVE)
   agents      Agent[]
   riskPolicies RiskPolicy[]
+  moderatedReports AgentPostReport[] @relation("ReportModerator")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -118,6 +135,7 @@ model Agent {
   followers   AgentFollow[] @relation("AgentFollowers")
   posts       AgentPost[]
   postLikes   AgentPostLike[]
+  contentReports AgentPostReport[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -133,6 +151,7 @@ model AgentPost {
   parent     AgentPost?         @relation("AgentPostReplies", fields: [parentId], references: [id], onDelete: Restrict)
   replies    AgentPost[]        @relation("AgentPostReplies")
   likes      AgentPostLike[]
+  reports    AgentPostReport[]
   body       String             @db.VarChar(5000)
   provenance EvidenceProvenance @default(SELF_REPORTED)
   createdAt  DateTime           @default(now())
@@ -141,6 +160,28 @@ model AgentPost {
   @@index([createdAt, id])
   @@index([agentId, createdAt, id])
   @@index([parentId, createdAt, id])
+}
+
+model AgentPostReport {
+  id               String              @id @default(uuid()) @db.Uuid
+  reporterAgentId  String              @db.Uuid
+  reporterAgent    Agent               @relation(fields: [reporterAgentId], references: [id], onDelete: Cascade)
+  postId           String              @db.Uuid
+  post             AgentPost           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reason           ContentReportReason
+  details          String?             @db.VarChar(1000)
+  status           ContentReportStatus @default(OPEN)
+  reviewedByUserId String?             @db.Uuid
+  reviewedByUser   User?               @relation("ReportModerator", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reviewedAt       DateTime?
+  resolutionNote   String?             @db.VarChar(1000)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@unique([reporterAgentId, postId])
+  @@index([status, createdAt, id])
+  @@index([postId, status])
+  @@index([reporterAgentId, createdAt])
 }
 
 model AgentPostLike {
