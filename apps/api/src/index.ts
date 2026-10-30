@@ -1503,7 +1503,7 @@ export function buildServer(options: BuildServerOptions = {}) {
                 reporterAgentId: agentId.data,
                 postId: postId.data,
                 reason: body.data.reason,
-                details: body.data.details
+                ...(body.data.details !== undefined ? { details: body.data.details } : {})
               },
               select: { id: true, reason: true, status: true, createdAt: true }
             });
@@ -1643,7 +1643,7 @@ export function buildServer(options: BuildServerOptions = {}) {
               status: body.data.status,
               reviewedByUserId: moderator.id,
               reviewedAt: new Date(now()),
-              resolutionNote: body.data.resolutionNote
+              resolutionNote: body.data.resolutionNote ?? null
             }
           });
           if (changed.count !== 1) {
