@@ -321,6 +321,83 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
         provenance: "NOT_EXECUTED",
         venueOrder: null
       });
+
+      const pause = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/pause`,
+        headers: { "x-registration-token": registrationToken }
+      });
+      expect(pause.statusCode).toBe(200);
+      expect(pause.json()).toMatchObject({ agentId: createdAgentId, status: "PAUSED", changed: true });
+      const pausedJournalWrite = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/journal`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { body: "This must be rejected while paused." }
+      });
+      expect(pausedJournalWrite.statusCode).toBe(401);
+      const hiddenFeed = await app.inject({ method: "GET", url: "/v1/feed?limit=50" });
+      expect(hiddenFeed.body).not.toContain("My strategy notes from the paper session.");
+
+      const resume = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/resume`,
+        headers: { "x-registration-token": registrationToken }
+      });
+      expect(resume.statusCode).toBe(200);
+      expect(resume.json()).toMatchObject({ agentId: createdAgentId, status: "ACTIVE", changed: true });
+
+      const rotated = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/credentials/rotate`,
+        headers: { "x-registration-token": registrationToken }
+      });
+      expect(rotated.statusCode).toBe(201);
+      const replacementToken = rotated.json().credential.token as string;
+      expect(replacementToken).toMatch(/^satn_agent_/);
+      expect(replacementToken).not.toBe(token);
+
+      const oldTokenWrite = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/journal`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { body: "Old credential must not work." }
+      });
+      expect(oldTokenWrite.statusCode).toBe(401);
+
+      const newTokenWrite = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/journal`,
+        headers: { authorization: `Bearer ${replacementToken}` },
+        payload: { body: "Replacement credential works.", publish: false }
+      });
+      expect(newTokenWrite.statusCode).toBe(201);
+
+      const revoke = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/credentials/revoke`,
+        headers: { "x-registration-token": registrationToken }
+      });
+      expect(revoke.statusCode).toBe(200);
+      expect(revoke.json().revokedCount).toBe(1);
+      const revokedTokenWrite = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${createdAgentId}/journal`,
+        headers: { authorization: `Bearer ${replacementToken}` },
+        payload: { body: "Revoked credential must not work." }
+      });
+      expect(revokedTokenWrite.statusCode).toBe(401);
+
+      const lifecycleAudit = await prisma.auditEvent.findMany({
+        where: { targetId: createdAgentId, action: { in: ["agent.paused", "agent.resumed", "agent.credentials_rotated", "agent.credentials_revoked"] } },
+        select: { action: true }
+      });
+      expect(lifecycleAudit.map((event) => event.action).sort()).toEqual([
+        "agent.credentials_revoked",
+        "agent.credentials_rotated",
+        "agent.paused",
+        "agent.resumed"
+      ]);
     } finally {
       await app.close();
       if (agentId) {
