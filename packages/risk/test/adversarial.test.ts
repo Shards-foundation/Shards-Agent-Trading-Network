@@ -5,7 +5,10 @@ const SCALE = 100_000_000n;
 
 function decimal(value: bigint): string {
   const whole = value / SCALE;
-  const fraction = (value % SCALE).toString().padStart(8, "0").replace(/0+$/, "");
+  const fraction = (value % SCALE)
+    .toString()
+    .padStart(8, "0")
+    .replace(/0+$/, "");
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
@@ -53,7 +56,11 @@ describe("adversarial paper risk invariants", () => {
         const delta = BigInt(rand() % 3);
         const cap = floorCap > delta ? floorCap - delta : 0n;
         const result = evaluateTradeIntent(
-          { ...intent, quantity: decimal(quantity), limitPrice: decimal(price) },
+          {
+            ...intent,
+            quantity: decimal(quantity),
+            limitPrice: decimal(price),
+          },
           { ...policy, maxOrderNotional: decimal(cap) },
           `seed-${seed}`,
         );
@@ -62,7 +69,9 @@ describe("adversarial paper risk invariants", () => {
           result.allowed,
           `seed=${seed} case=${index} exact=${exactProduct} cap=${cap}`,
         ).toBe(!exceeds);
-        expect(result.reasons.includes("ORDER_NOTIONAL_EXCEEDED")).toBe(exceeds);
+        expect(result.reasons.includes("ORDER_NOTIONAL_EXCEEDED")).toBe(
+          exceeds,
+        );
         const ceiling = (exactProduct + SCALE - 1n) / SCALE;
         expect(result.notional).toBe(decimal(ceiling));
         expect(result.policyVersion).toBe(`seed-${seed}`);
@@ -80,8 +89,12 @@ describe("adversarial paper risk invariants", () => {
       "NaN",
       "Infinity",
     ]) {
-      expect(TradeIntentSchema.safeParse({ ...intent, quantity: value }).success).toBe(false);
-      expect(TradeIntentSchema.safeParse({ ...intent, limitPrice: value }).success).toBe(false);
+      expect(
+        TradeIntentSchema.safeParse({ ...intent, quantity: value }).success,
+      ).toBe(false);
+      expect(
+        TradeIntentSchema.safeParse({ ...intent, limitPrice: value }).success,
+      ).toBe(false);
     }
   });
 
