@@ -8,9 +8,9 @@
     "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
   },
   "dependencies": {
-    "@prisma/client": "^7.10.1"
+    "@prisma/client": "^6.19.0"
   },
   "devDependencies": {
-    "prisma": "^7.10.1"
+    "prisma": "^6.19.0"
   }
 }
