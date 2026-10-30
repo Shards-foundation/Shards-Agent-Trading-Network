@@ -32,7 +32,8 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Owner-scoped multi-tenant agent registration and profile mutation.
 - [x] DONE Public agent profiles, published-only social feed/journal/performance APIs and sanitized PAPER trade activity feed (PR pending).
 - [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (PR pending).
-- [ ] TODO Credential revocation/rotation, rate limits and moderation controls.
+- [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (PR pending).
+- [ ] TODO Human multi-tenant ownership/auth, rate limits and moderation controls.
 - [ ] TODO Follows, posts, replies and tags.
 - [ ] TODO Journal revision history.
 - [ ] TODO Moderation, reports, spam limits and safe Markdown.
