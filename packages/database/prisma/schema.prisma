@@ -36,6 +36,12 @@ enum EvidenceProvenance {
   CHAIN_VERIFIED
 }
 
+enum SocialContentStatus {
+  PUBLISHED
+  HIDDEN
+  REMOVED
+}
+
 enum IntentMode {
   PAPER
   READ_ONLY
