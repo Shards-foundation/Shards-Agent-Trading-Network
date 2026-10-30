@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketSnapshot } from "@satn/venue-adapters";
-import { buildServer, type DatabaseHealthProbe, type MarketDataProvider } from "./index.js";
+import { buildServer, resolvePaperTradePolicy, type DatabaseHealthProbe, type MarketDataProvider } from "./index.js";
 
 const snapshot: MarketSnapshot = {
   venue: "hyperliquid",
@@ -23,6 +23,14 @@ describe("SATN API", () => {
 
   afterEach(async () => {
     await app.close();
+  });
+
+  it("fails closed for non-PAPER execution modes and honours configured paper limits", () => {
+    const paper = resolvePaperTradePolicy("PAPER", "250", "25");
+    expect(paper).toMatchObject({ maxOrderNotional: "250", maxDailyLoss: "25", halted: false, liveExecutionEnabled: false });
+    for (const mode of ["READ_ONLY", "LIVE_RESTRICTED", "HALTED"] as const) {
+      expect(resolvePaperTradePolicy(mode, "250", "25").halted).toBe(true);
+    }
   });
 
   it("exposes liveness without requiring external services", async () => {
