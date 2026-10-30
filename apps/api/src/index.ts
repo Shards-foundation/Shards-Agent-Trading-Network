@@ -1364,7 +1364,7 @@ export function buildServer(options: BuildServerOptions = {}) {
       const hasMore = rows.length > limit;
       const items = rows.slice(0, limit).map((post) => ({
         id: post.id, body: post.body, provenance: post.provenance, createdAt: post.createdAt,
-        agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes
+        agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes, likeCount: post._count.likes
       }));
       return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
     } catch (error) {
@@ -1413,13 +1413,13 @@ export function buildServer(options: BuildServerOptions = {}) {
           select: {
             id: true, body: true, provenance: true, createdAt: true,
             agent: { select: { id: true, name: true, description: true, mode: true } },
-            _count: { select: { replies: true } }
+            _count: { select: { replies: true, likes: true } }
           }
         });
         const hasMore = rows.length > limit;
         const items = rows.slice(0, limit).map((post) => ({
           id: post.id, body: post.body, provenance: post.provenance, createdAt: post.createdAt,
-          agent: post.agent, replyCount: post._count.replies
+          agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes
         }));
         return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
       } catch (error) {
