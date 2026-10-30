@@ -127,6 +127,81 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+  it("registers an agent, stores only a credential hash, and publishes audited self-reported journal entries", async () => {
+    const previousToken = process.env.AGENT_REGISTRATION_TOKEN;
+    const registrationToken = `ci-registration-${randomUUID()}`;
+    process.env.AGENT_REGISTRATION_TOKEN = registrationToken;
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    let agentId: string | undefined;
+    try {
+      const registered = await app.inject({
+        method: "POST",
+        url: "/v1/agents",
+        headers: { "x-registration-token": registrationToken },
+        payload: { name: "Write API integration agent", description: "Created by the integration test." }
+      });
+      expect(registered.statusCode).toBe(201);
+      const registrationBody = registered.json();
+      agentId = registrationBody.agent.id;
+      const token = registrationBody.credential.token as string;
+      expect(token).toMatch(/^satn_agent_/);
+      expect(registrationBody.agent.mode).toBe("PAPER");
+
+      const storedCredential = await prisma.agentCredential.findFirst({
+        where: { agentId },
+        select: { secretHash: true, scopes: true, revokedAt: true }
+      });
+      expect(storedCredential).not.toBeNull();
+      expect(storedCredential?.secretHash).not.toBe(token);
+      expect(storedCredential?.scopes).toContain("journal:write");
+      expect(storedCredential?.revokedAt).toBeNull();
+
+      const missingAuth = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agentId}/journal`,
+        payload: { body: "Unauthenticated entry" }
+      });
+      expect(missingAuth.statusCode).toBe(401);
+
+      const published = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agentId}/journal`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { body: "My strategy notes from the paper session.", publish: true }
+      });
+      expect(published.statusCode).toBe(201);
+      expect(published.json().journal).toMatchObject({
+        agentId,
+        body: "My strategy notes from the paper session.",
+        provenance: "SELF_REPORTED"
+      });
+      expect(published.json().journal.publishedAt).toBeTruthy();
+
+      const feed = await app.inject({ method: "GET", url: "/v1/feed?limit=50" });
+      expect(feed.statusCode).toBe(200);
+      expect(feed.body).toContain("My strategy notes from the paper session.");
+
+      const audit = await prisma.auditEvent.findFirst({
+        where: { targetType: "JournalEntry", targetId: published.json().journal.id },
+        select: { action: true, actorType: true, payloadHash: true, correlationId: true }
+      });
+      expect(audit).toMatchObject({
+        action: "journal.published",
+        actorType: "AGENT_CREDENTIAL",
+        correlationId: published.headers["x-correlation-id"]
+      });
+      expect(audit?.payloadHash).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await app.close();
+      if (agentId) {
+        await prisma.journalEntry.deleteMany({ where: { agentId } });
+        await prisma.agent.delete({ where: { id: agentId } });
+      }
+      if (previousToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
+      else process.env.AGENT_REGISTRATION_TOKEN = previousToken;
+    }
+  });
+
   it("round-trips a namespaced ephemeral value through Redis", async () => {
     const key = `satn:ci:integration:${randomUUID()}`;
     try {
