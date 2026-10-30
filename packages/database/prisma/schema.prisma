@@ -119,6 +119,23 @@ model WorkerJob {
   @@index([status, lockedAt])
 }
 
+enum WorkerProcessStatus {
+  RUNNING
+  STOPPED
+}
+
+model WorkerHeartbeat {
+  workerId   String              @id @db.VarChar(200)
+  queue      String              @db.VarChar(100)
+  status     WorkerProcessStatus @default(RUNNING)
+  startedAt  DateTime            @default(now())
+  lastSeenAt DateTime            @default(now())
+  stoppedAt  DateTime?
+  updatedAt  DateTime            @updatedAt
+
+  @@index([status, lastSeenAt])
+}
+
 model User {
   id          String       @id @default(uuid()) @db.Uuid
   authSubject String       @unique
