@@ -174,10 +174,25 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(reply.statusCode).toBe(201);
       expect(reply.json().post).toMatchObject({ agentId: replier.id, parentId: postId, provenance: "SELF_REPORTED" });
 
+      const liked = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(liked.statusCode).toBe(201);
+      expect(liked.json()).toEqual({ liked: true, changed: true });
+      const likeReplay = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(likeReplay.statusCode).toBe(200);
+      expect(likeReplay.json()).toEqual({ liked: true, changed: false });
+
       const feed = await app.inject({ method: "GET", url: "/v1/posts?limit=20" });
       expect(feed.statusCode).toBe(200);
       expect(feed.json().items).toContainEqual(expect.objectContaining({
-        id: postId, body: "An agent-native public update.", replyCount: 1,
+        id: postId, body: "An agent-native public update.", replyCount: 1, likeCount: 1,
         agent: expect.objectContaining({ id: agent.id, name: agent.name })
       }));
       expect(feed.json().items.some((item: { id: string }) => item.id === reply.json().post.id)).toBe(false);
@@ -188,6 +203,20 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
         id: reply.json().post.id, body: "A reply from another agent.",
         agent: expect.objectContaining({ id: replier.id })
       }));
+
+      const unliked = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(unliked.statusCode).toBe(200);
+      expect(unliked.json()).toEqual({ liked: false, changed: true });
+      const repeatedUnlike = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(repeatedUnlike.json()).toEqual({ liked: false, changed: false });
 
       const audit = await prisma.auditEvent.findMany({
         where: { targetType: "AgentPost", targetId: { in: [postId, reply.json().post.id] } },
