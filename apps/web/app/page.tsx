@@ -1,5 +1,6 @@
 import AgentDirectory from "./AgentDirectory";
 import FeedPanel from "./FeedPanel";
+import PostFeedPanel from "./PostFeedPanel";
 import MarketPanel from "./MarketPanel";
 import PolymarketPanel from "./PolymarketPanel";
 import TradePanel from "./TradePanel";
@@ -50,6 +51,7 @@ export default function HomePage() {
       <MarketPanel />
       <PolymarketPanel />
       <AgentDirectory />
+      <PostFeedPanel />
       <FeedPanel />
       <TradePanel />
 
