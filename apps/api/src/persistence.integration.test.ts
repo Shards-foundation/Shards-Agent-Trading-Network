@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
 import { buildServer } from "./index.js";
+import type { MarketSnapshot } from "@satn/venue-adapters";
 
 const integrationEnabled = Boolean(process.env.DATABASE_URL && process.env.REDIS_URL);
 
@@ -507,6 +508,92 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       }
       if (previousToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
       else process.env.AGENT_REGISTRATION_TOKEN = previousToken;
+    }
+  });
+
+  it("returns decimal-safe paper portfolio exposure and mark-to-market P&L", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-portfolio-${randomUUID()}` } });
+    const agent = await prisma.agent.create({ data: { ownerId: owner.id, name: "Portfolio agent" } });
+    const intent = await prisma.tradeIntent.create({
+      data: {
+        agentId: agent.id, venue: "hyperliquid", instrument: "BTC", side: "BUY", orderType: "LIMIT",
+        quantity: "2", limitPrice: "100", mode: "PAPER", idempotencyKey: `portfolio-${randomUUID()}`,
+        payloadHash: "b".repeat(64), status: "FILLED"
+      }
+    });
+    const order = await prisma.venueOrder.create({
+      data: {
+        intentId: intent.id, venue: "hyperliquid", clientOrderId: `portfolio-client-${randomUUID()}`,
+        venueOrderId: `portfolio-order-${randomUUID()}`, state: "FILLED", submittedAt: new Date()
+      }
+    });
+    await prisma.fill.create({
+      data: {
+        venueOrderId: order.id, fillRef: `portfolio-fill-${randomUUID()}`,
+        price: "100", quantity: "2", fee: "0.2", feeAsset: "USD", filledAt: new Date()
+      }
+    });
+    const snapshot: MarketSnapshot = {
+      venue: "hyperliquid", instrumentId: "BTC",
+      observedAt: new Date(Date.now() - 100).toISOString(),
+      receivedAt: new Date().toISOString(),
+      source: "https://api.hyperliquid.xyz/info",
+      sequence: `portfolio-${randomUUID()}`,
+      bid: "109", ask: "111", dataQuality: "LIVE"
+    };
+    const app = buildServer({
+      prismaClient: prisma,
+      marketDataProvider: { getMarketSnapshot: async () => snapshot },
+      rateLimitStore: { consume: async () => 1, close: async () => undefined },
+      databaseProbe: null, queueProbe: null, workerProbe: null
+    });
+    try {
+      const response = await app.inject({ method: "GET", url: `/v1/agents/${agent.id}/portfolio` });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        agentId: agent.id,
+        accountingScope: "PAPER_ONLY",
+        portfolio: {
+          methodologyVersion: "paper-average-cost-mtm-v1",
+          hasCompleteMarks: true,
+          realizedGrossPnlUsd: "0",
+          unrealizedGrossPnlUsd: "20",
+          feesPaidUsd: "0.2",
+          netPnlLessAllUsdFees: "19.8",
+          totalGrossExposureUsd: "220",
+          positions: [{
+            instrument: "BTC", positionQuantity: "2", averageEntryPrice: "100",
+            markPrice: "110", grossExposureUsd: "220", unrealizedGrossPnlUsd: "20",
+            markStatus: "CURRENT"
+          }]
+        }
+      });
+      expect(response.body).not.toContain(owner.id);
+
+      const invalidMarkApp = buildServer({
+        prismaClient: prisma,
+        marketDataProvider: { getMarketSnapshot: async () => ({ ...snapshot, bid: "111", ask: "110" }) },
+        rateLimitStore: { consume: async () => 1, close: async () => undefined },
+        databaseProbe: null, queueProbe: null, workerProbe: null
+      });
+      try {
+        const invalidMarkResponse = await invalidMarkApp.inject({ method: "GET", url: `/v1/agents/${agent.id}/portfolio` });
+        expect(invalidMarkResponse.statusCode).toBe(200);
+        expect(invalidMarkResponse.json().portfolio).toMatchObject({
+          hasCompleteMarks: false,
+          unpricedPositionCount: 1,
+          positions: [{ instrument: "BTC", markPrice: null, markStatus: "INVALID" }]
+        });
+      } finally {
+        await invalidMarkApp.close();
+      }
+    } finally {
+      await app.close();
+      await prisma.fill.deleteMany({ where: { venueOrderId: order.id } });
+      await prisma.venueOrder.delete({ where: { id: order.id } });
+      await prisma.tradeIntent.delete({ where: { id: intent.id } });
+      await prisma.agent.delete({ where: { id: agent.id } });
+      await prisma.user.delete({ where: { id: owner.id } });
     }
   });
 
