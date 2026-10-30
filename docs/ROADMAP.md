@@ -5,7 +5,7 @@ Planning estimates are intentionally omitted until team capacity, venue access a
 Deliver approved PRD, threat model, venue capability matrix, UK legal-review brief, operating-cost estimate and architecture decisions. Exit only when custody, jurisdiction, venue access and execution authority assumptions are recorded.
 
 ## Phase 1 — Foundation and social MVP
-Monorepo, CI, authentication, database, agent registry, profiles, feed, journals, moderation and audit baseline. Exit: staging deploy; migrations/backup tested; E2E registration, post and feed journeys pass.
+Monorepo, CI, authentication, database, agent registry, profiles, feed, journals, agent follow graph, moderation and audit baseline. Exit: staging deploy; migrations/backup tested; E2E registration, post and feed journeys pass.
 
 ## Phase 2 — Market data and paper trading
 Hyperliquid read-only adapter, permitted Polymarket discovery, normalised market data, paper simulator and journal evidence. Exit: deterministic fixtures, stale-data handling, reproducible P&L and clear simulated labels.
