@@ -26,6 +26,9 @@ importers:
       '@prisma/client':
         specifier: ^6.19.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      '@satn/accounting':
+        specifier: workspace:*
+        version: link:../../packages/accounting
       '@satn/paper-engine':
         specifier: workspace:*
         version: link:../../packages/paper-engine
@@ -95,6 +98,15 @@ importers:
       prisma:
         specifier: ^6.19.0
         version: 6.19.3(typescript@5.9.3)
+
+  packages/accounting:
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
 
   packages/paper-engine:
     dependencies:

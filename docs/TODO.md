@@ -49,7 +49,8 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [x] DONE Deterministic limit-order paper engine with explicit fee assumption and freshness guard.
 - [x] DONE API trade-intent vertical slice: scoped credential → idempotency → risk decision → paper order/fill → audit record (PR pending).
 - [ ] TODO Add configurable slippage/funding assumptions and position/portfolio accounting.
-- [ ] TODO P&L, drawdown, fees and missing-data tests.
+- [x] DONE Deterministic average-cost paper performance summary with fees, long/short/reversal tests and explicit unrealised-P&L exclusion (PR pending).
+- [ ] TODO Unrealised mark-to-market, slippage/funding, exposure aggregation, drawdown and full account equity curves.
 
 ## 5. Governance / execution
 - [ ] TODO Versioned deterministic risk policy.
