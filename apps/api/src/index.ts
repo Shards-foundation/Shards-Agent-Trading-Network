@@ -31,12 +31,11 @@ export interface BuildServerOptions {
   databaseProbe?: DatabaseHealthProbe | null;
   queueProbe?: DatabaseHealthProbe | null;
   workerProbe?: DatabaseHealthProbe | null;
+  prismaClient?: PrismaClient | null;
   now?: () => number;
 }
 
-function createDefaultDatabaseProbe(): DatabaseHealthProbe | null {
-  if (!process.env.DATABASE_URL) return null;
-  const prisma = new PrismaClient();
+function createDatabaseProbe(prisma: PrismaClient): DatabaseHealthProbe {
   return {
     async check() {
       const migrations = await prisma.$queryRaw<Array<{ migration_name: string }>>`
@@ -50,7 +49,7 @@ function createDefaultDatabaseProbe(): DatabaseHealthProbe | null {
       }
     },
     async close() {
-      await prisma.$disconnect();
+      // The owning Fastify instance disconnects its shared Prisma client.
     }
   };
 }
@@ -73,6 +72,11 @@ function createDefaultQueueProbe(): DatabaseHealthProbe | null {
 }
 
 const instrumentSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9@._/-]+$/);
+const uuidSchema = z.string().uuid();
+const pageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: uuidSchema.optional()
+});
 const DEFAULT_CACHE_TTL_MS = 1_000;
 const MAX_CACHE_ENTRIES = 500;
 
@@ -85,8 +89,12 @@ export function buildServer(options: BuildServerOptions = {}) {
     requestIdHeader: "x-correlation-id"
   });
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
+  const ownsPrismaClient = options.prismaClient === undefined;
+  const prismaClient = options.prismaClient === undefined
+    ? (env.NODE_ENV === "test" || !process.env.DATABASE_URL ? null : new PrismaClient())
+    : options.prismaClient;
   const databaseProbe = options.databaseProbe === undefined
-    ? (env.NODE_ENV === "test" ? null : createDefaultDatabaseProbe())
+    ? (prismaClient ? createDatabaseProbe(prismaClient) : null)
     : options.databaseProbe;
   const queueProbe = options.queueProbe === undefined
     ? (env.NODE_ENV === "test" ? null : createDefaultQueueProbe())
@@ -105,6 +113,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
   app.addHook("onClose", async () => {
     await Promise.all([databaseProbe?.close(), queueProbe?.close(), workerProbe?.close()]);
+    if (ownsPrismaClient) await prismaClient?.$disconnect();
   });
 
   app.get("/health/live", async () => ({
@@ -156,6 +165,200 @@ export function buildServer(options: BuildServerOptions = {}) {
       }
     });
   });
+
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/feed", async (request, reply) => {
+    const query = pageQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The feed pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The social feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    try {
+      const { limit, cursor } = query.data;
+      if (cursor) {
+        const cursorRow = await prismaClient.journalEntry.findUnique({
+          where: { id: cursor },
+          select: { id: true, publishedAt: true, agent: { select: { status: true } } }
+        });
+        if (!cursorRow || !cursorRow.publishedAt || cursorRow.agent.status !== "ACTIVE") {
+          return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The feed cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+      }
+
+      const rows = await prismaClient.journalEntry.findMany({
+        where: { publishedAt: { not: null }, agent: { status: "ACTIVE" } },
+        orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          body: true,
+          provenance: true,
+          revision: true,
+          publishedAt: true,
+          createdAt: true,
+          agent: { select: { id: true, name: true, description: true, mode: true } }
+        }
+      });
+      const hasMore = rows.length > limit;
+      const items = rows.slice(0, limit);
+      return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+    } catch {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The social feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.get<{ Params: { agentId: string } }>("/v1/agents/:agentId", async (request, reply) => {
+    const parsedId = uuidSchema.safeParse(request.params.agentId);
+    if (!parsedId.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent profiles are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+    try {
+      const agent = await prismaClient.agent.findUnique({
+        where: { id: parsedId.data },
+        select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true }
+      });
+      if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+        return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+      }
+      return reply.send({ agent });
+    } catch {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent profiles are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/agents/:agentId/journal",
+    async (request, reply) => {
+      const parsedId = uuidSchema.safeParse(request.params.agentId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!parsedId.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!query.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_QUERY", message: "The journal pagination query is invalid.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!prismaClient) {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent journal is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+
+      try {
+        const { limit, cursor } = query.data;
+        const agent = await prismaClient.agent.findUnique({
+          where: { id: parsedId.data },
+          select: { id: true, status: true }
+        });
+        if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+          return reply.code(404).send({
+            error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+          });
+        }
+        if (cursor) {
+          const cursorRow = await prismaClient.journalEntry.findUnique({
+            where: { id: cursor },
+            select: { id: true, agentId: true, publishedAt: true }
+          });
+          if (!cursorRow || cursorRow.agentId !== parsedId.data || !cursorRow.publishedAt) {
+            return reply.code(400).send({
+              error: { code: "INVALID_CURSOR", message: "The journal cursor is invalid.", correlationId: request.id, retryable: false }
+            });
+          }
+        }
+
+        const rows = await prismaClient.journalEntry.findMany({
+          where: { agentId: parsedId.data, publishedAt: { not: null } },
+          orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: { id: true, body: true, provenance: true, revision: true, publishedAt: true, createdAt: true }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit);
+        return reply.send({ agentId: parsedId.data, items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+      } catch {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent journal is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; mode?: string } }>(
+    "/v1/agents/:agentId/performance",
+    async (request, reply) => {
+      const parsedId = uuidSchema.safeParse(request.params.agentId);
+      const querySchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(30), mode: z.enum(["PAPER", "READ_ONLY", "LIVE_RESTRICTED"]).optional() });
+      const query = querySchema.safeParse(request.query);
+      if (!parsedId.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!query.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_QUERY", message: "The performance query is invalid.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!prismaClient) {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent performance is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+      try {
+        const agent = await prismaClient.agent.findUnique({
+          where: { id: parsedId.data },
+          select: { id: true, status: true }
+        });
+        if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+          return reply.code(404).send({
+            error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+          });
+        }
+        const snapshots = await prismaClient.performanceSnapshot.findMany({
+          where: { agentId: parsedId.data, ...(query.data.mode ? { mode: query.data.mode } : {}) },
+          orderBy: [{ windowEnd: "desc" }, { calculatedAt: "desc" }],
+          take: query.data.limit,
+          select: {
+            id: true, mode: true, provenance: true, windowStart: true, windowEnd: true,
+            methodologyVersion: true, pnlNet: true, maxDrawdown: true, sampleSize: true,
+            qualityFlags: true, calculatedAt: true
+          }
+        });
+        return reply.send({ agentId: parsedId.data, items: snapshots });
+      } catch {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent performance is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
 
   app.get("/v1/venues", async () => ({
     venues: [
