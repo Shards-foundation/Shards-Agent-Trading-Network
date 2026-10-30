@@ -10,6 +10,16 @@ The queue uses the existing PostgreSQL database rather than adding a broker. It 
 - `WorkerRunner`: registered handler dispatch, lease heartbeat while handlers run, fail-closed behaviour for unknown kinds, idle backoff and abortable polling.
 - `WorkerJob`: durable state, JSON payload, priority, availability, attempts, lease metadata, idempotency key, bounded error summary and completion timestamp.\n- `WorkerHeartbeat`: per-process status and last-seen timestamp; API readiness requires at least one fresh RUNNING heartbeat.\n- `apps/api/src/worker-main.ts`: dedicated worker process with unique process identity, periodic heartbeat, signal-aware loop shutdown and structured lifecycle logs.\n- The only built-in handler is `system.healthcheck`, a payload-validated no-side-effect handler. All other job kinds fail closed until explicitly registered.
 
+## Local runbook
+
+1. Apply the database migrations with `pnpm db:migrate:deploy` after setting `DATABASE_URL`.
+2. Set `WORKER_QUEUE=default`, `WORKER_HEARTBEAT_MS=5000`, `WORKER_LEASE_MS=30000` and `WORKER_STALE_AFTER_MS=30000`.
+3. Build the workspace with `pnpm build`.
+4. Start the API and the worker as separate processes. Start the worker with `pnpm --filter @satn/api worker`.
+5. Verify `GET /health/ready` reports `dependencies.worker: "connected"`. Stop the worker and verify readiness becomes degraded after its heartbeat is no longer fresh.
+
+The process manager (container orchestrator, systemd or equivalent) must restart non-zero exits. Do not run the worker inside the API process: they have independent lifecycles and resource limits.
+
 ## Delivery semantics
 
 Delivery is **at least once**, not exactly once. Handlers must be idempotent. The `lockedBy` value returned by claim is a unique per-claim fencing token; pass that exact token and the current `lockedAt` timestamp to heartbeat, complete and fail. A stale lease cannot complete after a different claim takes ownership. Lease expiry and availability checks use the PostgreSQL clock to avoid cross-worker clock skew.
