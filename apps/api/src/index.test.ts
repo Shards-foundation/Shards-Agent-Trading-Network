@@ -279,6 +279,42 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("INVALID_AGENT_ID");
   });
 
+  it("requires an idempotency key for trade intents", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/trade-intents",
+      payload: {
+        venue: "hyperliquid",
+        instrument: "BTC",
+        side: "BUY",
+        quantity: "1",
+        orderType: "LIMIT",
+        limitPrice: "100",
+        mode: "PAPER"
+      }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+  });
+
+  it("rejects live or market-order trade intents before any database access", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/trade-intents",
+      headers: { "idempotency-key": "test-live-disabled" },
+      payload: {
+        venue: "hyperliquid",
+        instrument: "BTC",
+        side: "BUY",
+        quantity: "1",
+        orderType: "MARKET",
+        mode: "LIVE_RESTRICTED"
+      }
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe("PAPER_LIMIT_ORDERS_ONLY");
+  });
+
   it("returns a retryable 503 when the persistent social store is not configured", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/feed" });
     expect(response.statusCode).toBe(503);
