@@ -24,6 +24,37 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     await prisma.$disconnect();
   });
 
+  it("reports durable queue counts and oldest pending age from PostgreSQL", async () => {
+    const queueName = `stats-${randomUUID()}`;
+    const queue = new WorkerQueue(prisma, { leaseMs: 30_000 });
+    try {
+      await queue.enqueue({ queue: queueName, kind: "system.healthcheck", payload: {} });
+      await queue.enqueue({ queue: queueName, kind: "system.healthcheck", payload: {} });
+      const claimed = await queue.claim(queueName, `stats-worker-${randomUUID()}`);
+      expect(claimed).not.toBeNull();
+      expect(claimed?.lockedAt).not.toBeNull();
+      expect(claimed?.lockedBy).toBeTruthy();
+      await queue.complete(claimed!.id, claimed!.lockedBy!, claimed!.lockedAt!);
+
+      const stats = await queue.stats(queueName);
+      expect(stats).toMatchObject({
+        queue: queueName,
+        queued: 1,
+        retryWait: 0,
+        running: 0,
+        succeeded: 1,
+        deadLetter: 0,
+        cancelled: 0,
+        queueDepth: 1,
+        expiredLeases: 0,
+      });
+      expect(stats.oldestPendingAgeMs).not.toBeNull();
+      expect(stats.oldestPendingAgeMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      await prisma.$executeRawUnsafe('DELETE FROM "WorkerJob" WHERE "queue" = $1', queueName);
+    }
+  });
+
   it("persists an agent and exposes only published journal entries through public read APIs", async () => {
     let ownerId: string | undefined;
     let agentId: string | undefined;
