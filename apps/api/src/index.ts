@@ -123,6 +123,29 @@ function createDatabaseProbe(prisma: PrismaClient): DatabaseHealthProbe {
   };
 }
 
+function createDefaultWorkerProbe(prisma: PrismaClient): DatabaseHealthProbe {
+  const maxAgeRaw = process.env.WORKER_STALE_AFTER_MS ?? "30000";
+  const maxAgeMs = Number(maxAgeRaw);
+  if (!Number.isSafeInteger(maxAgeMs) || maxAgeMs <= 0) {
+    throw new Error("WORKER_STALE_AFTER_MS must be a positive integer.");
+  }
+  return {
+    async check() {
+      const rows = await prisma.$queryRaw<Array<{ workerId: string }>>`
+        SELECT "workerId"
+        FROM "WorkerHeartbeat"
+        WHERE "status" = 'RUNNING'
+          AND "lastSeenAt" >= CURRENT_TIMESTAMP - (${maxAgeMs} * INTERVAL '1 millisecond')
+        LIMIT 1
+      `;
+      if (rows.length === 0) throw new Error("No healthy worker heartbeat is present.");
+    },
+    async close() {
+      // The API owns and disconnects the shared Prisma client.
+    }
+  };
+}
+
 function createDefaultQueueProbe(): DatabaseHealthProbe | null {
   if (!process.env.REDIS_URL) return null;
   const client = createClient({ url: process.env.REDIS_URL });
@@ -262,8 +285,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   const queueProbe = options.queueProbe === undefined
     ? (env.NODE_ENV === "test" ? null : createDefaultQueueProbe())
     : options.queueProbe;
-  // No worker is registered in this release, so readiness remains closed by default.
-  const workerProbe = options.workerProbe ?? null;
+  const workerProbe = options.workerProbe === undefined
+    ? (prismaClient && env.NODE_ENV !== "test" ? createDefaultWorkerProbe(prismaClient) : null)
+    : options.workerProbe;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const polymarketMarketProvider = options.polymarketMarketProvider ?? new PolymarketReadOnlyDiscoveryAdapter({ now });
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
