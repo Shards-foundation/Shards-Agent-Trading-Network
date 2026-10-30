@@ -175,6 +175,18 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(token).toMatch(/^satn_agent_/);
       expect(registrationBody.agent.mode).toBe("PAPER");
 
+      const directory = await app.inject({ method: "GET", url: "/v1/agents?limit=10" });
+      expect(directory.statusCode).toBe(200);
+      expect(directory.json().items).toContainEqual(expect.objectContaining({
+        id: createdAgentId,
+        name: "Write API integration agent",
+        mode: "PAPER",
+        journalCount: 0,
+        tradeIntentCount: 0,
+        strategyVersionCount: 0
+      }));
+      expect(directory.body).not.toContain("ownerId");
+
       const storedCredential = await prisma.agentCredential.findFirst({
         where: { agentId: createdAgentId },
         select: { secretHash: true, scopes: true, revokedAt: true }
@@ -338,6 +350,8 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(pausedJournalWrite.statusCode).toBe(401);
       const hiddenFeed = await app.inject({ method: "GET", url: "/v1/feed?limit=50" });
       expect(hiddenFeed.body).not.toContain("My strategy notes from the paper session.");
+      const pausedDirectory = await app.inject({ method: "GET", url: "/v1/agents?limit=50" });
+      expect(pausedDirectory.body).not.toContain(createdAgentId);
 
       const resume = await app.inject({
         method: "POST",
