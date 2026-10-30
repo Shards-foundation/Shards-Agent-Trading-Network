@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { calculatePaperPerformance } from "@satn/accounting";
+import { calculatePaperDailyLoss, calculatePaperPerformance } from "@satn/accounting";
 import { verifyOidcAccessToken } from "@satn/auth";
 import { evaluateTradeIntent, TradeIntentSchema } from "@satn/risk";
 import { simulateLimitOrder } from "@satn/paper-engine";
@@ -1062,8 +1062,30 @@ export function buildServer(options: BuildServerOptions = {}) {
 
       const observedMs = Date.parse(snapshot.observedAt);
       const observedAgeMs = Number.isFinite(observedMs) ? now() - observedMs : Number.POSITIVE_INFINITY;
+      // Replay this agent's paper fills to enforce UTC-day realised loss
+      // plus USD fees; prior fills reconstruct average-cost basis.
+      const utcDayStart = new Date(now());
+      utcDayStart.setUTCHours(0, 0, 0, 0);
+      const ledgerFills = await prismaClient.fill.findMany({
+        where: { venueOrder: { is: { intent: { is: { agentId: credential.agentId, mode: "PAPER" } } } } },
+        orderBy: [{ filledAt: "asc" }, { id: "asc" }],
+        select: {
+          price: true, quantity: true, fee: true, feeAsset: true, filledAt: true,
+          venueOrder: { select: { intent: { select: { instrument: true, side: true } } } }
+        }
+      });
+      const dailyLoss = calculatePaperDailyLoss(ledgerFills.map((fill) => ({
+        instrument: fill.venueOrder.intent.instrument,
+        side: fill.venueOrder.intent.side,
+        quantity: fill.quantity.toString(),
+        price: fill.price.toString(),
+        fee: fill.fee.toString(),
+        feeAsset: fill.feeAsset,
+        filledAt: fill.filledAt.toISOString()
+      })), utcDayStart.toISOString()).dailyLoss;
       const policy = {
         ...paperTradePolicy,
+        dailyLoss,
         marketDataAgeMs: snapshot.dataQuality === "LIVE" && observedAgeMs >= 0
           ? observedAgeMs
           : paperTradePolicy.maxMarketDataAgeMs + 1
