@@ -36,6 +36,11 @@ describe("deterministic risk gate", () => {
     expect(TradeIntentSchema.safeParse({ ...intent, withdrawAll: true }).success).toBe(false);
   });
 
+  it("rejects zero quantities and zero limit prices", () => {
+    expect(TradeIntentSchema.safeParse({ ...intent, quantity: "0.00000000" }).success).toBe(false);
+    expect(TradeIntentSchema.safeParse({ ...intent, limitPrice: "0.000" }).success).toBe(false);
+  });
+
   it("rejects a venue not explicitly allowlisted", () => {
     const decision = evaluateTradeIntent({ ...intent, venue: "unknown" }, policy, "v1");
     expect(decision.allowed).toBe(false);
