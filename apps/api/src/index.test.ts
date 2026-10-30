@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketSnapshot } from "@satn/venue-adapters";
-import { buildServer, resolvePaperTradePolicy, type DatabaseHealthProbe, type MarketDataProvider } from "./index.js";
+import {
+  buildServer,
+  resolvePaperTradePolicy,
+  type DatabaseHealthProbe,
+  type MarketDataProvider,
+} from "./index.js";
 
 const snapshot: MarketSnapshot = {
   venue: "hyperliquid",
@@ -11,7 +16,7 @@ const snapshot: MarketSnapshot = {
   sequence: "1793361600000",
   bid: "99.5",
   ask: "100",
-  dataQuality: "LIVE"
+  dataQuality: "LIVE",
 };
 
 describe("SATN API", () => {
@@ -27,7 +32,12 @@ describe("SATN API", () => {
 
   it("fails closed for non-PAPER execution modes and honours configured paper limits", () => {
     const paper = resolvePaperTradePolicy("PAPER", "250", "25");
-    expect(paper).toMatchObject({ maxOrderNotional: "250", maxDailyLoss: "25", halted: false, liveExecutionEnabled: false });
+    expect(paper).toMatchObject({
+      maxOrderNotional: "250",
+      maxDailyLoss: "25",
+      halted: false,
+      liveExecutionEnabled: false,
+    });
     for (const mode of ["READ_ONLY", "LIVE_RESTRICTED", "HALTED"] as const) {
       expect(resolvePaperTradePolicy(mode, "250", "25").halted).toBe(true);
     }
@@ -35,33 +45,68 @@ describe("SATN API", () => {
 
   it("rate limits API routes but leaves liveness available", async () => {
     let count = 0;
-    const rateLimitStore = { consume: async () => ++count, close: async () => undefined };
-    const testApp = buildServer({ rateLimitStore, rateLimitReadLimit: 1, databaseProbe: null, queueProbe: null });
+    const rateLimitStore = {
+      consume: async () => ++count,
+      close: async () => undefined,
+    };
+    const testApp = buildServer({
+      rateLimitStore,
+      rateLimitReadLimit: 1,
+      databaseProbe: null,
+      queueProbe: null,
+    });
     try {
-      expect((await testApp.inject({ method: "GET", url: "/v1/venues" })).statusCode).toBe(200);
-      const limited = await testApp.inject({ method: "GET", url: "/v1/venues" });
+      expect(
+        (await testApp.inject({ method: "GET", url: "/v1/venues" })).statusCode,
+      ).toBe(200);
+      const limited = await testApp.inject({
+        method: "GET",
+        url: "/v1/venues",
+      });
       expect(limited.statusCode).toBe(429);
       expect(limited.headers["retry-after"]).toBe("60");
       expect(limited.json().error.code).toBe("RATE_LIMITED");
-      expect((await testApp.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
-    } finally { await testApp.close(); }
+      expect(
+        (await testApp.inject({ method: "GET", url: "/health/live" }))
+          .statusCode,
+      ).toBe(200);
+    } finally {
+      await testApp.close();
+    }
   });
 
   it("fails closed when the configured rate-limit store errors", async () => {
-    const rateLimitStore = { consume: async () => { throw new Error("private Redis error"); }, close: async () => undefined };
-    const testApp = buildServer({ rateLimitStore, databaseProbe: null, queueProbe: null });
+    const rateLimitStore = {
+      consume: async () => {
+        throw new Error("private Redis error");
+      },
+      close: async () => undefined,
+    };
+    const testApp = buildServer({
+      rateLimitStore,
+      databaseProbe: null,
+      queueProbe: null,
+    });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/v1/venues" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/v1/venues",
+      });
       expect(response.statusCode).toBe(503);
       expect(response.json().error.code).toBe("RATE_LIMIT_UNAVAILABLE");
       expect(response.body).not.toContain("private Redis error");
-    } finally { await testApp.close(); }
+    } finally {
+      await testApp.close();
+    }
   });
 
   it("exposes liveness without requiring external services", async () => {
     const response = await app.inject({ method: "GET", url: "/health/live" });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: "ok", service: "satn-api" });
+    expect(response.json()).toMatchObject({
+      status: "ok",
+      service: "satn-api",
+    });
   });
 
   it("does not claim readiness before database and queue adapters exist", async () => {
@@ -70,22 +115,27 @@ describe("SATN API", () => {
     expect(response.json()).toMatchObject({
       status: "degraded",
       ready: false,
-      dependencies: { database: "not-configured", redis: "not-configured" }
+      dependencies: { database: "not-configured", redis: "not-configured" },
     });
     expect(response.json().execution.liveEnabled).toBe(false);
   });
 
-
   it("reports the database as connected but keeps readiness closed without Redis", async () => {
-    const probe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const probe: DatabaseHealthProbe = {
+      check: async () => undefined,
+      close: async () => undefined,
+    };
     const testApp = buildServer({ databaseProbe: probe });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/health/ready",
+      });
       expect(response.statusCode).toBe(503);
       expect(response.json()).toMatchObject({
         status: "degraded",
         ready: false,
-        dependencies: { database: "connected", redis: "not-configured" }
+        dependencies: { database: "connected", redis: "not-configured" },
       });
     } finally {
       await testApp.close();
@@ -93,15 +143,29 @@ describe("SATN API", () => {
   });
 
   it("reports ready only when database, Redis and worker probes pass", async () => {
-    const probe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
-    const testApp = buildServer({ databaseProbe: probe, queueProbe: probe, workerProbe: probe });
+    const probe: DatabaseHealthProbe = {
+      check: async () => undefined,
+      close: async () => undefined,
+    };
+    const testApp = buildServer({
+      databaseProbe: probe,
+      queueProbe: probe,
+      workerProbe: probe,
+    });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/health/ready",
+      });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
         status: "ok",
         ready: true,
-        dependencies: { database: "connected", redis: "connected", worker: "connected" }
+        dependencies: {
+          database: "connected",
+          redis: "connected",
+          worker: "connected",
+        },
       });
     } finally {
       await testApp.close();
@@ -109,14 +173,22 @@ describe("SATN API", () => {
   });
 
   it("reports an unavailable Redis dependency without leaking connection details", async () => {
-    const databaseProbe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const databaseProbe: DatabaseHealthProbe = {
+      check: async () => undefined,
+      close: async () => undefined,
+    };
     const queueProbe: DatabaseHealthProbe = {
-      check: async () => { throw new Error("private Redis connection details"); },
-      close: async () => undefined
+      check: async () => {
+        throw new Error("private Redis connection details");
+      },
+      close: async () => undefined,
     };
     const testApp = buildServer({ databaseProbe, queueProbe });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/health/ready",
+      });
       expect(response.statusCode).toBe(503);
       expect(response.json().dependencies.redis).toBe("unavailable");
       expect(response.body).not.toContain("private Redis connection details");
@@ -127,12 +199,17 @@ describe("SATN API", () => {
 
   it("reports a database probe failure without leaking connection details", async () => {
     const probe: DatabaseHealthProbe = {
-      check: async () => { throw new Error("private database connection string"); },
-      close: async () => undefined
+      check: async () => {
+        throw new Error("private database connection string");
+      },
+      close: async () => undefined,
     };
     const testApp = buildServer({ databaseProbe: probe });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/health/ready",
+      });
       expect(response.statusCode).toBe(503);
       expect(response.json().dependencies.database).toBe("unavailable");
       expect(response.body).not.toContain("private database connection string");
@@ -145,32 +222,71 @@ describe("SATN API", () => {
     const response = await app.inject({ method: "GET", url: "/v1/venues" });
     expect(response.statusCode).toBe(200);
     expect(response.json().liveExecutionEnabled).toBe(false);
-    expect(response.json().venues.find((venue: { id: string }) => venue.id === "hyperliquid").status)
-      .toBe("read-only");
-    expect(response.json().venues.find((venue: { id: string }) => venue.id === "pump-fun").status)
-      .toBe("read-only-review");
+    expect(
+      response
+        .json()
+        .venues.find((venue: { id: string }) => venue.id === "hyperliquid")
+        .status,
+    ).toBe("read-only");
+    expect(
+      response
+        .json()
+        .venues.find((venue: { id: string }) => venue.id === "pump-fun").status,
+    ).toBe("read-only-review");
   });
 
   it("exposes read-only Polymarket discovery with bounded pagination", async () => {
-    const provider = { listMarkets: vi.fn().mockResolvedValue({
-      venue: "polymarket", source: "https://gamma-api.polymarket.com/markets", retrievedAt: "2026-10-30T12:00:00.000Z",
-      limit: 10, offset: 0, nextOffset: null, executionEnabled: false, items: []
-    }) };
+    const provider = {
+      listMarkets: vi.fn().mockResolvedValue({
+        venue: "polymarket",
+        source: "https://gamma-api.polymarket.com/markets",
+        retrievedAt: "2026-10-30T12:00:00.000Z",
+        limit: 10,
+        offset: 0,
+        nextOffset: null,
+        executionEnabled: false,
+        items: [],
+      }),
+    };
     const testApp = buildServer({ polymarketMarketProvider: provider });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/v1/markets?venue=polymarket&limit=10&offset=0" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/v1/markets?venue=polymarket&limit=10&offset=0",
+      });
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({ venue: "polymarket", executionEnabled: false, items: [] });
-      expect(provider.listMarkets).toHaveBeenCalledWith({ limit: 10, offset: 0 });
-      expect((await testApp.inject({ method: "GET", url: "/v1/markets?venue=uniswap" })).statusCode).toBe(422);
-    } finally { await testApp.close(); }
+      expect(response.json()).toMatchObject({
+        venue: "polymarket",
+        executionEnabled: false,
+        items: [],
+      });
+      expect(provider.listMarkets).toHaveBeenCalledWith({
+        limit: 10,
+        offset: 0,
+      });
+      expect(
+        (
+          await testApp.inject({
+            method: "GET",
+            url: "/v1/markets?venue=uniswap",
+          })
+        ).statusCode,
+      ).toBe(422);
+    } finally {
+      await testApp.close();
+    }
   });
 
   it("returns read-only market data and identifies cache misses", async () => {
-    const provider: MarketDataProvider = { getMarketSnapshot: vi.fn().mockResolvedValue(snapshot) };
+    const provider: MarketDataProvider = {
+      getMarketSnapshot: vi.fn().mockResolvedValue(snapshot),
+    };
     const testApp = buildServer({ marketDataProvider: provider });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/v1/market/BTC" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC",
+      });
       expect(response.statusCode).toBe(200);
       expect(response.headers["x-cache"]).toBe("MISS");
       expect(response.json().snapshot).toEqual(snapshot);
@@ -183,17 +299,32 @@ describe("SATN API", () => {
 
   it("caches snapshots within the configured TTL", async () => {
     let nowMs = 1_000;
-    const provider: MarketDataProvider = { getMarketSnapshot: vi.fn().mockResolvedValue(snapshot) };
-    const testApp = buildServer({ marketDataProvider: provider, marketCacheTtlMs: 500, now: () => nowMs });
+    const provider: MarketDataProvider = {
+      getMarketSnapshot: vi.fn().mockResolvedValue(snapshot),
+    };
+    const testApp = buildServer({
+      marketDataProvider: provider,
+      marketCacheTtlMs: 500,
+      now: () => nowMs,
+    });
     try {
-      const first = await testApp.inject({ method: "GET", url: "/v1/market/BTC" });
-      const second = await testApp.inject({ method: "GET", url: "/v1/market/BTC" });
+      const first = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC",
+      });
+      const second = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC",
+      });
       expect(first.headers["x-cache"]).toBe("MISS");
       expect(second.headers["x-cache"]).toBe("HIT");
       expect(provider.getMarketSnapshot).toHaveBeenCalledOnce();
 
       nowMs += 501;
-      const third = await testApp.inject({ method: "GET", url: "/v1/market/BTC" });
+      const third = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC",
+      });
       expect(third.headers["x-cache"]).toBe("MISS");
       expect(provider.getMarketSnapshot).toHaveBeenCalledTimes(2);
     } finally {
@@ -204,15 +335,23 @@ describe("SATN API", () => {
   it("coalesces concurrent requests for the same instrument", async () => {
     let resolveSnapshot: ((value: MarketSnapshot) => void) | undefined;
     const provider: MarketDataProvider = {
-      getMarketSnapshot: vi.fn(() => new Promise<MarketSnapshot>((resolve) => {
-        resolveSnapshot = resolve;
-      }))
+      getMarketSnapshot: vi.fn(
+        () =>
+          new Promise<MarketSnapshot>((resolve) => {
+            resolveSnapshot = resolve;
+          }),
+      ),
     };
-    const testApp = buildServer({ marketDataProvider: provider, marketCacheTtlMs: 0 });
+    const testApp = buildServer({
+      marketDataProvider: provider,
+      marketCacheTtlMs: 0,
+    });
     try {
       const first = testApp.inject({ method: "GET", url: "/v1/market/BTC" });
       const second = testApp.inject({ method: "GET", url: "/v1/market/BTC" });
-      await vi.waitFor(() => expect(provider.getMarketSnapshot).toHaveBeenCalledOnce());
+      await vi.waitFor(() =>
+        expect(provider.getMarketSnapshot).toHaveBeenCalledOnce(),
+      );
       resolveSnapshot?.(snapshot);
       const [one, two] = await Promise.all([first, second]);
       expect(one.statusCode).toBe(200);
@@ -225,9 +364,14 @@ describe("SATN API", () => {
 
   it("marks stale snapshots transparently instead of labelling them live", async () => {
     const stale = { ...snapshot, dataQuality: "STALE" as const };
-    const testApp = buildServer({ marketDataProvider: { getMarketSnapshot: async () => stale } });
+    const testApp = buildServer({
+      marketDataProvider: { getMarketSnapshot: async () => stale },
+    });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/v1/market/BTC" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC",
+      });
       expect(response.statusCode).toBe(200);
       expect(response.json().snapshot.dataQuality).toBe("STALE");
     } finally {
@@ -236,10 +380,15 @@ describe("SATN API", () => {
   });
 
   it("rejects invalid instrument identifiers before calling the provider", async () => {
-    const provider: MarketDataProvider = { getMarketSnapshot: vi.fn().mockResolvedValue(snapshot) };
+    const provider: MarketDataProvider = {
+      getMarketSnapshot: vi.fn().mockResolvedValue(snapshot),
+    };
     const testApp = buildServer({ marketDataProvider: provider });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/v1/market/BTC%0AORDER" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC%0AORDER",
+      });
       expect(response.statusCode).toBe(400);
       expect(response.json().error.code).toBe("INVALID_INSTRUMENT");
       expect(provider.getMarketSnapshot).not.toHaveBeenCalled();
@@ -250,16 +399,21 @@ describe("SATN API", () => {
 
   it("sanitises provider failures and returns a retryable 502", async () => {
     const provider: MarketDataProvider = {
-      getMarketSnapshot: vi.fn().mockRejectedValue(new Error("secret upstream internals"))
+      getMarketSnapshot: vi
+        .fn()
+        .mockRejectedValue(new Error("secret upstream internals")),
     };
     const testApp = buildServer({ marketDataProvider: provider });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/v1/market/BTC" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC",
+      });
       expect(response.statusCode).toBe(502);
       expect(response.json().error).toMatchObject({
         code: "MARKET_DATA_UNAVAILABLE",
         message: "Market data is temporarily unavailable.",
-        retryable: true
+        retryable: true,
       });
       expect(response.body).not.toContain("secret upstream internals");
     } finally {
@@ -269,11 +423,16 @@ describe("SATN API", () => {
 
   it("rejects mismatched provider responses", async () => {
     const provider: MarketDataProvider = {
-      getMarketSnapshot: vi.fn().mockResolvedValue({ ...snapshot, instrumentId: "ETH" })
+      getMarketSnapshot: vi
+        .fn()
+        .mockResolvedValue({ ...snapshot, instrumentId: "ETH" }),
     };
     const testApp = buildServer({ marketDataProvider: provider });
     try {
-      const response = await testApp.inject({ method: "GET", url: "/v1/market/BTC" });
+      const response = await testApp.inject({
+        method: "GET",
+        url: "/v1/market/BTC",
+      });
       expect(response.statusCode).toBe(502);
       expect(response.json().error.code).toBe("MARKET_DATA_UNAVAILABLE");
     } finally {
@@ -288,7 +447,7 @@ describe("SATN API", () => {
       const response = await app.inject({
         method: "POST",
         url: "/v1/agents/00000000-0000-4000-8000-000000000000/credentials/rotate",
-        headers: { "x-registration-token": "wrong-token" }
+        headers: { "x-registration-token": "wrong-token" },
       });
       expect(response.statusCode).toBe(401);
       expect(response.json().error.code).toBe("INVALID_OWNER_CREDENTIAL");
@@ -296,7 +455,7 @@ describe("SATN API", () => {
       const invalidId = await app.inject({
         method: "POST",
         url: "/v1/agents/not-a-uuid/pause",
-        headers: { "x-registration-token": "test-bootstrap-secret" }
+        headers: { "x-registration-token": "test-bootstrap-secret" },
       });
       expect(invalidId.statusCode).toBe(400);
       expect(invalidId.json().error.code).toBe("INVALID_AGENT_ID");
@@ -311,7 +470,7 @@ describe("SATN API", () => {
       issuer: process.env.OIDC_ISSUER,
       audience: process.env.OIDC_AUDIENCE,
       jwksUrl: process.env.OIDC_JWKS_URL,
-      registrationToken: process.env.AGENT_REGISTRATION_TOKEN
+      registrationToken: process.env.AGENT_REGISTRATION_TOKEN,
     };
     process.env.AGENT_REGISTRATION_TOKEN = "bootstrap-must-not-bypass-oidc";
     try {
@@ -322,7 +481,7 @@ describe("SATN API", () => {
         method: "POST",
         url: "/v1/agents",
         headers: { "x-registration-token": "bootstrap-must-not-bypass-oidc" },
-        payload: { name: "OIDC test agent" }
+        payload: { name: "OIDC test agent" },
       });
       expect(misconfigured.statusCode).toBe(503);
       expect(misconfigured.json().error.code).toBe("OWNER_AUTH_MISCONFIGURED");
@@ -333,7 +492,7 @@ describe("SATN API", () => {
         method: "POST",
         url: "/v1/agents",
         headers: { "x-registration-token": "bootstrap-must-not-bypass-oidc" },
-        payload: { name: "OIDC test agent" }
+        payload: { name: "OIDC test agent" },
       });
       expect(missingBearer.statusCode).toBe(401);
       expect(missingBearer.json().error.code).toBe("INVALID_OWNER_CREDENTIAL");
@@ -344,7 +503,8 @@ describe("SATN API", () => {
       else process.env.OIDC_AUDIENCE = previous.audience;
       if (previous.jwksUrl === undefined) delete process.env.OIDC_JWKS_URL;
       else process.env.OIDC_JWKS_URL = previous.jwksUrl;
-      if (previous.registrationToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
+      if (previous.registrationToken === undefined)
+        delete process.env.AGENT_REGISTRATION_TOKEN;
       else process.env.AGENT_REGISTRATION_TOKEN = previous.registrationToken;
     }
   });
@@ -357,7 +517,7 @@ describe("SATN API", () => {
         method: "POST",
         url: "/v1/agents",
         headers: { "x-registration-token": "anything" },
-        payload: { name: "Example agent" }
+        payload: { name: "Example agent" },
       });
       expect(response.statusCode).toBe(503);
       expect(response.json().error.code).toBe("OWNER_AUTH_DISABLED");
@@ -375,7 +535,7 @@ describe("SATN API", () => {
         method: "POST",
         url: "/v1/agents",
         headers: { "x-registration-token": "ci-bootstrap-secret" },
-        payload: { name: "x", unexpected: "field" }
+        payload: { name: "x", unexpected: "field" },
       });
       expect(response.statusCode).toBe(400);
       expect(response.json().error.code).toBe("INVALID_AGENT");
@@ -389,7 +549,7 @@ describe("SATN API", () => {
     const response = await app.inject({
       method: "POST",
       url: "/v1/agents/not-a-uuid/journal",
-      payload: { body: "hello" }
+      payload: { body: "hello" },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_AGENT_ID");
@@ -406,8 +566,8 @@ describe("SATN API", () => {
         quantity: "1",
         orderType: "LIMIT",
         limitPrice: "100",
-        mode: "PAPER"
-      }
+        mode: "PAPER",
+      },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
@@ -424,15 +584,153 @@ describe("SATN API", () => {
         side: "BUY",
         quantity: "1",
         orderType: "MARKET",
-        mode: "LIVE_RESTRICTED"
-      }
+        mode: "LIVE_RESTRICTED",
+      },
     });
     expect(response.statusCode).toBe(422);
     expect(response.json().error.code).toBe("PAPER_LIMIT_ORDERS_ONLY");
   });
 
+  it("rejects malformed agent follow identifiers and self-follow before storage access", async () => {
+    const malformed = await app.inject({
+      method: "POST",
+      url: "/v1/agents/not-a-uuid/follows/00000000-0000-4000-8000-000000000000",
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().error.code).toBe("INVALID_AGENT_ID");
+    const self = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/follows/00000000-0000-4000-8000-000000000000",
+    });
+    expect(self.statusCode).toBe(422);
+    expect(self.json().error.code).toBe("SELF_FOLLOW_NOT_ALLOWED");
+  });
+
+  it("returns unavailable when persistent social storage is not configured", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000001/follows/00000000-0000-4000-8000-000000000002",
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
+  it("rejects malformed post and reply requests before storage access", async () => {
+    const badAgent = await app.inject({
+      method: "POST",
+      url: "/v1/agents/not-a-uuid/posts",
+      payload: { body: "hello" },
+    });
+    expect(badAgent.statusCode).toBe(400);
+    expect(badAgent.json().error.code).toBe("INVALID_AGENT_ID");
+    const emptyPost = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts",
+      payload: { body: "   " },
+    });
+    expect(emptyPost.statusCode).toBe(400);
+    expect(emptyPost.json().error.code).toBe("INVALID_POST");
+    const badPost = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts/not-a-uuid/replies",
+      payload: { body: "reply" },
+    });
+    expect(badPost.statusCode).toBe(400);
+    expect(badPost.json().error.code).toBe("INVALID_ID");
+  });
+
+  it("validates post-like identifiers before storage access", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/not-a-uuid/posts/00000000-0000-4000-8000-000000000000/likes",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_ID");
+  });
+
+  it("validates agent home-feed identifiers and pagination before storage access", async () => {
+    const badAgent = await app.inject({
+      method: "GET",
+      url: "/v1/agents/not-a-uuid/home-feed",
+    });
+    expect(badAgent.statusCode).toBe(400);
+    expect(badAgent.json().error.code).toBe("INVALID_AGENT_ID");
+    const badQuery = await app.inject({
+      method: "GET",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/home-feed?limit=0",
+    });
+    expect(badQuery.statusCode).toBe(400);
+    expect(badQuery.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("returns unavailable when agent home-feed storage is not configured", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/home-feed",
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
+  it("validates post feed pagination before querying storage", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/posts?limit=0",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("returns unavailable when post storage is not configured", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/posts" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
+  it("validates content-report reasons before requiring persistent storage", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts/00000000-0000-4000-8000-000000000001/reports",
+      payload: { reason: "NOT_A_REASON" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_REPORT");
+  });
+
+  it("validates visibility moderation requests before authentication", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/posts/not-a-uuid/visibility",
+      payload: { hidden: true },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_POST_ID");
+  });
+
+  it("requires OIDC configuration for the moderation queue", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/moderation/reports",
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("MODERATION_AUTH_UNAVAILABLE");
+  });
+
+  it("validates moderation decisions before authentication", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/reports/not-a-uuid",
+      payload: { status: "DELETE_EVERYTHING" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_REPORT_ID");
+  });
+
   it("validates agent-directory pagination before querying storage", async () => {
-    const response = await app.inject({ method: "GET", url: "/v1/agents?limit=0" });
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/agents?limit=0",
+    });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_QUERY");
   });
@@ -444,7 +742,10 @@ describe("SATN API", () => {
   });
 
   it("validates public trade-feed pagination before querying storage", async () => {
-    const response = await app.inject({ method: "GET", url: "/v1/trades?limit=0" });
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/trades?limit=0",
+    });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_QUERY");
   });
@@ -454,7 +755,7 @@ describe("SATN API", () => {
     expect(response.statusCode).toBe(503);
     expect(response.json().error).toMatchObject({
       code: "DATA_STORE_UNAVAILABLE",
-      retryable: true
+      retryable: true,
     });
   });
 
@@ -463,18 +764,24 @@ describe("SATN API", () => {
     expect(response.statusCode).toBe(503);
     expect(response.json().error).toMatchObject({
       code: "DATA_STORE_UNAVAILABLE",
-      retryable: true
+      retryable: true,
     });
   });
 
   it("validates feed pagination before querying storage", async () => {
-    const response = await app.inject({ method: "GET", url: "/v1/feed?limit=51" });
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/feed?limit=51",
+    });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_QUERY");
   });
 
   it("rejects malformed public agent identifiers", async () => {
-    const response = await app.inject({ method: "GET", url: "/v1/agents/not-a-uuid" });
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/agents/not-a-uuid",
+    });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_AGENT_ID");
   });
@@ -482,7 +789,7 @@ describe("SATN API", () => {
   it("rejects unsupported performance modes", async () => {
     const response = await app.inject({
       method: "GET",
-      url: "/v1/agents/00000000-0000-4000-8000-000000000000/performance?mode=LIVE"
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/performance?mode=LIVE",
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_QUERY");

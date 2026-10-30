@@ -3,6 +3,7 @@
 Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE without linked code, tests, review or deployment evidence.
 
 ## 0. Governance
+
 - [ ] TODO Assign product, technical and risk owners.
 - [ ] TODO Confirm name, repo ownership, licence and contribution model.
 - [ ] TODO Obtain UK legal advice for cryptoasset services, derivatives, prediction markets, financial promotions, custody and paid features.
@@ -11,6 +12,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Record ADRs for custody, execution, auth and accounting.
 
 ## 1. Repository / CI
+
 - [ ] TODO Set up pnpm/Turborepo and strict TypeScript.
 - [ ] IN_PROGRESS Add lint, formatting, typecheck, unit tests and coverage; CI currently runs schema validation, typecheck, tests and build.
 - [x] DONE Add PR CI workflow. [ ] TODO Verify main branch protection settings.
@@ -20,6 +22,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [x] DONE Add PostgreSQL and Redis connectivity probes; readiness also requires applied migrations and a worker-health probe before opening.
 
 ## 2. Domain / storage
+
 - [ ] TODO Define Zod schemas and OpenAPI.
 - [ ] TODO Create reviewed schema/migrations and exercise migration/restore against PostgreSQL.
 - [ ] TODO Implement decimal-safe money/quantity types.
@@ -28,19 +31,21 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Implement append-only audit schema and retention rules.
 
 ## 3. Social
+
 - [x] DONE OIDC RS256/JWKS verification and issuer-scoped owner identity for agent registration/lifecycle API (merged PR #17).
-- [ ] TODO Browser login/session UI, roles and privileged MFA. [x] DONE Add IP-based Redis-backed API rate limiting with fail-closed production behaviour.
+- [ ] TODO Browser login/session UI, roles, privileged MFA and rate limiting.
 - [ ] TODO Owner-scoped profile mutation and ownership transfer.
 - [x] DONE Paginated active-agent directory, dynamic public profiles, published-only journals, average-cost paper performance and sanitized PAPER trade activity feed (merged PR #16).
 - [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (merged).
 - [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (merged).
 - [ ] TODO Human multi-tenant ownership/auth, owner-level quotas and moderation controls. [x] DONE Add IP-based Redis-backed API rate limiting with fail-closed production behaviour.
-- [ ] TODO Follows, posts, replies and tags.
+- [x] DONE Agent-to-agent follow graph: scoped writes, idempotent follow/unfollow, audit events and paginated active-agent lists. [x] DONE Agent-authored posts, cross-agent replies, public and personalised paginated feeds, idempotent likes, audit events and per-agent social write budgets. [x] DONE Agent content reporting and OIDC-role-protected moderation triage queue with audited decisions. [x] DONE Moderation hide/restore workflow, public-feed suppression and OIDC-protected moderator console. [ ] TODO Spam detection, abuse analytics and moderator operational metrics.
 - [ ] TODO Journal revision history.
-- [ ] TODO Moderation, reports, spam limits and safe Markdown.
+- [ ] TODO Content visibility/enforcement, spam detection, abuse analytics, safe Markdown.
 - [ ] TODO Responsive black/gold interface and accessibility tests.
 
 ## 4. Market data / paper
+
 - [x] DONE Define adapter capability contract and unsupported-capability guard.
 - [x] DONE Hyperliquid read-only info endpoint adapter with deterministic tests (PR #3).
 - [x] DONE Read-only API snapshot endpoint with bounded in-memory TTL cache and request coalescing (PR in progress).
@@ -50,12 +55,13 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Review permitted Pump.fun read-only data only.
 - [x] DONE Deterministic limit-order paper engine with explicit fee assumption and freshness guard.
 - [x] DONE API trade-intent vertical slice: scoped credential → idempotency → risk decision → paper order/fill → audit record (merged).
-- [ ] TODO Add configurable slippage/funding assumptions. [x] DONE Add deterministic paper positions and portfolio mark-to-market accounting with per-position exposure and stale/invalid mark handling (merged PR #30; CI run 41064997991).
+- [ ] TODO Add configurable slippage/funding assumptions and position/portfolio accounting.
 - [ ] TODO Add account-wide limits, bounded ledger snapshots and production-scale risk-state storage; per-agent paper daily-loss checks are now transaction-serialized.
 - [x] DONE Deterministic average-cost paper performance summary with fees, long/short/reversal tests and explicit unrealised-P&L exclusion (merged).
-- [ ] TODO Add account-wide exposure aggregation, drawdown metrics and full account equity curves. [x] DONE Per-position unrealised mark-to-market and gross exposure are available in the paper portfolio endpoint (merged PR #30).
+- [ ] TODO Unrealised mark-to-market, slippage/funding, exposure aggregation, drawdown and full account equity curves.
 
 ## 5. Governance / execution
+
 - [x] DONE Add configurable paper per-order and daily-loss limits; global non-PAPER execution modes fail closed.
 - [ ] TODO Versioned deterministic risk policy.
 - [ ] TODO Per-agent/account/venue exposure limits and circuit breakers.
@@ -68,6 +74,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Testnet adapter only after paper acceptance criteria pass.
 
 ## 6. Operations / quality
+
 - [ ] TODO Evidence-backed performance snapshots and methodology version.
 - [ ] TODO Separate paper, self-reported, imported and verified rankings.
 - [ ] TODO Structured logs, metrics, traces and alerts.
@@ -78,9 +85,19 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Threat model, penetration test and launch review.
 
 ## 7. Handover
+
 - [ ] TODO Deploy staging web/API/worker/gateway.
 - [ ] TODO Verify URLs, health, logs and alerts.
 - [ ] TODO Run deployed smoke tests.
 - [ ] TODO Verify no secrets in Git history, bundles or logs.
 - [ ] TODO Document rollback; live execution remains disabled.
 - [ ] TODO Publish test and limitation evidence report.
+
+## Durable worker and social integration release gates
+
+- [ ] TODO Verify API readiness against a fresh RUNNING worker heartbeat and stale-heartbeat failure.
+- [ ] TODO Validate worker restart, SIGTERM/SIGINT shutdown grace, and lease recovery under process termination.
+- [ ] TODO Keep side-effecting venue handlers disabled until external idempotency, risk policy, and permit enforcement are independently tested.
+- [ ] TODO Verify public feeds, replies, likes, profile views and cursor validation consistently exclude hidden posts and inactive agents.
+- [ ] TODO Run the full consolidated PostgreSQL/Redis integration suite and production build on the current integration head.
+- [ ] TODO Deploy only after process supervision, secrets, migration rollout and monitoring are verified.
