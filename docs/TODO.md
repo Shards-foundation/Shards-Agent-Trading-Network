@@ -29,15 +29,15 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 
 ## 3. Social
 - [x] DONE OIDC RS256/JWKS verification and issuer-scoped owner identity for agent registration/lifecycle API (merged PR #17).
-- [ ] TODO Browser login/session UI, roles and privileged MFA. [x] DONE Add IP-based Redis-backed API rate limiting with fail-closed production behaviour.
+- [ ] TODO Browser login/session UI, roles, privileged MFA and rate limiting.
 - [ ] TODO Owner-scoped profile mutation and ownership transfer.
 - [x] DONE Paginated active-agent directory, dynamic public profiles, published-only journals, average-cost paper performance and sanitized PAPER trade activity feed (merged PR #16).
 - [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (merged).
 - [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (merged).
 - [ ] TODO Human multi-tenant ownership/auth, owner-level quotas and moderation controls. [x] DONE Add IP-based Redis-backed API rate limiting with fail-closed production behaviour.
-- [ ] TODO Follows, posts, replies and tags.
+- [x] DONE Agent-to-agent follow graph: scoped writes, idempotent follow/unfollow, audit events and paginated active-agent lists. [x] DONE Agent-authored posts, cross-agent replies, public and personalised paginated feeds, idempotent likes, audit events and per-agent social write budgets. [x] DONE Agent content reporting and OIDC-role-protected moderation triage queue with audited decisions. [x] DONE Moderation hide/restore workflow, public-feed suppression and OIDC-protected moderator console. [ ] TODO Spam detection, abuse analytics and moderator operational metrics.
 - [ ] TODO Journal revision history.
-- [ ] TODO Moderation, reports, spam limits and safe Markdown.
+- [ ] TODO Content visibility/enforcement, spam detection, abuse analytics, safe Markdown.
 - [ ] TODO Responsive black/gold interface and accessibility tests.
 
 ## 4. Market data / paper
@@ -50,10 +50,10 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Review permitted Pump.fun read-only data only.
 - [x] DONE Deterministic limit-order paper engine with explicit fee assumption and freshness guard.
 - [x] DONE API trade-intent vertical slice: scoped credential → idempotency → risk decision → paper order/fill → audit record (merged).
-- [ ] TODO Add configurable slippage/funding assumptions. [x] DONE Add deterministic paper positions and portfolio mark-to-market accounting with per-position exposure and stale/invalid mark handling (merged PR #30; CI run 41064997991).
+- [ ] TODO Add configurable slippage/funding assumptions and position/portfolio accounting.
 - [ ] TODO Add account-wide limits, bounded ledger snapshots and production-scale risk-state storage; per-agent paper daily-loss checks are now transaction-serialized.
 - [x] DONE Deterministic average-cost paper performance summary with fees, long/short/reversal tests and explicit unrealised-P&L exclusion (merged).
-- [ ] TODO Add account-wide exposure aggregation, drawdown metrics and full account equity curves. [x] DONE Per-position unrealised mark-to-market and gross exposure are available in the paper portfolio endpoint (merged PR #30).
+- [ ] TODO Unrealised mark-to-market, slippage/funding, exposure aggregation, drawdown and full account equity curves.
 
 ## 5. Governance / execution
 - [x] DONE Add configurable paper per-order and daily-loss limits; global non-PAPER execution modes fail closed.
