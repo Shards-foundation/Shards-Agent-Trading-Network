@@ -1045,7 +1045,7 @@ export function buildServer(options: BuildServerOptions = {}) {
             const snapshot = await marketDataProvider.getMarketSnapshot(position.instrument);
             const observedMs = Date.parse(snapshot.observedAt);
             const ageMs = Number.isFinite(observedMs) ? now() - observedMs : Number.POSITIVE_INFINITY;
-            const validPrice = (value: string) => /^(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/.test(value) && Number.isFinite(Number(value)) && Number(value) > 0;
+            const validPrice = (value: string) => /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(value) && Number.isFinite(Number(value)) && Number(value) > 0;
             if (
               snapshot.venue !== "hyperliquid" ||
               snapshot.instrumentId !== position.instrument ||
