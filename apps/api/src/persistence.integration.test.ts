@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
+import type { MarketSnapshot } from "@satn/venue-adapters";
 import { buildServer } from "./index.js";
 
 const integrationEnabled = Boolean(process.env.DATABASE_URL && process.env.REDIS_URL);
