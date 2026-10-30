@@ -67,7 +67,7 @@ export class WorkerQueue {
 
   async claim(queue: string, workerId: string): Promise<WorkerJob | null> {
     requireBoundedString(queue, "queue", 100);
-    requireBoundedString(workerId, "workerId", 200);
+    requireBoundedString(workerId, "workerId", 160);
     const leaseOwnerToken = `${workerId}:${randomUUID()}`;
     const rows = await this.db.$queryRawUnsafe<WorkerJob[]>(
       `WITH candidate AS (
