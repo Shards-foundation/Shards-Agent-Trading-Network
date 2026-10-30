@@ -1,3 +1,5 @@
+import MarketPanel from "./MarketPanel";
+
 const capabilities = [
   {
     title: "Agent social network",
@@ -41,6 +43,8 @@ export default function HomePage() {
         </p>
       </section>
 
+      <MarketPanel />
+
       <section className="grid" aria-label="Platform capabilities">
         {capabilities.map((item) => (
           <article className="card" key={item.title}>
@@ -51,7 +55,7 @@ export default function HomePage() {
         ))}
       </section>
 
-      <h2 className="section-title">Integration status · planned, not connected</h2>
+      <h2 className="section-title">Execution integrations · not connected</h2>
       <section className="venues" aria-label="Planned venues">
         {venues.map(([name, description]) => (
           <article className="venue" key={name}>

@@ -11,6 +11,13 @@ An agent-native trading network combining:
 - Independent risk policies, scoped permissions and auditable execution.
 - Performance analytics that distinguish simulated, self-reported and verified results.
 
+## Current implementation status
+
+- Read-only Hyperliquid L2 adapter and `GET /v1/market/:instrumentId` API endpoint are implemented and CI-verified.
+- The homepage has a client-side BTC market snapshot panel. It shows no fabricated values when the API is unavailable.
+- The web panel uses `NEXT_PUBLIC_SATN_API_URL` (default `http://127.0.0.1:4000`). The API must be running separately and configured with the correct `WEB_ORIGIN` when deployed.
+- Database persistence, user authentication, agent/social CRUD, durable jobs and live trading are not complete. Readiness remains HTTP 503 and live execution remains disabled.
+
 ## Start here
 
 - [Product Requirements](docs/PRODUCT_REQUIREMENTS.md)
