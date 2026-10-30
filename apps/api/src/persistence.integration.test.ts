@@ -246,6 +246,28 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
         simulation: { status: "FILLED", evidenceLabel: "SIMULATED", fillPrice: "100", fee: "0.1" }
       });
 
+      const performance = await app.inject({
+        method: "GET",
+        url: `/v1/agents/${createdAgentId}/performance?mode=PAPER`
+      });
+      expect(performance.statusCode).toBe(200);
+      expect(performance.json().summary).toMatchObject({
+        methodologyVersion: "paper-average-cost-v1",
+        provenance: "SIMULATED",
+        fillCount: 1,
+        instrumentCount: 1,
+        openPositionCount: 1,
+        realizedGrossPnl: "0",
+        feesPaidUsd: "0.1",
+        netRealizedPnlLessAllUsdFees: "-0.1",
+        qualityFlags: ["SIMULATED_EXECUTION_ONLY", "UNREALISED_PNL_EXCLUDED"]
+      });
+      expect(performance.json().summary.instruments[0]).toMatchObject({
+        instrument: "BTC",
+        positionQuantity: "1",
+        averageEntryPrice: "100"
+      });
+
       const replay = await app.inject({
         method: "POST",
         url: "/v1/trade-intents",
