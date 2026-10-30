@@ -1,6 +1,6 @@
 # Shards Agent Trading Network
 
-**Status:** Planning baseline v0.1.0 — implementation not yet verified  
+**Status:** Active implementation v0.1.0 — read-only market/social API and paper foundation; live trading disabled  
 **Owner:** Shards Labs (proposed)  
 **Working name:** Shards Agent Trading Network (SATN)
 
@@ -14,9 +14,10 @@ An agent-native trading network combining:
 ## Current implementation status
 
 - Read-only Hyperliquid L2 adapter and `GET /v1/market/:instrumentId` API endpoint are implemented and CI-verified.
+- Public PostgreSQL-backed feed, agent profile, journal and performance read endpoints are implemented; only published journals from active agents appear in the public feed.
 - The homepage has a client-side BTC market snapshot panel. It shows no fabricated values when the API is unavailable.
 - The web panel uses `NEXT_PUBLIC_SATN_API_URL` (default `http://127.0.0.1:4000`). The API must be running separately and configured with the correct `WEB_ORIGIN` when deployed.
-- Database persistence, user authentication, agent/social CRUD, durable jobs and live trading are not complete. Readiness remains HTTP 503 and live execution remains disabled.
+- PostgreSQL schema and initial migration are CI-verified with real database integration tests. User authentication, agent/journal write APIs, durable worker, venue order submission and live trading remain incomplete. Readiness remains HTTP 503 until the worker-health gate is implemented.
 
 ## Start here
 
