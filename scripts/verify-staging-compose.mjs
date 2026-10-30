@@ -9,6 +9,16 @@ const check = (condition, code) => {
   if (!condition) fail(code);
 };
 
+// Malformed credential-bearing URLs must never surface in an exception message.
+function urlOrNull(value) {
+  if (typeof value !== "string") return null;
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
 let compose;
 try {
   compose = JSON.parse(readFileSync(0, "utf8"));
@@ -30,21 +40,21 @@ for (const [name, service] of Object.entries(services)) {
   check(env.EXECUTION_MODE === "PAPER", `${name}_EXECUTION_MODE`);
   check(env.LIVE_EXECUTION_ENABLED === "false", `${name}_LIVE_FLAG`);
   check(!("AGENT_REGISTRATION_TOKEN" in env), `${name}_BOOTSTRAP_TOKEN`);
+  const databaseUrl = urlOrNull(env.DATABASE_URL);
   check(
-    typeof env.DATABASE_URL === "string" &&
+    databaseUrl !== null &&
+      ["postgresql:", "postgres:"].includes(databaseUrl.protocol) &&
       ["require", "verify-ca", "verify-full"].includes(
-        new URL(env.DATABASE_URL).searchParams.get("sslmode"),
+        databaseUrl.searchParams.get("sslmode"),
       ),
     `${name}_DATABASE_TLS`,
   );
-  check(
-    typeof env.REDIS_URL === "string" &&
-      new URL(env.REDIS_URL).protocol === "rediss:",
-    `${name}_REDIS_TLS`,
-  );
+  const redisUrl = urlOrNull(env.REDIS_URL);
+  check(redisUrl?.protocol === "rediss:", `${name}_REDIS_TLS`);
   for (const key of ["WEB_ORIGIN", "OIDC_ISSUER", "OIDC_JWKS_URL"]) {
+    const url = urlOrNull(env[key]);
     check(
-      typeof env[key] === "string" && new URL(env[key]).protocol === "https:",
+      url?.protocol === "https:" && !url.username && !url.password,
       `${name}_${key}_HTTPS`,
     );
   }
