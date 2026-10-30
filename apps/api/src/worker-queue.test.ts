@@ -132,7 +132,7 @@ describe("WorkerQueue", () => {
     const queue = new WorkerQueue(db, { baseRetryMs: 10, maxRetryMs: 20, maxErrorLength: 5 });
     const outcome = await queue.fail("e0a4c9d0-3c5e-4df9-8e15-6ad8bcbde111", "worker-a", new Date(), new Error("too-long-error"));
     expect(outcome).toBe("RETRY_WAIT");
-    const [, , , status, delay, message] = db.execute.mock.calls[0]![0] as unknown[];
+    const [, , , , status, delay, message] = db.execute.mock.calls[0]![0] as unknown[];
     expect(status).toBe("RETRY_WAIT");
     expect(Number(delay)).toBeGreaterThan(0);
     expect(message).toBe("too-l");
