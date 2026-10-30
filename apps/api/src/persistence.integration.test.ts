@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
@@ -601,6 +601,94 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       else process.env.OIDC_JWKS_URL = previous.jwksUrl;
       if (previous.registrationToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
       else process.env.AGENT_REGISTRATION_TOKEN = previous.registrationToken;
+    }
+  });
+
+  it("publishes tagged agent posts and allows another active agent to reply", async () => {
+    const suffix = randomUUID();
+    const owner = await prisma.user.create({ data: { authSubject: `satn-social-owner-${suffix}` } });
+    const author = await prisma.agent.create({
+      data: { ownerId: owner.id, name: "Social author", mode: "PAPER" }
+    });
+    const replier = await prisma.agent.create({
+      data: { ownerId: owner.id, name: "Social replier", mode: "PAPER" }
+    });
+    const authorToken = `satn-social-author-${suffix}`;
+    const replierToken = `satn-social-replier-${suffix}`;
+    let postId: string | undefined;
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    try {
+      await prisma.agentCredential.createMany({
+        data: [
+          { agentId: author.id, secretHash: createHash("sha256").update(authorToken).digest("hex"), scopes: ["social:write"] },
+          { agentId: replier.id, secretHash: createHash("sha256").update(replierToken).digest("hex"), scopes: ["social:write"] }
+        ]
+      });
+
+      const published = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${author.id}/posts`,
+        headers: { authorization: `Bearer ${authorToken}` },
+        payload: { body: "Researching BTC order-book imbalance.", tags: ["BTC", "Market-Structure", "btc"] }
+      });
+      expect(published.statusCode).toBe(201);
+      expect(published.json().post).toMatchObject({
+        agentId: author.id,
+        body: "Researching BTC order-book imbalance.",
+        tags: ["btc", "market-structure"],
+        provenance: "SELF_REPORTED",
+        status: "PUBLISHED"
+      });
+      postId = published.json().post.id as string;
+
+      const reply = await app.inject({
+        method: "POST",
+        url: `/v1/posts/${postId}/replies`,
+        headers: { authorization: `Bearer ${replierToken}` },
+        payload: { body: "I will compare that against spread and depth persistence." }
+      });
+      expect(reply.statusCode).toBe(201);
+      expect(reply.json().reply).toMatchObject({
+        postId,
+        agentId: replier.id,
+        body: "I will compare that against spread and depth persistence.",
+        agent: { name: "Social replier" }
+      });
+
+      const feed = await app.inject({ method: "GET", url: "/v1/posts?limit=10" });
+      expect(feed.statusCode).toBe(200);
+      expect(feed.json().items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: postId,
+          tags: ["btc", "market-structure"],
+          _count: { replies: 1 },
+          replies: [expect.objectContaining({ body: "I will compare that against spread and depth persistence." })]
+        })
+      ]));
+
+      const journalOnlyToken = `satn-social-journal-only-${suffix}`;
+      await prisma.agentCredential.create({
+        data: {
+          agentId: author.id,
+          secretHash: createHash("sha256").update(journalOnlyToken).digest("hex"),
+          scopes: ["journal:write"]
+        }
+      });
+      const forbidden = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${author.id}/posts`,
+        headers: { authorization: `Bearer ${journalOnlyToken}` },
+        payload: { body: "This must be rejected." }
+      });
+      expect(forbidden.statusCode).toBe(401);
+    } finally {
+      await app.close();
+      if (postId) await prisma.agentPostReply.deleteMany({ where: { postId } });
+      await prisma.agentPostReply.deleteMany({ where: { agentId: { in: [author.id, replier.id] } } });
+      await prisma.agentPost.deleteMany({ where: { agentId: { in: [author.id, replier.id] } } });
+      await prisma.agentCredential.deleteMany({ where: { agentId: { in: [author.id, replier.id] } } });
+      await prisma.agent.deleteMany({ where: { id: { in: [author.id, replier.id] } } });
+      await prisma.user.delete({ where: { id: owner.id } });
     }
   });
 
