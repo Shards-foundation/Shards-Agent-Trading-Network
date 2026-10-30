@@ -26,9 +26,15 @@ const heartbeatMs = positiveInteger("WORKER_HEARTBEAT_MS", 5_000);
 const leaseMs = positiveInteger("WORKER_LEASE_MS", 30_000);
 const staleAfterMs = positiveInteger("WORKER_STALE_AFTER_MS", 30_000);
 const metricsIntervalMs = positiveInteger("WORKER_METRICS_INTERVAL_MS", 60_000);
+const shutdownGraceMs = positiveInteger("WORKER_SHUTDOWN_GRACE_MS", 10_000);
 if (heartbeatMs >= staleAfterMs) {
   throw new Error(
     "WORKER_HEARTBEAT_MS must be lower than WORKER_STALE_AFTER_MS.",
+  );
+}
+if (shutdownGraceMs * 2 >= leaseMs) {
+  throw new Error(
+    "WORKER_SHUTDOWN_GRACE_MS must be less than half of WORKER_LEASE_MS.",
   );
 }
 
@@ -56,6 +62,7 @@ const runner = new WorkerRunner(queue, queueName, workerId, handlers, {
 });
 const shutdown = new AbortController();
 let heartbeatInFlight: Promise<void> | undefined;
+let shutdownTimer: NodeJS.Timeout | undefined;
 let stopping = false;
 let shutdownReason = "RUN_LOOP_EXIT";
 
@@ -73,6 +80,27 @@ async function persistHeartbeat(status: "RUNNING" | "STOPPED"): Promise<void> {
     queueName,
     status,
   );
+}
+
+function requestShutdown(reason: string, error?: Error): void {
+  shutdownReason = reason;
+  if (!shutdown.signal.aborted) shutdown.abort(error);
+  if (!shutdownTimer) {
+    shutdownTimer = setTimeout(() => {
+      console.error(
+        JSON.stringify({
+          event: "worker.shutdown.timeout",
+          workerId,
+          reason,
+          shutdownGraceMs,
+          at: new Date().toISOString(),
+        }),
+      );
+      // A handler that ignores AbortSignal must not pin a failed worker forever.
+      // Process termination leaves the job for lease-based recovery.
+      process.exit(1);
+    }, shutdownGraceMs);
+  }
 }
 
 async function stop(signal: string): Promise<void> {
@@ -98,6 +126,8 @@ async function stop(signal: string): Promise<void> {
     );
   }
   await prisma.$disconnect();
+  if (shutdownTimer) clearTimeout(shutdownTimer);
+  shutdownTimer = undefined;
   console.info(
     JSON.stringify({
       event: "worker.shutdown.completed",
@@ -138,7 +168,10 @@ const heartbeatTimer = setInterval(() => {
         JSON.stringify({ event: "worker.heartbeat.failed", workerId }),
       );
       process.exitCode = 1;
-      shutdown.abort(new Error("worker heartbeat persistence failed"));
+      requestShutdown(
+        "HEARTBEAT_FAILURE",
+        new Error("worker heartbeat persistence failed"),
+      );
     })
     .finally(() => {
       heartbeatInFlight = undefined;
@@ -147,12 +180,10 @@ const heartbeatTimer = setInterval(() => {
 heartbeatTimer.unref();
 
 process.once("SIGTERM", () => {
-  shutdownReason = "SIGTERM";
-  shutdown.abort();
+  requestShutdown("SIGTERM");
 });
 process.once("SIGINT", () => {
-  shutdownReason = "SIGINT";
-  shutdown.abort();
+  requestShutdown("SIGINT");
 });
 
 try {
@@ -166,6 +197,7 @@ try {
       leaseMs,
       staleAfterMs,
       metricsIntervalMs,
+      shutdownGraceMs,
       registeredHandlers: [...handlers.keys()],
       liveTradingEnabled: false,
       at: new Date().toISOString(),
