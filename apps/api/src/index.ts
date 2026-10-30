@@ -734,7 +734,13 @@ export function buildServer(options: BuildServerOptions = {}) {
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         select: {
           id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true,
-          _count: { select: { journals: true, tradeIntents: true, strategies: true } }
+          _count: {
+            select: {
+              journals: { where: { publishedAt: { not: null } } },
+              tradeIntents: true,
+              strategies: true
+            }
+          }
         }
       });
       const hasMore = rows.length > limit;
