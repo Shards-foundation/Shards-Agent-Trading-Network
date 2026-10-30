@@ -19,8 +19,8 @@ export interface InstrumentPerformance {
   feesPaidUsd: string;
   netRealizedPnlLessAllUsdFees: string;
   closedQuantity: string;
-  wins: number;
-  losses: number;
+  profitableCloseEvents: number;
+  unprofitableCloseEvents: number;
 }
 
 export interface PaperPerformanceSummary {
@@ -32,9 +32,8 @@ export interface PaperPerformanceSummary {
   realizedGrossPnl: string;
   feesPaidUsd: string;
   netRealizedPnlLessAllUsdFees: string;
-  closedQuantity: string;
-  wins: number;
-  losses: number;
+  profitableCloseEvents: number;
+  unprofitableCloseEvents: number;
   qualityFlags: string[];
   instruments: InstrumentPerformance[];
 }
@@ -47,8 +46,8 @@ interface MutableInstrument {
   realizedGross: bigint;
   feesUsd: bigint;
   closedQuantity: bigint;
-  wins: number;
-  losses: number;
+  profitableCloseEvents: number;
+  unprofitableCloseEvents: number;
 }
 
 function toUnits(value: string): bigint {
@@ -108,8 +107,8 @@ export function calculatePaperPerformance(rawFills: readonly PaperAccountingFill
         realizedGross: 0n,
         feesUsd: 0n,
         closedQuantity: 0n,
-        wins: 0,
-        losses: 0
+        profitableCloseEvents: 0,
+        unprofitableCloseEvents: 0
       };
       states.set(fill.instrument, state);
     }
@@ -134,8 +133,8 @@ export function calculatePaperPerformance(rawFills: readonly PaperAccountingFill
     const realised = (perUnitPnl * closed) / SCALE;
     state.realizedGross += realised;
     state.closedQuantity += closed;
-    if (realised > 0n) state.wins += 1;
-    if (realised < 0n) state.losses += 1;
+    if (realised > 0n) state.profitableCloseEvents += 1;
+    if (realised < 0n) state.unprofitableCloseEvents += 1;
 
     const newPosition = oldPosition + signedQuantity;
     if (newPosition === 0n) {
@@ -158,16 +157,16 @@ export function calculatePaperPerformance(rawFills: readonly PaperAccountingFill
       feesPaidUsd: fromUnits(state.feesUsd),
       netRealizedPnlLessAllUsdFees: fromUnits(state.realizedGross - state.feesUsd),
       closedQuantity: fromUnits(state.closedQuantity),
-      wins: state.wins,
-      losses: state.losses
+      profitableCloseEvents: state.profitableCloseEvents,
+      unprofitableCloseEvents: state.unprofitableCloseEvents
     }));
 
   const totals = [...states.values()].reduce((acc, state) => ({
     realizedGross: acc.realizedGross + state.realizedGross,
     feesUsd: acc.feesUsd + state.feesUsd,
     closedQuantity: acc.closedQuantity + state.closedQuantity,
-    wins: acc.wins + state.wins,
-    losses: acc.losses + state.losses
+    profitableCloseEvents: acc.profitableCloseEvents + state.profitableCloseEvents,
+    unprofitableCloseEvents: acc.unprofitableCloseEvents + state.unprofitableCloseEvents
   }), { realizedGross: 0n, feesUsd: 0n, closedQuantity: 0n, wins: 0, losses: 0 });
 
   return {
@@ -179,9 +178,8 @@ export function calculatePaperPerformance(rawFills: readonly PaperAccountingFill
     realizedGrossPnl: fromUnits(totals.realizedGross),
     feesPaidUsd: fromUnits(totals.feesUsd),
     netRealizedPnlLessAllUsdFees: fromUnits(totals.realizedGross - totals.feesUsd),
-    closedQuantity: fromUnits(totals.closedQuantity),
-    wins: totals.wins,
-    losses: totals.losses,
+    profitableCloseEvents: totals.profitableCloseEvents,
+    unprofitableCloseEvents: totals.unprofitableCloseEvents,
     qualityFlags: [...qualityFlags].sort(),
     instruments
   };
