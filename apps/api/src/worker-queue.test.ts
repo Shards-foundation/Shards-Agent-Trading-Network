@@ -110,7 +110,7 @@ describe("WorkerQueue", () => {
     const ok = await queue.complete("e0a4c9d0-3c5e-4df9-8e15-6ad8bcbde111", "worker-a", new Date());
     expect(ok).toBe(false);
     const [sql, ...params] = db.query.mock.calls[0]![0] as [string, ...unknown[]];
-    expect(sql).toContain('"lockedBy" = $2 AND "lockedAt" = $3');
+    expect(sql).toContain('date_trunc(\'milliseconds\', "lockedAt") = $3');
     expect(params).toHaveLength(3);
   });
 
