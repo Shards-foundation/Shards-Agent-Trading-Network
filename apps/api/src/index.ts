@@ -172,6 +172,35 @@ function createDefaultQueueProbe(): DatabaseHealthProbe | null {
   };
 }
 
+function createDefaultWorkerProbe(prisma: PrismaClient): DatabaseHealthProbe {
+  const queue = process.env.WORKER_QUEUE ?? "default";
+  const staleAfterMs = Number(process.env.WORKER_STALE_AFTER_MS ?? "30000");
+  if (!queue.trim() || queue.length > 100) {
+    throw new Error("WORKER_QUEUE must be 1..100 characters.");
+  }
+  if (!Number.isSafeInteger(staleAfterMs) || staleAfterMs <= 0) {
+    throw new Error("WORKER_STALE_AFTER_MS must be a positive integer.");
+  }
+  return {
+    async check() {
+      const workers = await prisma.$queryRaw<Array<{ workerId: string }>>`
+        SELECT "workerId"
+        FROM "WorkerHeartbeat"
+        WHERE "queue" = ${queue}
+          AND "status" = 'RUNNING'::"WorkerProcessStatus"
+          AND "lastSeenAt" >= CURRENT_TIMESTAMP - (${staleAfterMs} * INTERVAL '1 millisecond')
+        LIMIT 1
+      `;
+      if (workers.length === 0) {
+        throw new Error("No fresh running worker heartbeat was found for the configured queue.");
+      }
+    },
+    async close() {
+      // The owning Fastify instance disconnects its shared Prisma client.
+    }
+  };
+}
+
 
 export interface RateLimitStore {
   consume(key: string, windowSeconds: number): Promise<number>;
@@ -309,8 +338,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   const queueProbe = options.queueProbe === undefined
     ? (env.NODE_ENV === "test" ? null : createDefaultQueueProbe())
     : options.queueProbe;
-  // No worker is registered in this release, so readiness remains closed by default.
-  const workerProbe = options.workerProbe ?? null;
+  const workerProbe = options.workerProbe === undefined
+    ? (env.NODE_ENV === "test" || !prismaClient ? null : createDefaultWorkerProbe(prismaClient))
+    : options.workerProbe;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const polymarketMarketProvider = options.polymarketMarketProvider ?? new PolymarketReadOnlyDiscoveryAdapter({ now });
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
