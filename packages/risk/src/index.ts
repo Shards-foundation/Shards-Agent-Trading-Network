@@ -105,10 +105,12 @@ export function evaluateTradeIntent(
   const reasons: RiskReason[] = [];
 
   if (policy.halted) reasons.push("POLICY_HALTED");
-  if (!policy.allowedVenues.includes(intent.venue))
+  if (!policy.allowedVenues.includes(intent.venue)) {
     reasons.push("VENUE_NOT_ALLOWED");
-  if (policy.marketDataAgeMs > policy.maxMarketDataAgeMs)
+  }
+  if (policy.marketDataAgeMs > policy.maxMarketDataAgeMs) {
     reasons.push("STALE_MARKET_DATA");
+  }
 
   // This module does not issue permits or send orders. Do not let an arbitrary
   // in-memory policy flag approve live or read-only intent execution.
