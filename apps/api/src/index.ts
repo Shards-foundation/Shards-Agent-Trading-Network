@@ -82,8 +82,7 @@ export function buildServer(options: BuildServerOptions = {}) {
       level: env.NODE_ENV === "production" ? "info" : "debug",
       redact: ["req.headers.authorization", "req.headers.cookie", "*.privateKey", "*.secret"]
     },
-    requestIdHeader: "x-correlation-id",
-    disableRequestLogging: false
+    requestIdHeader: "x-correlation-id"
   });
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
   const databaseProbe = options.databaseProbe === undefined
