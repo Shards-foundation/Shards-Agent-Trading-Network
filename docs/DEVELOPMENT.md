@@ -4,17 +4,20 @@
 
 - Node.js 22+
 - pnpm 10.15.1
-- PostgreSQL for future persistent API workflows
-- Redis is planned for durable jobs; it is not connected yet
+- PostgreSQL 16+ for persistent storage
+- Redis 7+ for queue infrastructure
+- The worker process is not implemented yet, so API readiness remains HTTP 503
 
 ## Setup
 
 1. Copy `.env.example` to `.env` and adjust local service credentials.
 2. Install workspace dependencies: `pnpm install`.
-3. Validate the Prisma schema: `pnpm db:validate`.
-4. Run type checks: `pnpm typecheck`.
-5. Run tests: `pnpm test`.
-6. Build packages: `pnpm build`.
+3. Generate Prisma client: `pnpm db:generate`.
+4. Apply the reviewed initial migration: `pnpm db:migrate:deploy` (requires PostgreSQL).
+5. Validate the Prisma schema: `pnpm db:validate`.
+6. Run type checks: `pnpm typecheck`.
+7. Run tests: `pnpm test` (database/Redis integration tests run when `DATABASE_URL` and `REDIS_URL` are set).
+8. Build packages: `pnpm build`.
 
 The API currently exposes liveness, readiness, and venue capability metadata. Readiness intentionally returns HTTP 503 until persistent database and queue adapters are implemented. Do not treat that as production readiness.
 
