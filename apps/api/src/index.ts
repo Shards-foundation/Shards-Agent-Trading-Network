@@ -664,7 +664,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           simulation = simulateLimitOrder({
             side: intentData.side,
             quantity: intentData.quantity,
-            limitPrice: intentData.limitPrice,
+            ...(intentData.limitPrice !== undefined ? { limitPrice: intentData.limitPrice } : {}),
             feeBps: 10
           }, {
             venue: snapshot.venue,
@@ -691,7 +691,7 @@ export function buildServer(options: BuildServerOptions = {}) {
               side: intentData.side,
               orderType: intentData.orderType,
               quantity: intentData.quantity,
-              limitPrice: intentData.limitPrice,
+              ...(intentData.limitPrice !== undefined ? { limitPrice: intentData.limitPrice } : {}),
               mode: "PAPER",
               idempotencyKey: idempotency.data,
               payloadHash,
