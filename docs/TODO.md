@@ -24,7 +24,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Create reviewed schema/migrations and exercise migration/restore against PostgreSQL.
 - [ ] TODO Implement decimal-safe money/quantity types.
 - [ ] TODO Implement agent lifecycle and immutable strategy versions.
-- [ ] TODO Implement idempotency and durable outbox/job pattern and register the worker health probe.
+- [x] DONE Add PostgreSQL durable worker queue, retry/dead-letter handling, worker heartbeats and fail-closed readiness probe (integration PR #34; CI validation pending). [ ] TODO Add a separate transactional outbox for event publication and independent relay/replay.
 - [ ] TODO Implement append-only audit schema and retention rules.
 
 ## 3. Social
