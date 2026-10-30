@@ -42,7 +42,7 @@ jobs:
           if (( ${#files[@]} > 0 )); then
             pnpm exec prettier --write "${files[@]}"
           fi
-          pnpm exec prisma format --schema packages/database/prisma/schema.prisma
+          pnpm --filter @satn/database exec prisma format --schema prisma/schema.prisma
       - name: Commit formatting and remove one-time workflow
         env:
           GH_TOKEN: ${{ github.token }}
