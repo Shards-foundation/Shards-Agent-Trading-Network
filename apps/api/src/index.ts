@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { calculatePaperPerformance } from "@satn/accounting";
 import { evaluateTradeIntent, TradeIntentSchema } from "@satn/risk";
 import { simulateLimitOrder } from "@satn/paper-engine";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
 import type { MarketSnapshot } from "@satn/venue-adapters";
@@ -418,10 +418,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   });
 
   const setAgentStatus = (targetStatus: "ACTIVE" | "PAUSED") =>
-    async (request: { params: { agentId: string }; headers: Record<string, string | string[] | undefined>; id: string; log: { error: (data: unknown, message: string) => void } }, reply: {
-      code: (statusCode: number) => { send: (payload: unknown) => unknown };
-      send: (payload: unknown) => unknown
-    }) => {
+    async (request: FastifyRequest<{ Params: { agentId: string } }>, reply: FastifyReply) => {
       const parsedId = uuidSchema.safeParse(request.params.agentId);
       if (!parsedId.success) {
         return reply.code(400).send({
