@@ -619,9 +619,10 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       },
       close: async () => undefined
     };
+    const dependencyProbe = { check: async () => undefined, close: async () => undefined };
     const app = buildServer({
-      databaseProbe: null,
-      queueProbe: null,
+      databaseProbe: dependencyProbe,
+      queueProbe: dependencyProbe,
       workerProbe: heartbeatProbe
     });
     try {
