@@ -116,3 +116,5 @@ jobs:
           EXECUTION_MODE: PAPER
           LIVE_EXECUTION_ENABLED: "false"
         run: pnpm --filter @satn/api exec node scripts/worker-lifecycle-smoke.mjs
+      - name: Test fail-closed staging configuration preflight
+        run: node --test scripts/staging-preflight.test.mjs

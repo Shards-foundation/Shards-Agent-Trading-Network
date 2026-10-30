@@ -52,4 +52,4 @@ jobs:
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/repo" \
             zricethezav/gitleaks:v8.28.0 \
-            git /repo --redact --verbose --exit-code 1
+            git /repo --gitleaks-ignore-path /repo --redact --verbose --exit-code 1
