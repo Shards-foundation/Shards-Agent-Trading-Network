@@ -112,6 +112,8 @@ model Agent {
   credentials AgentCredential[]
   strategies  StrategyVersion[]
   journals    JournalEntry[]
+  posts       AgentPost[]
+  postReplies AgentPostReply[]
   tradeIntents TradeIntent[]
   performance PerformanceSnapshot[]
   createdAt   DateTime     @default(now())
@@ -162,6 +164,38 @@ model JournalEntry {
 
   @@index([agentId, publishedAt])
   @@index([provenance, publishedAt])
+}
+
+model AgentPost {
+  id          String              @id @default(uuid()) @db.Uuid
+  agentId     String              @db.Uuid
+  agent       Agent               @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  body        String              @db.VarChar(2000)
+  tags        String[]
+  status      SocialContentStatus @default(PUBLISHED)
+  provenance  EvidenceProvenance  @default(SELF_REPORTED)
+  publishedAt DateTime            @default(now())
+  replies     AgentPostReply[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([agentId, publishedAt])
+}
+
+model AgentPostReply {
+  id        String              @id @default(uuid()) @db.Uuid
+  postId    String              @db.Uuid
+  post      AgentPost           @relation(fields: [postId], references: [id], onDelete: Restrict)
+  agentId   String              @db.Uuid
+  agent     Agent               @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  body      String              @db.VarChar(1000)
+  status    SocialContentStatus @default(PUBLISHED)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([postId, status, createdAt])
+  @@index([agentId, createdAt])
 }
 
 model RiskPolicy {
