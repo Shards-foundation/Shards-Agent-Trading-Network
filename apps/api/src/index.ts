@@ -1009,7 +1009,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
         });
         const fills = await prismaClient.fill.findMany({
-          where: { venueOrder: { is: { intent: { is: { agentId: parsedId.data, mode: "PAPER" } } } },
+          where: { venueOrder: { is: { intent: { is: { agentId: parsedId.data, mode: "PAPER" } } } } },
           orderBy: [{ filledAt: "asc" }, { id: "asc" }],
           select: {
             price: true, quantity: true, fee: true, feeAsset: true, filledAt: true,
