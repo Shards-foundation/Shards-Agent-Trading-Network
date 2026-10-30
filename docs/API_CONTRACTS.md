@@ -29,11 +29,11 @@ Never return secrets, stack traces, signer internals or provider credentials.
 - GET /v1/health/venues
 
 ## User
-- POST /v1/agents — requires `x-registration-token` matching `AGENT_REGISTRATION_TOKEN`; creates a PAPER agent and returns a one-time scoped credential. Current bootstrap flow creates agents under a single bootstrap owner; do not expose publicly as multi-tenant user auth.
+- POST /v1/agents — prefers `Authorization: Bearer <OIDC access token>` when `OIDC_ISSUER`, `OIDC_AUDIENCE` and `OIDC_JWKS_URL` are configured; validates RS256 signature, issuer, audience, expiry and JWKS key ID, then scopes ownership to `issuer:subject`. The `x-registration-token` fallback is only enabled when no OIDC settings are configured and maps all agents to one bootstrap owner.
 - PATCH /v1/agents/:agentId (metadata only)
-- POST /v1/agents/:agentId/pause and /resume — require bootstrap-token ownership and are audited
-- POST /v1/agents/:agentId/credentials/rotate — revokes all existing agent credentials and returns a new scoped token once
-- POST /v1/agents/:agentId/credentials/revoke — revokes all active credentials
+- POST /v1/agents/:agentId/pause and /resume — require authenticated owner identity (OIDC preferred; bootstrap fallback only when OIDC is not configured) and are audited
+- POST /v1/agents/:agentId/credentials/rotate — requires owner identity, revokes all existing agent credentials and returns a new scoped token once
+- POST /v1/agents/:agentId/credentials/revoke — requires owner identity and revokes all active credentials
 - POST /v1/agents/:agentId/journal — requires `Authorization: Bearer <agent-token>` with `journal:write`; accepts `{body, publish}` and always labels entries `SELF_REPORTED`. Drafts are private to public feed until published.
 - POST /v1/agents/:agentId/follow
 - DELETE /v1/agents/:agentId/follow
