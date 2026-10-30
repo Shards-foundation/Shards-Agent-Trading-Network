@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  MODERATOR
+  OPERATOR
+  ADMIN
+}
+
+enum RecordStatus {
+  ACTIVE
+  PAUSED
+  REVOKED
+  DISABLED
+}
+
+enum AgentMode {
+  PAPER
+  READ_ONLY
+  LIVE_RESTRICTED
+  HALTED
+}
+
+enum EvidenceProvenance {
+  SIMULATED
+  SELF_REPORTED
+  IMPORTED
+  VENUE_VERIFIED
+  CHAIN_VERIFIED
+}
+
+enum IntentMode {
+  PAPER
+  READ_ONLY
+  LIVE_RESTRICTED
+}
+
+enum IntentStatus {
+  RECEIVED
+  VALIDATED
+  RISK_REJECTED
+  RISK_APPROVED
+  PERMITTED
+  SUBMISSION_STARTED
+  SUBMISSION_UNKNOWN
+  ACKNOWLEDGED
+  OPEN
+  PARTIALLY_FILLED
+  FILLED
+  CANCEL_PENDING
+  CANCELLED
+  REJECTED
+  EXPIRED
+  RECONCILIATION_REQUIRED
+  RECONCILED
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+}
+
+enum RiskOutcome {
+  APPROVED
+  REJECTED
+}
+
+enum VenueOrderState {
+  ACKNOWLEDGED
+  OPEN
+  PARTIALLY_FILLED
+  FILLED
+  CANCELLED
+  REJECTED
+  UNKNOWN
+}
+
+model User {
+  id          String       @id @default(uuid()) @db.Uuid
+  authSubject String       @unique
+  role        UserRole     @default(USER)
+  status      RecordStatus @default(ACTIVE)
+  agents      Agent[]
+  riskPolicies RiskPolicy[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model Agent {
+  id          String       @id @default(uuid()) @db.Uuid
+  ownerId     String       @db.Uuid
+  owner       User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  name        String       @db.VarChar(100)
+  description String?      @db.VarChar(1000)
+  status      RecordStatus @default(ACTIVE)
+  mode        AgentMode    @default(PAPER)
+  version     Int          @default(1)
+  credentials AgentCredential[]
+  strategies  StrategyVersion[]
+  journals    JournalEntry[]
+  tradeIntents TradeIntent[]
+  performance PerformanceSnapshot[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([ownerId, status])
+  @@index([status, mode])
+}
+
+model AgentCredential {
+  id         String       @id @default(uuid()) @db.Uuid
+  agentId    String       @db.Uuid
+  agent      Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  secretHash String       @unique
+  scopes     String[]
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime     @default(now())
+
+  @@index([agentId, revokedAt])
+}
+
+model StrategyVersion {
+  id        String   @id @default(uuid()) @db.Uuid
+  agentId   String   @db.Uuid
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  version   Int
+  configHash String
+  codeRef   String?
+  journals  JournalEntry[]
+  createdAt DateTime @default(now())
+
+  @@unique([agentId, version])
+}
+
+model JournalEntry {
+  id                String             @id @default(uuid()) @db.Uuid
+  agentId           String             @db.Uuid
+  agent             Agent              @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  strategyVersionId String?            @db.Uuid
+  strategyVersion   StrategyVersion?   @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
+  body              String             @db.VarChar(10000)
+  provenance        EvidenceProvenance
+  revision          Int                @default(1)
+  publishedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([agentId, publishedAt])
+  @@index([provenance, publishedAt])
+}
+
+model RiskPolicy {
+  id         String   @id @default(uuid()) @db.Uuid
+  ownerId    String   @db.Uuid
+  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  version    Int
+  limits     Json
+  active     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([ownerId, version])
+  @@index([ownerId, active])
+}
+
+model TradeIntent {
+  id             String       @id @default(uuid()) @db.Uuid
+  agentId        String       @db.Uuid
+  agent          Agent        @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  venue          String       @db.VarChar(64)
+  instrument     String       @db.VarChar(128)
+  side           OrderSide
+  orderType      OrderType
+  quantity       Decimal      @db.Decimal(38, 18)
+  limitPrice     Decimal?     @db.Decimal(38, 18)
+  mode           IntentMode   @default(PAPER)
+  idempotencyKey String       @db.VarChar(200)
+  payloadHash    String
+  status         IntentStatus @default(RECEIVED)
+  riskDecision   RiskDecision?
+  venueOrder     VenueOrder?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([agentId, idempotencyKey])
+  @@index([agentId, status, createdAt])
+  @@index([venue, instrument, createdAt])
+}
+
+model RiskDecision {
+  id            String      @id @default(uuid()) @db.Uuid
+  intentId      String      @unique @db.Uuid
+  intent        TradeIntent @relation(fields: [intentId], references: [id], onDelete: Restrict)
+  outcome       RiskOutcome
+  reasonCodes   String[]
+  policyVersion Int
+  evaluatedAt   DateTime    @default(now())
+}
+
+model VenueOrder {
+  id            String          @id @default(uuid()) @db.Uuid
+  intentId      String          @unique @db.Uuid
+  intent        TradeIntent     @relation(fields: [intentId], references: [id], onDelete: Restrict)
+  venue         String          @db.VarChar(64)
+  clientOrderId String          @unique @db.VarChar(200)
+  venueOrderId  String?
+  state         VenueOrderState @default(UNKNOWN)
+  submittedAt   DateTime?
+  updatedAt     DateTime        @updatedAt
+  fills         Fill[]
+
+  @@index([venue, state, updatedAt])
+}
+
+model Fill {
+  id           String    @id @default(uuid()) @db.Uuid
+  venueOrderId String    @db.Uuid
+  venueOrder   VenueOrder @relation(fields: [venueOrderId], references: [id], onDelete: Restrict)
+  fillRef      String
+  price        Decimal   @db.Decimal(38, 18)
+  quantity     Decimal   @db.Decimal(38, 18)
+  fee          Decimal   @db.Decimal(38, 18)
+  feeAsset     String
+  filledAt     DateTime
+
+  @@unique([venueOrderId, fillRef])
+  @@index([filledAt])
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorType     String   @db.VarChar(64)
+  actorId       String   @db.VarChar(200)
+  action        String   @db.VarChar(128)
+  targetType    String   @db.VarChar(64)
+  targetId      String   @db.VarChar(200)
+  correlationId String   @db.VarChar(200)
+  payloadHash   String
+  occurredAt    DateTime @default(now())
+
+  @@index([targetType, targetId, occurredAt])
+  @@index([actorType, actorId, occurredAt])
+}
+
+model PerformanceSnapshot {
+  id                  String             @id @default(uuid()) @db.Uuid
+  agentId             String             @db.Uuid
+  agent               Agent              @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  mode                IntentMode
+  provenance          EvidenceProvenance
+  windowStart         DateTime
+  windowEnd           DateTime
+  methodologyVersion  String
+  pnlNet              Decimal            @db.Decimal(38, 18)
+  maxDrawdown         Decimal            @db.Decimal(18, 8)
+  sampleSize          Int
+  qualityFlags        String[]
+  calculatedAt        DateTime           @default(now())
+
+  @@index([agentId, mode, windowEnd])
+  @@index([provenance, windowEnd])
+}
