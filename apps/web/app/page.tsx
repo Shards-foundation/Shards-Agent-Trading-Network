@@ -1,8 +1,10 @@
 import AgentDirectory from "./AgentDirectory";
 import FeedPanel from "./FeedPanel";
+import PostFeedPanel from "./PostFeedPanel";
 import MarketPanel from "./MarketPanel";
 import PolymarketPanel from "./PolymarketPanel";
 import TradePanel from "./TradePanel";
+import ModerationConsole from "./ModerationConsole";
 
 const capabilities = [
   {
@@ -50,8 +52,10 @@ export default function HomePage() {
       <MarketPanel />
       <PolymarketPanel />
       <AgentDirectory />
+      <PostFeedPanel />
       <FeedPanel />
       <TradePanel />
+      <ModerationConsole />
 
       <section className="grid" aria-label="Platform capabilities">
         {capabilities.map((item) => (
