@@ -304,6 +304,7 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(conflictingReplay.statusCode).toBe(409);
       expect(conflictingReplay.json().error.code).toBe("IDEMPOTENCY_KEY_REUSED");
 
+
       const rejected = await app.inject({
         method: "POST",
         url: "/v1/trade-intents",
@@ -339,6 +340,74 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
         venueOrder: null
       });
 
+      // Seed a prior-day ETH long. Two concurrent closes would each pass a
+      // stale pre-check, but the transaction lock must let only one cross the
+      // daily loss threshold.
+      const seedId = randomUUID();
+      const priorDay = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const seedIntent = await prisma.tradeIntent.create({
+        data: {
+          agentId: createdAgentId,
+          venue: "hyperliquid",
+          instrument: "ETH",
+          side: "BUY",
+          orderType: "LIMIT",
+          quantity: "2",
+          limitPrice: "1000",
+          mode: "PAPER",
+          idempotencyKey: `loss-seed-${seedId}`,
+          payloadHash: "a".repeat(64),
+          status: "FILLED"
+        }
+      });
+      await prisma.venueOrder.create({
+        data: {
+          intentId: seedIntent.id,
+          venue: "hyperliquid",
+          clientOrderId: `loss-seed-client-${seedId}`,
+          venueOrderId: `loss-seed-order-${seedId}`,
+          state: "FILLED",
+          submittedAt: priorDay,
+          fills: {
+            create: {
+              fillRef: `loss-seed-fill-${seedId}`,
+              price: "1000",
+              quantity: "2",
+              fee: "0",
+              feeAsset: "USD",
+              filledAt: priorDay
+            }
+          }
+        }
+      });
+      const concurrentCloses = await Promise.all(["close-a", "close-b"].map((suffix) =>
+        app.inject({
+          method: "POST",
+          url: "/v1/trade-intents",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "idempotency-key": `loss-${suffix}-${seedId}`
+          },
+          payload: {
+            venue: "hyperliquid",
+            instrument: "ETH",
+            side: "SELL",
+            quantity: "1",
+            orderType: "LIMIT",
+            limitPrice: "1",
+            mode: "PAPER"
+          }
+        })
+      ));
+      expect(concurrentCloses.filter((response) => response.statusCode === 201)).toHaveLength(1);
+      expect(concurrentCloses.filter((response) => response.statusCode === 422)).toHaveLength(1);
+      const lossRejected = concurrentCloses.find((response) => response.statusCode === 422);
+      expect(lossRejected?.json().error.reasons).toContain("DAILY_LOSS_LIMIT_REACHED");
+      const ethFills = await prisma.fill.findMany({
+        where: { venueOrder: { is: { intent: { is: { agentId: createdAgentId, instrument: "ETH" } } } } },
+        select: { id: true }
+      });
+      expect(ethFills).toHaveLength(2);
       const pause = await app.inject({
         method: "POST",
         url: `/v1/agents/${createdAgentId}/pause`,

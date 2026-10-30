@@ -1062,36 +1062,17 @@ export function buildServer(options: BuildServerOptions = {}) {
 
       const observedMs = Date.parse(snapshot.observedAt);
       const observedAgeMs = Number.isFinite(observedMs) ? now() - observedMs : Number.POSITIVE_INFINITY;
-      // Replay this agent's paper fills to enforce UTC-day realised loss
-      // plus USD fees; prior fills reconstruct average-cost basis.
-      const utcDayStart = new Date(now());
-      utcDayStart.setUTCHours(0, 0, 0, 0);
-      const ledgerFills = await prismaClient.fill.findMany({
-        where: { venueOrder: { is: { intent: { is: { agentId: credential.agentId, mode: "PAPER" } } } } },
-        orderBy: [{ filledAt: "asc" }, { id: "asc" }],
-        select: {
-          price: true, quantity: true, fee: true, feeAsset: true, filledAt: true,
-          venueOrder: { select: { intent: { select: { instrument: true, side: true } } } }
-        }
-      });
-      const dailyLoss = calculatePaperDailyLoss(ledgerFills.map((fill) => ({
-        instrument: fill.venueOrder.intent.instrument,
-        side: fill.venueOrder.intent.side,
-        quantity: fill.quantity.toString(),
-        price: fill.price.toString(),
-        fee: fill.fee.toString(),
-        feeAsset: fill.feeAsset,
-        filledAt: fill.filledAt.toISOString()
-      })), utcDayStart.toISOString()).dailyLoss;
-      const policy = {
+      const policyBase = {
         ...paperTradePolicy,
-        dailyLoss,
         marketDataAgeMs: snapshot.dataQuality === "LIVE" && observedAgeMs >= 0
           ? observedAgeMs
           : paperTradePolicy.maxMarketDataAgeMs + 1
       };
-      const decision = evaluateTradeIntent(intentData, policy, "paper-default-v1");
-      const simulatedAt = now();
+      // Preliminary evaluation is repeated under a per-agent PostgreSQL
+      // advisory lock inside the write transaction before any order is stored.
+      let policy = { ...policyBase, dailyLoss: "0" };
+      let decision = evaluateTradeIntent(intentData, policy, "paper-default-v1");
+      let simulatedAt = now();
       let simulation: ReturnType<typeof simulateLimitOrder> | null = null;
       if (decision.allowed) {
         try {
@@ -1117,6 +1098,47 @@ export function buildServer(options: BuildServerOptions = {}) {
 
       try {
         const result = await prismaClient.$transaction(async (tx) => {
+          // Lock the owning agent row until commit/rollback so concurrent
+          // paper intents for this agent re-check loss against committed fills.
+          await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Agent" WHERE "id" = ${credential.agentId}::uuid FOR UPDATE`;
+
+          const utcDayStart = new Date(now());
+          utcDayStart.setUTCHours(0, 0, 0, 0);
+          const ledgerFills = await tx.fill.findMany({
+            where: { venueOrder: { is: { intent: { is: { agentId: credential.agentId, mode: "PAPER" } } } } },
+            orderBy: [{ filledAt: "asc" }, { id: "asc" }],
+            select: {
+              price: true, quantity: true, fee: true, feeAsset: true, filledAt: true,
+              venueOrder: { select: { intent: { select: { instrument: true, side: true } } } }
+            }
+          });
+          const dailyLoss = calculatePaperDailyLoss(ledgerFills.map((fill) => ({
+            instrument: fill.venueOrder.intent.instrument,
+            side: fill.venueOrder.intent.side,
+            quantity: fill.quantity.toString(),
+            price: fill.price.toString(),
+            fee: fill.fee.toString(),
+            feeAsset: fill.feeAsset,
+            filledAt: fill.filledAt.toISOString()
+          })), utcDayStart.toISOString()).dailyLoss;
+          policy = { ...policyBase, dailyLoss };
+          decision = evaluateTradeIntent(intentData, policy, "paper-default-v1");
+          if (decision.allowed && !simulation) {
+            simulatedAt = now();
+            simulation = simulateLimitOrder({
+              side: intentData.side,
+              quantity: intentData.quantity,
+              ...(intentData.limitPrice !== undefined ? { limitPrice: intentData.limitPrice } : {}),
+              feeBps: 10
+            }, {
+              venue: snapshot.venue,
+              instrumentId: snapshot.instrumentId,
+              observedAt: snapshot.observedAt,
+              bid: snapshot.bid,
+              ask: snapshot.ask,
+              dataQuality: snapshot.dataQuality
+            }, { nowMs: simulatedAt, maxSnapshotAgeMs: paperTradePolicy.maxMarketDataAgeMs });
+          }
           const created = await tx.tradeIntent.create({
             data: {
               agentId: credential.agentId,
