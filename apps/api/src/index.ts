@@ -1894,12 +1894,10 @@ export function buildServer(options: BuildServerOptions = {}) {
         },
       });
       const hasMore = rows.length > limit;
-      const items = rows
-        .slice(0, limit)
-        .map((row) => ({
-          followedAt: row.createdAt,
-          agent: row.followedAgent,
-        }));
+      const items = rows.slice(0, limit).map((row) => ({
+        followedAt: row.createdAt,
+        agent: row.followedAgent,
+      }));
       return reply.send({
         items,
         nextCursor: hasMore ? (items.at(-1)?.agent.id ?? null) : null,
@@ -2020,12 +2018,10 @@ export function buildServer(options: BuildServerOptions = {}) {
         },
       });
       const hasMore = rows.length > limit;
-      const items = rows
-        .slice(0, limit)
-        .map((row) => ({
-          followedAt: row.createdAt,
-          agent: row.followerAgent,
-        }));
+      const items = rows.slice(0, limit).map((row) => ({
+        followedAt: row.createdAt,
+        agent: row.followerAgent,
+      }));
       return reply.send({
         items,
         nextCursor: hasMore ? (items.at(-1)?.agent.id ?? null) : null,
