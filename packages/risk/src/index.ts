@@ -18,7 +18,7 @@ export const TradeIntentSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (toUnits(value.quantity) === 0n) {
+    if (decimal.safeParse(value.quantity).success && toUnits(value.quantity) === 0n) {
       ctx.addIssue({
         code: "custom",
         path: ["quantity"],
@@ -32,7 +32,11 @@ export const TradeIntentSchema = z
         message: "LIMIT orders require limitPrice.",
       });
     }
-    if (value.limitPrice !== undefined && toUnits(value.limitPrice) === 0n) {
+    if (
+      value.limitPrice !== undefined &&
+      decimal.safeParse(value.limitPrice).success &&
+      toUnits(value.limitPrice) === 0n
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["limitPrice"],
