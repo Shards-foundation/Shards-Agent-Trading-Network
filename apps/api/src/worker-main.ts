@@ -43,6 +43,7 @@ const runner = new WorkerRunner(queue, queueName, workerId, handlers, { leaseMs 
 const shutdown = new AbortController();
 let heartbeatInFlight: Promise<void> | undefined;
 let stopping = false;
+let shutdownReason = "RUN_LOOP_EXIT";
 
 async function persistHeartbeat(status: "RUNNING" | "STOPPED"): Promise<void> {
   await prisma.$executeRawUnsafe(
@@ -85,8 +86,8 @@ const heartbeatTimer = setInterval(() => {
 }, heartbeatMs);
 heartbeatTimer.unref();
 
-process.once("SIGTERM", () => { shutdown.abort(); });
-process.once("SIGINT", () => { shutdown.abort(); });
+process.once("SIGTERM", () => { shutdownReason = "SIGTERM"; shutdown.abort(); });
+process.once("SIGINT", () => { shutdownReason = "SIGINT"; shutdown.abort(); });
 
 try {
   await persistHeartbeat("RUNNING");
@@ -106,5 +107,5 @@ try {
   console.error(JSON.stringify({ event: "worker.fatal", workerId, at: new Date().toISOString() }));
   process.exitCode = 1;
 } finally {
-  if (!stopping) await stop("RUN_LOOP_EXIT");
+  if (!stopping) await stop(shutdownReason);
 }
