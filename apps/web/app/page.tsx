@@ -55,7 +55,7 @@ export default function HomePage() {
         ))}
       </section>
 
-      <h2 className="section-title">Integration status · planned, not connected</h2>
+      <h2 className="section-title">Execution integrations · not connected</h2>
       <section className="venues" aria-label="Planned venues">
         {venues.map(([name, description]) => (
           <article className="venue" key={name}>
