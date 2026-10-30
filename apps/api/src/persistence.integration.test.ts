@@ -1,10 +1,9 @@
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
 import { buildServer } from "./index.js";
-import type { MarketSnapshot } from "@satn/venue-adapters";
 
 const integrationEnabled = Boolean(process.env.DATABASE_URL && process.env.REDIS_URL);
 
@@ -22,6 +21,430 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
   afterAll(async () => {
     if (redis.isOpen) await redis.quit();
     await prisma.$disconnect();
+  });
+
+  it("enforces scoped, idempotent agent follows and exposes paginated follower lists", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-follow-${randomUUID()}` } });
+    const sourceToken = `satn_agent_follow_source_${randomUUID()}`;
+    const source = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Follow source agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(sourceToken).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const target = await prisma.agent.create({
+      data: { ownerId: owner.id, name: "Follow target agent" }
+    });
+    const relationTargetId = `${source.id}:${target.id}`;
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    try {
+      const missingAuth = await app.inject({
+        method: "POST", url: `/v1/agents/${source.id}/follows/${target.id}`
+      });
+      expect(missingAuth.statusCode).toBe(401);
+
+      const selfFollow = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${source.id}/follows/${source.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(selfFollow.statusCode).toBe(422);
+      expect(selfFollow.json().error.code).toBe("SELF_FOLLOW_NOT_ALLOWED");
+
+      const followed = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}`, "x-correlation-id": "agent-follow-integration" }
+      });
+      expect(followed.statusCode).toBe(201);
+      expect(followed.json()).toEqual({ following: true, changed: true });
+
+      const replay = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toEqual({ following: true, changed: false });
+
+      const following = await app.inject({ method: "GET", url: `/v1/agents/${source.id}/following?limit=10` });
+      expect(following.statusCode).toBe(200);
+      expect(following.json().items).toEqual([expect.objectContaining({
+        agent: expect.objectContaining({ id: target.id, name: target.name })
+      })]);
+      expect(following.json().nextCursor).toBeNull();
+
+      const followers = await app.inject({ method: "GET", url: `/v1/agents/${target.id}/followers?limit=10` });
+      expect(followers.statusCode).toBe(200);
+      expect(followers.json().items).toEqual([expect.objectContaining({
+        agent: expect.objectContaining({ id: source.id, name: source.name })
+      })]);
+
+      const targetProfile = await app.inject({ method: "GET", url: `/v1/agents/${target.id}` });
+      expect(targetProfile.statusCode).toBe(200);
+      expect(targetProfile.json().agent).toMatchObject({ followerCount: 1, followingCount: 0 });
+      const directory = await app.inject({ method: "GET", url: "/v1/agents?limit=50" });
+      const sourceListing = directory.json().items.find((item: { id: string }) => item.id === source.id);
+      expect(sourceListing).toMatchObject({ followerCount: 0, followingCount: 1 });
+
+      const unfollowed = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(unfollowed.statusCode).toBe(200);
+      expect(unfollowed.json()).toEqual({ following: false, changed: true });
+
+      const repeatedUnfollow = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${source.id}/follows/${target.id}`,
+        headers: { authorization: `Bearer ${sourceToken}` }
+      });
+      expect(repeatedUnfollow.json()).toEqual({ following: false, changed: false });
+      expect(await prisma.auditEvent.count({
+        where: { targetType: "AgentFollow", targetId: relationTargetId, action: { in: ["agent.followed", "agent.unfollowed"] } }
+      })).toBe(2);
+    } finally {
+      await app.close();
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentFollow", targetId: relationTargetId } });
+      await prisma.agent.deleteMany({ where: { id: { in: [source.id, target.id] } } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("enforces a per-agent social write budget independently of IP limits", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-social-limit-${randomUUID()}` } });
+    const token = `satn_agent_social_limit_${randomUUID()}`;
+    const agent = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Rate-limited agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(token).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null, socialWriteLimit: 1 });
+    try {
+      const first = await app.inject({
+        method: "POST", url: `/v1/agents/${agent.id}/posts`,
+        headers: { authorization: `Bearer ${token}` }, payload: { body: "First post is allowed." }
+      });
+      expect(first.statusCode).toBe(201);
+      expect(first.headers["x-agent-social-limit"]).toBe("1");
+      expect(first.headers["x-agent-social-remaining"]).toBe("0");
+
+      const second = await app.inject({
+        method: "POST", url: `/v1/agents/${agent.id}/posts`,
+        headers: { authorization: `Bearer ${token}` }, payload: { body: "Second post is rate limited." }
+      });
+      expect(second.statusCode).toBe(429);
+      expect(second.headers["retry-after"]).toBe("60");
+      expect(second.json().error.code).toBe("AGENT_SOCIAL_RATE_LIMITED");
+      expect(await prisma.agentPost.count({ where: { agentId: agent.id } })).toBe(1);
+    } finally {
+      await app.close();
+      const posts = await prisma.agentPost.findMany({ where: { agentId: agent.id }, select: { id: true } });
+      const ids = posts.map((post) => post.id);
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentPost", targetId: { in: ids } } });
+      await prisma.agentPost.deleteMany({ where: { agentId: agent.id, parentId: { not: null } } });
+      await prisma.agentPost.deleteMany({ where: { agentId: agent.id } });
+      await prisma.agent.delete({ where: { id: agent.id } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("hides moderated posts and replies from public social endpoints", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-visibility-${randomUUID()}` } });
+    const token = `satn_visibility_${randomUUID()}`;
+    const agent = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Visibility test agent",
+        credentials: { create: {
+          secretHash: createHash("sha256").update(token).digest("hex"),
+          scopes: ["social:write"]
+        } }
+      }
+    });
+    const root = await prisma.agentPost.create({
+      data: { agentId: agent.id, body: "A public root post.", provenance: "SELF_REPORTED" }
+    });
+    const reply = await prisma.agentPost.create({
+      data: { agentId: agent.id, parentId: root.id, body: "A reply to hide.", provenance: "SELF_REPORTED" }
+    });
+    const app = buildServer({
+      prismaClient: prisma,
+      rateLimitStore: { consume: async () => 1, close: async () => undefined },
+      databaseProbe: null, queueProbe: null, workerProbe: null
+    });
+    try {
+      await prisma.agentPost.update({
+        where: { id: reply.id }, data: { hiddenAt: new Date(), hiddenByUserId: owner.id }
+      });
+      const visibleReplies = await app.inject({ method: "GET", url: `/v1/posts/${root.id}/replies` });
+      expect(visibleReplies.statusCode).toBe(200);
+      expect(visibleReplies.json().items.map((item: { id: string }) => item.id)).not.toContain(reply.id);
+
+      const likeHiddenReply = await app.inject({
+        method: "POST", url: `/v1/agents/${agent.id}/posts/${reply.id}/likes`,
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(likeHiddenReply.statusCode).toBe(404);
+      expect(likeHiddenReply.json().error.code).toBe("POST_NOT_FOUND");
+
+      await prisma.agentPost.update({
+        where: { id: root.id }, data: { hiddenAt: new Date(), hiddenByUserId: owner.id }
+      });
+      const publicFeed = await app.inject({ method: "GET", url: "/v1/posts" });
+      expect(publicFeed.statusCode).toBe(200);
+      expect(publicFeed.json().items.map((item: { id: string }) => item.id)).not.toContain(root.id);
+      const repliesOfHiddenRoot = await app.inject({ method: "GET", url: `/v1/posts/${root.id}/replies` });
+      expect(repliesOfHiddenRoot.statusCode).toBe(404);
+    } finally {
+      await app.close();
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentPost", targetId: { in: [root.id, reply.id] } } });
+      await prisma.agentPost.deleteMany({ where: { id: { in: [reply.id, root.id] } } });
+      await prisma.agent.delete({ where: { id: agent.id } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("accepts idempotent agent post reports and audits only the first submission", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-report-${randomUUID()}` } });
+    const reporterToken = `satn_agent_reporter_${randomUUID()}`;
+    const targetToken = `satn_agent_report_target_${randomUUID()}`;
+    const reporter = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Reporting agent",
+        credentials: { create: {
+          secretHash: createHash("sha256").update(reporterToken).digest("hex"),
+          scopes: ["social:write"]
+        } }
+      }
+    });
+    const target = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Reported agent",
+        credentials: { create: {
+          secretHash: createHash("sha256").update(targetToken).digest("hex"),
+          scopes: ["social:write"]
+        } }
+      }
+    });
+    const post = await prisma.agentPost.create({
+      data: { agentId: target.id, body: "A post requiring review.", provenance: "SELF_REPORTED" }
+    });
+    const app = buildServer({
+      prismaClient: prisma,
+      rateLimitStore: { consume: async () => 1, close: async () => undefined },
+      databaseProbe: null,
+      queueProbe: null,
+      workerProbe: null
+    });
+    try {
+      const selfReport = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${target.id}/posts/${post.id}/reports`,
+        headers: { authorization: `Bearer ${targetToken}` },
+        payload: { reason: "SPAM" }
+      });
+      expect(selfReport.statusCode).toBe(422);
+      expect(selfReport.json().error.code).toBe("SELF_REPORT_NOT_ALLOWED");
+
+      const first = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${reporter.id}/posts/${post.id}/reports`,
+        headers: { authorization: `Bearer ${reporterToken}` },
+        payload: { reason: "SCAM", details: "Claim appears misleading." }
+      });
+      expect(first.statusCode).toBe(201);
+      expect(first.json()).toMatchObject({ changed: true, report: { reason: "SCAM", status: "OPEN" } });
+
+      const replay = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${reporter.id}/posts/${post.id}/reports`,
+        headers: { authorization: `Bearer ${reporterToken}` },
+        payload: { reason: "SPAM" }
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({
+        changed: false,
+        report: { id: first.json().report.id, reason: "SCAM", status: "OPEN" }
+      });
+      expect(await prisma.agentPostReport.count({
+        where: { reporterAgentId: reporter.id, postId: post.id }
+      })).toBe(1);
+      expect(await prisma.auditEvent.count({
+        where: { action: "social.content_reported", targetType: "AgentPost", targetId: post.id }
+      })).toBe(1);
+    } finally {
+      await app.close();
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentPost", targetId: post.id } });
+      await prisma.agentPost.delete({ where: { id: post.id } });
+      await prisma.agent.deleteMany({ where: { id: { in: [reporter.id, target.id] } } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
+  it("creates agent posts and replies with scoped credentials, public feed visibility and audit evidence", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-post-${randomUUID()}` } });
+    const token = `satn_agent_post_${randomUUID()}`;
+    const agent = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Posting agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(token).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const replyOwner = await prisma.user.create({ data: { authSubject: `satn-replier-${randomUUID()}` } });
+    const replyToken = `satn_agent_reply_${randomUUID()}`;
+    const replier = await prisma.agent.create({
+      data: {
+        ownerId: replyOwner.id,
+        name: "Reply agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(replyToken).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    let postId: string | undefined;
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agent.id}/posts`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { body: "An agent-native public update." }
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json().post).toMatchObject({
+        agentId: agent.id,
+        body: "An agent-native public update.",
+        provenance: "SELF_REPORTED",
+        parentId: null
+      });
+      postId = created.json().post.id;
+
+      const reply = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts/${postId}/replies`,
+        headers: { authorization: `Bearer ${replyToken}` },
+        payload: { body: "A reply from another agent." }
+      });
+      expect(reply.statusCode).toBe(201);
+      expect(reply.json().post).toMatchObject({ agentId: replier.id, parentId: postId, provenance: "SELF_REPORTED" });
+
+      const liked = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(liked.statusCode).toBe(201);
+      expect(liked.json()).toEqual({ liked: true, changed: true });
+      const likeReplay = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(likeReplay.statusCode).toBe(200);
+      expect(likeReplay.json()).toEqual({ liked: true, changed: false });
+
+      const followed = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agent.id}/follows/${replier.id}`,
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(followed.statusCode).toBe(201);
+      const replierPost = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts`,
+        headers: { authorization: `Bearer ${replyToken}` },
+        payload: { body: "A separate top-level update from the followed agent." }
+      });
+      expect(replierPost.statusCode).toBe(201);
+      const homeFeed = await app.inject({
+        method: "GET",
+        url: `/v1/agents/${agent.id}/home-feed?limit=20`,
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(homeFeed.statusCode).toBe(200);
+      expect(homeFeed.json().items.map((item: { agent: { id: string } }) => item.agent.id)).toEqual(
+        expect.arrayContaining([agent.id, replier.id])
+      );
+      expect(homeFeed.json().items.some((item: { body: string }) => item.body === "A separate top-level update from the followed agent.")).toBe(true);
+
+      const feed = await app.inject({ method: "GET", url: "/v1/posts?limit=20" });
+      expect(feed.statusCode).toBe(200);
+      expect(feed.json().items).toContainEqual(expect.objectContaining({
+        id: postId, body: "An agent-native public update.", replyCount: 1, likeCount: 1,
+        agent: expect.objectContaining({ id: agent.id, name: agent.name })
+      }));
+      expect(feed.json().items.some((item: { id: string }) => item.id === reply.json().post.id)).toBe(false);
+
+      const replies = await app.inject({ method: "GET", url: `/v1/posts/${postId}/replies?limit=20` });
+      expect(replies.statusCode).toBe(200);
+      expect(replies.json().items).toContainEqual(expect.objectContaining({
+        id: reply.json().post.id, body: "A reply from another agent.",
+        agent: expect.objectContaining({ id: replier.id })
+      }));
+
+      const unliked = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(unliked.statusCode).toBe(200);
+      expect(unliked.json()).toEqual({ liked: false, changed: true });
+      const repeatedUnlike = await app.inject({
+        method: "DELETE",
+        url: `/v1/agents/${replier.id}/posts/${postId}/likes`,
+        headers: { authorization: `Bearer ${replyToken}` }
+      });
+      expect(repeatedUnlike.json()).toEqual({ liked: false, changed: false });
+
+      const audit = await prisma.auditEvent.findMany({
+        where: { targetType: "AgentPost", targetId: { in: [postId, reply.json().post.id] } },
+        select: { action: true, actorType: true, payloadHash: true }
+      });
+      expect(audit.map((entry) => entry.action).sort()).toEqual(["social.post_created", "social.reply_created"]);
+      expect(audit.every((entry) => entry.actorType === "AGENT_CREDENTIAL" && /^[a-f0-9]{64}$/.test(entry.payloadHash))).toBe(true);
+    } finally {
+      await app.close();
+      const createdPosts = await prisma.agentPost.findMany({
+        where: { agentId: { in: [agent.id, replier.id] } },
+        select: { id: true }
+      });
+      const cleanupPostIds = createdPosts.map((post) => post.id);
+      await prisma.auditEvent.deleteMany({
+        where: { targetType: "AgentPost", targetId: { in: cleanupPostIds } }
+      });
+      await prisma.agentPost.deleteMany({
+        where: { agentId: { in: [agent.id, replier.id] }, parentId: { not: null } }
+      });
+      await prisma.agentPost.deleteMany({ where: { agentId: { in: [agent.id, replier.id] } } });
+      await prisma.agent.deleteMany({ where: { id: { in: [agent.id, replier.id] } } });
+      await prisma.user.deleteMany({ where: { id: { in: [owner.id, replyOwner.id] } } });
+    }
   });
 
   it("persists an agent and exposes only published journal entries through public read APIs", async () => {
@@ -239,6 +662,7 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(audit?.payloadHash).toMatch(/^[a-f0-9]{64}$/);
 
       expect(storedCredential?.scopes).toContain("trade-intent:write");
+      expect(storedCredential?.scopes).toContain("social:write");
       const intentPayload = {
         venue: "hyperliquid",
         instrument: "BTC",
@@ -450,6 +874,11 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       const replacementToken = rotated.json().credential.token as string;
       expect(replacementToken).toMatch(/^satn_agent_/);
       expect(replacementToken).not.toBe(token);
+      const rotatedCredential = await prisma.agentCredential.findUnique({
+        where: { secretHash: createHash("sha256").update(replacementToken).digest("hex") },
+        select: { scopes: true }
+      });
+      expect(rotatedCredential?.scopes).toContain("social:write");
 
       const oldTokenWrite = await app.inject({
         method: "POST",
@@ -508,92 +937,6 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       }
       if (previousToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
       else process.env.AGENT_REGISTRATION_TOKEN = previousToken;
-    }
-  });
-
-  it("returns decimal-safe paper portfolio exposure and mark-to-market P&L", async () => {
-    const owner = await prisma.user.create({ data: { authSubject: `satn-portfolio-${randomUUID()}` } });
-    const agent = await prisma.agent.create({ data: { ownerId: owner.id, name: "Portfolio agent" } });
-    const intent = await prisma.tradeIntent.create({
-      data: {
-        agentId: agent.id, venue: "hyperliquid", instrument: "BTC", side: "BUY", orderType: "LIMIT",
-        quantity: "2", limitPrice: "100", mode: "PAPER", idempotencyKey: `portfolio-${randomUUID()}`,
-        payloadHash: "b".repeat(64), status: "FILLED"
-      }
-    });
-    const order = await prisma.venueOrder.create({
-      data: {
-        intentId: intent.id, venue: "hyperliquid", clientOrderId: `portfolio-client-${randomUUID()}`,
-        venueOrderId: `portfolio-order-${randomUUID()}`, state: "FILLED", submittedAt: new Date()
-      }
-    });
-    await prisma.fill.create({
-      data: {
-        venueOrderId: order.id, fillRef: `portfolio-fill-${randomUUID()}`,
-        price: "100", quantity: "2", fee: "0.2", feeAsset: "USD", filledAt: new Date()
-      }
-    });
-    const snapshot: MarketSnapshot = {
-      venue: "hyperliquid", instrumentId: "BTC",
-      observedAt: new Date(Date.now() - 100).toISOString(),
-      receivedAt: new Date().toISOString(),
-      source: "https://api.hyperliquid.xyz/info",
-      sequence: `portfolio-${randomUUID()}`,
-      bid: "109", ask: "111", dataQuality: "LIVE"
-    };
-    const app = buildServer({
-      prismaClient: prisma,
-      marketDataProvider: { getMarketSnapshot: async () => snapshot },
-      rateLimitStore: { consume: async () => 1, close: async () => undefined },
-      databaseProbe: null, queueProbe: null, workerProbe: null
-    });
-    try {
-      const response = await app.inject({ method: "GET", url: `/v1/agents/${agent.id}/portfolio` });
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({
-        agentId: agent.id,
-        accountingScope: "PAPER_ONLY",
-        portfolio: {
-          methodologyVersion: "paper-average-cost-mtm-v1",
-          hasCompleteMarks: true,
-          realizedGrossPnlUsd: "0",
-          unrealizedGrossPnlUsd: "20",
-          feesPaidUsd: "0.2",
-          netPnlLessAllUsdFees: "19.8",
-          totalGrossExposureUsd: "220",
-          positions: [{
-            instrument: "BTC", positionQuantity: "2", averageEntryPrice: "100",
-            markPrice: "110", grossExposureUsd: "220", unrealizedGrossPnlUsd: "20",
-            markStatus: "CURRENT"
-          }]
-        }
-      });
-      expect(response.body).not.toContain(owner.id);
-
-      const invalidMarkApp = buildServer({
-        prismaClient: prisma,
-        marketDataProvider: { getMarketSnapshot: async () => ({ ...snapshot, bid: "111", ask: "110" }) },
-        rateLimitStore: { consume: async () => 1, close: async () => undefined },
-        databaseProbe: null, queueProbe: null, workerProbe: null
-      });
-      try {
-        const invalidMarkResponse = await invalidMarkApp.inject({ method: "GET", url: `/v1/agents/${agent.id}/portfolio` });
-        expect(invalidMarkResponse.statusCode).toBe(200);
-        expect(invalidMarkResponse.json().portfolio).toMatchObject({
-          hasCompleteMarks: false,
-          unpricedPositionCount: 1,
-          positions: [{ instrument: "BTC", markPrice: null, markStatus: "INVALID" }]
-        });
-      } finally {
-        await invalidMarkApp.close();
-      }
-    } finally {
-      await app.close();
-      await prisma.fill.deleteMany({ where: { venueOrderId: order.id } });
-      await prisma.venueOrder.delete({ where: { id: order.id } });
-      await prisma.tradeIntent.delete({ where: { id: intent.id } });
-      await prisma.agent.delete({ where: { id: agent.id } });
-      await prisma.user.delete({ where: { id: owner.id } });
     }
   });
 
