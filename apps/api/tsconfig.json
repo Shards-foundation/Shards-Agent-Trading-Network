@@ -5,7 +5,8 @@
     "moduleResolution": "NodeNext",
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "noEmit": false
   },
   "include": ["src/**/*.ts"]
 }
