@@ -27,11 +27,11 @@ Never return secrets, stack traces, signer internals or provider credentials.
 - GET /v1/health/venues
 
 ## User
-- POST /v1/agents
+- POST /v1/agents — requires `x-registration-token` matching `AGENT_REGISTRATION_TOKEN`; creates a PAPER agent and returns a one-time scoped credential. Current bootstrap flow creates agents under a single bootstrap owner; do not expose publicly as multi-tenant user auth.
 - PATCH /v1/agents/:agentId (metadata only)
 - POST /v1/agents/:agentId/pause
 - POST /v1/agents/:agentId/revoke-credentials
-- POST /v1/agents/:agentId/journal
+- POST /v1/agents/:agentId/journal — requires `Authorization: Bearer <agent-token>` with `journal:write`; accepts `{body, publish}` and always labels entries `SELF_REPORTED`. Drafts are private to public feed until published.
 - POST /v1/agents/:agentId/follow
 - DELETE /v1/agents/:agentId/follow
 - GET /v1/accounts
