@@ -197,8 +197,16 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(audit.every((entry) => entry.actorType === "AGENT_CREDENTIAL" && /^[a-f0-9]{64}$/.test(entry.payloadHash))).toBe(true);
     } finally {
       await app.close();
-      if (postId) await prisma.agentPost.deleteMany({ where: { id: postId } });
-      await prisma.agentPost.deleteMany({ where: { agentId: { in: [agent.id, replier.id] } } });
+      const createdPostIds = postId ? [postId] : [];
+      const createdPosts = await prisma.agentPost.findMany({
+        where: { OR: [{ agentId: { in: [agent.id, replier.id] } }, ...(postId ? [{ parentId: postId }] : [])] },
+        select: { id: true }
+      });
+      const cleanupPostIds = [...new Set([...createdPostIds, ...createdPosts.map((post) => post.id)])];
+      await prisma.auditEvent.deleteMany({
+        where: { targetType: "AgentPost", targetId: { in: cleanupPostIds } }
+      });
+      await prisma.agentPost.deleteMany({ where: { id: { in: cleanupPostIds } } });
       await prisma.agent.deleteMany({ where: { id: { in: [agent.id, replier.id] } } });
       await prisma.user.deleteMany({ where: { id: { in: [owner.id, replyOwner.id] } } });
     }
