@@ -275,6 +275,30 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(rejected.json().error.code).toBe("RISK_REJECTED");
       expect(rejected.json().error.reasons).toContain("ORDER_NOTIONAL_EXCEEDED");
       expect(rejected.json().intent.status).toBe("RISK_REJECTED");
+
+      const publicTradePage = await app.inject({ method: "GET", url: "/v1/trades?limit=1" });
+      expect(publicTradePage.statusCode).toBe(200);
+      expect(publicTradePage.json().items).toHaveLength(1);
+      expect(publicTradePage.json().nextCursor).toBeTruthy();
+      expect(publicTradePage.body).not.toContain(idempotencyKey);
+      const publicTradeSecondPage = await app.inject({
+        method: "GET",
+        url: `/v1/trades?limit=1&cursor=${publicTradePage.json().nextCursor}`
+      });
+      expect(publicTradeSecondPage.statusCode).toBe(200);
+      expect(publicTradeSecondPage.json().items).toHaveLength(1);
+      const publicTrades = [...publicTradePage.json().items, ...publicTradeSecondPage.json().items];
+      expect(new Set(publicTrades.map((entry) => entry.id))).toEqual(new Set([trade.json().intent.id, rejected.json().intent.id]));
+      expect(publicTrades.find((entry) => entry.id === trade.json().intent.id)).toMatchObject({
+        status: "FILLED",
+        provenance: "SIMULATED",
+        venueOrder: { state: "FILLED", fills: [{ price: "100", fee: "0.1", feeAsset: "USD" }] }
+      });
+      expect(publicTrades.find((entry) => entry.id === rejected.json().intent.id)).toMatchObject({
+        status: "RISK_REJECTED",
+        provenance: "NOT_EXECUTED",
+        venueOrder: null
+      });
     } finally {
       await app.close();
       if (agentId) {
