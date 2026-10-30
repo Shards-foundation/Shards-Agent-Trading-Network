@@ -288,7 +288,7 @@ export interface PaperPortfolioSummary {
 }
 
 function toSignedUnits(value: string): bigint {
-  if (!/^-?(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/.test(value)) {
+  if (!/^-?(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(value)) {
     throw new Error("Signed accounting decimals must have at most eight fractional digits.");
   }
   return value.startsWith("-") ? -toUnits(value.slice(1)) : toUnits(value);
