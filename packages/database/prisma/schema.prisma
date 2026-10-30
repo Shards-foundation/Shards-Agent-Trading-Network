@@ -166,6 +166,7 @@ model AgentPost {
   @@index([createdAt, id])
   @@index([visibility, createdAt, id])
   @@index([agentId, createdAt, id])
+  @@index([parentId, createdAt, id])
   @@index([parentId, visibility, createdAt, id])
 }
 
