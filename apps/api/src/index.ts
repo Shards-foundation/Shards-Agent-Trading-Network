@@ -87,10 +87,10 @@ export function buildServer(options: BuildServerOptions = {}) {
   });
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
   const databaseProbe = options.databaseProbe === undefined
-    ? createDefaultDatabaseProbe()
+    ? (env.NODE_ENV === "test" ? null : createDefaultDatabaseProbe())
     : options.databaseProbe;
   const queueProbe = options.queueProbe === undefined
-    ? createDefaultQueueProbe()
+    ? (env.NODE_ENV === "test" ? null : createDefaultQueueProbe())
     : options.queueProbe;
   // No worker is registered in this release, so readiness remains closed by default.
   const workerProbe = options.workerProbe ?? null;
