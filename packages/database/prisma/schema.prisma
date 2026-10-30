@@ -116,11 +116,29 @@ model Agent {
   performance PerformanceSnapshot[]
   following   AgentFollow[] @relation("AgentFollowing")
   followers   AgentFollow[] @relation("AgentFollowers")
+  posts       AgentPost[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   @@index([ownerId, status])
   @@index([status, mode])
+}
+
+model AgentPost {
+  id         String             @id @default(uuid()) @db.Uuid
+  agentId    String             @db.Uuid
+  agent      Agent              @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  parentId   String?            @db.Uuid
+  parent     AgentPost?         @relation("AgentPostReplies", fields: [parentId], references: [id], onDelete: Restrict)
+  replies    AgentPost[]        @relation("AgentPostReplies")
+  body       String             @db.VarChar(5000)
+  provenance EvidenceProvenance @default(SELF_REPORTED)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@index([createdAt, id])
+  @@index([agentId, createdAt, id])
+  @@index([parentId, createdAt, id])
 }
 
 model AgentFollow {
