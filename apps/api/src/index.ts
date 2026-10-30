@@ -44,6 +44,8 @@ export interface BuildServerOptions {
   rateLimitReadLimit?: number;
   rateLimitWriteLimit?: number;
   rateLimitWindowSeconds?: number;
+  socialWriteLimit?: number;
+  socialWriteWindowSeconds?: number;
   prismaClient?: PrismaClient | null;
   now?: () => number;
 }
@@ -279,7 +281,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   const rateLimitReadLimit = options.rateLimitReadLimit ?? 120;
   const rateLimitWriteLimit = options.rateLimitWriteLimit ?? 30;
   const rateLimitWindowSeconds = options.rateLimitWindowSeconds ?? 60;
-  if (![rateLimitReadLimit, rateLimitWriteLimit, rateLimitWindowSeconds].every((value) => Number.isInteger(value) && value > 0)) {
+  const socialWriteLimit = options.socialWriteLimit ?? 20;
+  const socialWriteWindowSeconds = options.socialWriteWindowSeconds ?? 60;
+  if (![rateLimitReadLimit, rateLimitWriteLimit, rateLimitWindowSeconds, socialWriteLimit, socialWriteWindowSeconds].every((value) => Number.isInteger(value) && value > 0)) {
     throw new Error("Rate-limit values must be positive integers.");
   }
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
@@ -339,6 +343,34 @@ export function buildServer(options: BuildServerOptions = {}) {
     ]);
     if (ownsPrismaClient) await prismaClient?.$disconnect();
   });
+
+  async function enforceSocialWriteLimit(agentId: string, request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+    if (!rateLimitStore) {
+      reply.code(503).send({
+        error: { code: "RATE_LIMIT_UNAVAILABLE", message: "The social write limit service is unavailable.", correlationId: request.id, retryable: true }
+      });
+      return false;
+    }
+    try {
+      const digest = createHash("sha256").update(agentId).digest("hex").slice(0, 32);
+      const count = await rateLimitStore.consume(`satn:agent-social:v1:${digest}`, socialWriteWindowSeconds);
+      reply.header("x-agent-social-limit", String(socialWriteLimit));
+      reply.header("x-agent-social-remaining", String(Math.max(0, socialWriteLimit - count)));
+      if (count > socialWriteLimit) {
+        reply.header("retry-after", String(socialWriteWindowSeconds));
+        reply.code(429).send({
+          error: { code: "AGENT_SOCIAL_RATE_LIMITED", message: "The agent social write limit has been exceeded.", correlationId: request.id, retryable: true }
+        });
+        return false;
+      }
+      return true;
+    } catch {
+      reply.code(503).send({
+        error: { code: "RATE_LIMIT_UNAVAILABLE", message: "The social write limit service is unavailable.", correlationId: request.id, retryable: true }
+      });
+      return false;
+    }
+  }
 
   app.get("/health/live", async () => ({
     status: "ok",
@@ -960,6 +992,7 @@ export function buildServer(options: BuildServerOptions = {}) {
             error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
           });
         }
+        if (!await enforceSocialWriteLimit(sourceId.data, request, reply)) return;
         const payloadHash = createHash("sha256").update(JSON.stringify({
           followerAgentId: sourceId.data, followedAgentId: targetId.data
         })).digest("hex");
@@ -1166,7 +1199,8 @@ export function buildServer(options: BuildServerOptions = {}) {
       if (!credential) return reply.code(401).send({
         error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
       });
-      const payloadHash = createHash("sha256").update(JSON.stringify({ body: body.data.body, parentId: null })).digest("hex");
+      if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
+        const payloadHash = createHash("sha256").update(JSON.stringify({ body: body.data.body, parentId: null })).digest("hex");
       const post = await prismaClient.$transaction(async (tx) => {
         const created = await tx.agentPost.create({
           data: { agentId: agentId.data, body: body.data.body, provenance: "SELF_REPORTED" },
@@ -1209,6 +1243,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         if (!credential) return reply.code(401).send({
           error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
         });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
         const parent = await prismaClient.agentPost.findUnique({
           where: { id: postId.data }, select: { id: true, agent: { select: { status: true } } }
         });
@@ -1255,6 +1290,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         if (!credential) return reply.code(401).send({
           error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
         });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
         const post = await prismaClient.agentPost.findUnique({
           where: { id: postId.data }, select: { id: true, agent: { select: { status: true } } }
         });
@@ -1266,6 +1302,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           select: { agentId: true }
         });
         if (existing) return reply.send({ liked: true, changed: false });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
         const payloadHash = createHash("sha256").update(JSON.stringify({ agentId: agentId.data, postId: postId.data })).digest("hex");
         try {
           await prismaClient.$transaction(async (tx) => {
@@ -1310,6 +1347,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         if (!credential) return reply.code(401).send({
           error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
         });
+        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
         const payloadHash = createHash("sha256").update(JSON.stringify({ agentId: agentId.data, postId: postId.data })).digest("hex");
         const changed = await prismaClient.$transaction(async (tx) => {
           const deleted = await tx.agentPostLike.deleteMany({ where: { agentId: agentId.data, postId: postId.data } });
