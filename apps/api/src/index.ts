@@ -233,6 +233,8 @@ export function resolvePaperTradePolicy(
 const paperTradePolicy = resolvePaperTradePolicy(env.EXECUTION_MODE, env.PAPER_MAX_ORDER_NOTIONAL, env.PAPER_MAX_DAILY_LOSS);
 const DEFAULT_CACHE_TTL_MS = 1_000;
 const MAX_CACHE_ENTRIES = 500;
+const MAX_PAPER_PORTFOLIO_FILLS = 50_000;
+const MAX_PAPER_PORTFOLIO_MARKS = 25;
 
 export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({
@@ -1011,9 +1013,18 @@ export function buildServer(options: BuildServerOptions = {}) {
         const fills = await prismaClient.fill.findMany({
           where: { venueOrder: { is: { intent: { is: { agentId: parsedId.data, mode: "PAPER" } } } } },
           orderBy: [{ filledAt: "asc" }, { id: "asc" }],
+          take: MAX_PAPER_PORTFOLIO_FILLS + 1,
           select: {
             price: true, quantity: true, fee: true, feeAsset: true, filledAt: true,
             venueOrder: { select: { intent: { select: { instrument: true, side: true } } } }
+          }
+        });
+        if (fills.length > MAX_PAPER_PORTFOLIO_FILLS) return reply.code(413).send({
+          error: {
+            code: "PORTFOLIO_HISTORY_LIMIT_EXCEEDED",
+            message: "The paper fill history exceeds the supported portfolio calculation limit.",
+            correlationId: request.id,
+            retryable: false
           }
         });
         const ledger = fills.map((fill) => ({
@@ -1029,7 +1040,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         const marks: Record<string, { bid: string; ask: string } | undefined> = {};
         const markMeta: Record<string, { status: "CURRENT" | "STALE" | "UNAVAILABLE" | "INVALID"; observedAt: string | null; ageMs: number | null; source: string | null }> = {};
         const openPositions = performance.instruments.filter((item) => item.positionQuantity !== "0");
-        await Promise.all(openPositions.map(async (position) => {
+        await Promise.all(openPositions.slice(0, MAX_PAPER_PORTFOLIO_MARKS).map(async (position) => {
           try {
             const snapshot = await marketDataProvider.getMarketSnapshot(position.instrument);
             const observedMs = Date.parse(snapshot.observedAt);
@@ -1055,7 +1066,14 @@ export function buildServer(options: BuildServerOptions = {}) {
             markMeta[position.instrument] = { status: "UNAVAILABLE", observedAt: null, ageMs: null, source: null };
           }
         }));
+        const markLimitReached = openPositions.length > MAX_PAPER_PORTFOLIO_MARKS;
+        for (const position of openPositions.slice(MAX_PAPER_PORTFOLIO_MARKS)) {
+          markMeta[position.instrument] = { status: "UNAVAILABLE", observedAt: null, ageMs: null, source: null };
+        }
         const portfolio = calculatePaperPortfolio(ledger, marks);
+        const qualityFlags = markLimitReached
+          ? [...new Set([...portfolio.qualityFlags, "MARK_LIMIT_REACHED"])].sort()
+          : portfolio.qualityFlags;
         const positions = portfolio.positions.map((position) => ({
           ...position,
           markStatus: markMeta[position.instrument]?.status ?? "UNAVAILABLE",
@@ -1067,7 +1085,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           agentId: parsedId.data,
           asOf: new Date(now()).toISOString(),
           accountingScope: "PAPER_ONLY",
-          portfolio: { ...portfolio, positions }
+          portfolio: { ...portfolio, qualityFlags, positions }
         });
       } catch (error) {
         request.log.error({ err: error, correlationId: request.id }, "paper portfolio calculation failed");
