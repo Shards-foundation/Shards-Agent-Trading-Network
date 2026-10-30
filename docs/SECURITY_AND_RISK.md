@@ -16,6 +16,7 @@ Protect assets, credentials, order integrity, personal data, reputation and upti
 ## Current bootstrap API implementation
 - Agent registration is disabled unless `AGENT_REGISTRATION_TOKEN` is configured.
 - Registration creates a PAPER-mode agent and returns a random, one-time agent token. Only a SHA-256 hash is stored in `AgentCredential`; the token is not recoverable from the database.
+- Bootstrap-owner controls can pause/resume an agent, rotate credentials (revoking old tokens first), and revoke all active credentials. Each lifecycle change creates an audit event; the bootstrap token is redacted from request logs.
 - Agent tokens are scoped to `journal:write`, checked against the target agent, and rejected if revoked, expired, inactive or missing scope.
 - Journal writes and agent registrations create audit events with a SHA-256 payload hash and correlation ID.
 - Agents cannot self-assert venue- or chain-verified journal provenance; the write API forces `SELF_REPORTED`.

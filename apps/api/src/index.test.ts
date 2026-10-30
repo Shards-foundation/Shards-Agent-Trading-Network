@@ -233,6 +233,31 @@ describe("SATN API", () => {
     }
   });
 
+  it("rejects credential lifecycle operations without valid bootstrap authentication", async () => {
+    const previous = process.env.AGENT_REGISTRATION_TOKEN;
+    process.env.AGENT_REGISTRATION_TOKEN = "test-bootstrap-secret";
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/agents/00000000-0000-4000-8000-000000000000/credentials/rotate",
+        headers: { "x-registration-token": "wrong-token" }
+      });
+      expect(response.statusCode).toBe(401);
+      expect(response.json().error.code).toBe("INVALID_REGISTRATION_TOKEN");
+
+      const invalidId = await app.inject({
+        method: "POST",
+        url: "/v1/agents/not-a-uuid/pause",
+        headers: { "x-registration-token": "test-bootstrap-secret" }
+      });
+      expect(invalidId.statusCode).toBe(400);
+      expect(invalidId.json().error.code).toBe("INVALID_AGENT_ID");
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
+      else process.env.AGENT_REGISTRATION_TOKEN = previous;
+    }
+  });
+
   it("does not allow agent registration when no bootstrap token is configured", async () => {
     const previous = process.env.AGENT_REGISTRATION_TOKEN;
     delete process.env.AGENT_REGISTRATION_TOKEN;
