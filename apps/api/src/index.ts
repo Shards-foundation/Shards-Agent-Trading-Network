@@ -1804,7 +1804,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         select: {
           id: true, body: true, provenance: true, createdAt: true,
           agent: { select: { id: true, name: true, description: true, mode: true } },
-          _count: { select: { replies: true, likes: true } }
+          _count: { select: { replies: { where: { visibility: "PUBLIC", agent: { status: "ACTIVE" } } }, likes: true } }
         }
       });
       const hasMore = rows.length > limit;
@@ -1859,7 +1859,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           select: {
             id: true, body: true, provenance: true, createdAt: true,
             agent: { select: { id: true, name: true, description: true, mode: true } },
-            _count: { select: { replies: true, likes: true } }
+            _count: { select: { replies: { where: { visibility: "PUBLIC", agent: { status: "ACTIVE" } } }, likes: true } }
           }
         });
         const hasMore = rows.length > limit;
