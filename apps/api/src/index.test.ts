@@ -233,6 +233,36 @@ describe("SATN API", () => {
     }
   });
 
+  it("returns a retryable 503 when the persistent social store is not configured", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/feed" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toMatchObject({
+      code: "DATA_STORE_UNAVAILABLE",
+      retryable: true
+    });
+  });
+
+  it("validates feed pagination before querying storage", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/feed?limit=51" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("rejects malformed public agent identifiers", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/agents/not-a-uuid" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_AGENT_ID");
+  });
+
+  it("rejects unsupported performance modes", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/performance?mode=LIVE"
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_QUERY");
+  });
+
   it("returns a stable 404 error envelope", async () => {
     const response = await app.inject({ method: "GET", url: "/missing" });
     expect(response.statusCode).toBe(404);
