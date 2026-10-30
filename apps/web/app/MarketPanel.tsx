@@ -74,11 +74,11 @@ export default function MarketPanel() {
         <>
           <div className="market-grid">
             <div className="market-cell">
-              <span className="market-label">Best bid · USD quote</span>
+              <span className="market-label">Best bid</span>
               <strong className="market-value">{snapshot.bid ?? "—"}</strong>
             </div>
             <div className="market-cell">
-              <span className="market-label">Best ask · USD quote</span>
+              <span className="market-label">Best ask</span>
               <strong className="market-value">{snapshot.ask ?? "—"}</strong>
             </div>
             <div className="market-cell">
