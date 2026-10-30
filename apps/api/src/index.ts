@@ -213,6 +213,13 @@ const journalCreateSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
   publish: z.boolean().default(true)
 }).strict();
+const socialPostCreateSchema = z.object({
+  body: z.string().trim().min(1).max(2_000),
+  tags: z.array(z.string().trim().toLowerCase().min(1).max(24).regex(/^[a-z0-9_-]+$/)).max(8).default([])
+}).strict().transform((value) => ({ ...value, tags: [...new Set(value.tags)] }));
+const socialReplyCreateSchema = z.object({
+  body: z.string().trim().min(1).max(1_000)
+}).strict();
 const idempotencyKeySchema = z.string().min(1).max(200).regex(/^[\x21-\x7E]+$/);
 export function resolvePaperTradePolicy(
   executionMode: "PAPER" | "READ_ONLY" | "LIVE_RESTRICTED" | "HALTED",
@@ -397,7 +404,7 @@ export function buildServer(options: BuildServerOptions = {}) {
             ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
             mode: "PAPER",
             credentials: {
-              create: { secretHash, scopes: ["journal:write", "trade-intent:write"] }
+              create: { secretHash, scopes: ["journal:write", "social:write", "trade-intent:write"] }
             }
           },
           select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true }
@@ -419,7 +426,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         agent,
         credential: {
           token: agentSecret,
-          scopes: ["journal:write", "trade-intent:write"],
+          scopes: ["journal:write", "social:write", "trade-intent:write"],
           warning: "This token is shown once. Store it securely; only its hash is stored."
         }
       });
@@ -707,6 +714,251 @@ export function buildServer(options: BuildServerOptions = {}) {
       request.log.error({ err: error, correlationId: request.id }, "journal write failed");
       return reply.code(503).send({
         error: { code: "JOURNAL_WRITE_FAILED", message: "The journal entry could not be saved.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/posts", async (request, reply) => {
+    const parsedId = uuidSchema.safeParse(request.params.agentId);
+    const parsedBody = socialPostCreateSchema.safeParse(request.body);
+    if (!parsedId.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!parsedBody.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_SOCIAL_POST", message: "The social post is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Social publishing is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    const authorization = request.headers.authorization;
+    const bearer = typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice(7).trim()
+      : "";
+    if (!bearer || bearer.length > 256) {
+      return reply.code(401).send({
+        error: { code: "AUTHENTICATION_REQUIRED", message: "A valid agent bearer token is required.", correlationId: request.id, retryable: false }
+      });
+    }
+
+    try {
+      const secretHash = createHash("sha256").update(bearer).digest("hex");
+      const credential = await prismaClient.agentCredential.findUnique({
+        where: { secretHash },
+        select: {
+          id: true, agentId: true, scopes: true, expiresAt: true, revokedAt: true,
+          agent: { select: { status: true } }
+        }
+      });
+      if (
+        !credential ||
+        credential.agentId !== parsedId.data ||
+        credential.revokedAt ||
+        (credential.expiresAt && credential.expiresAt <= new Date(now())) ||
+        credential.agent.status !== "ACTIVE" ||
+        !credential.scopes.includes("social:write")
+      ) {
+        return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+        });
+      }
+
+      const payloadHash = createHash("sha256").update(JSON.stringify(parsedBody.data)).digest("hex");
+      const post = await prismaClient.$transaction(async (tx) => {
+        const created = await tx.agentPost.create({
+          data: {
+            agentId: parsedId.data,
+            body: parsedBody.data.body,
+            tags: parsedBody.data.tags,
+            provenance: "SELF_REPORTED"
+          },
+          select: { id: true, agentId: true, body: true, tags: true, provenance: true, status: true, publishedAt: true, createdAt: true }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorType: "AGENT_CREDENTIAL",
+            actorId: credential.id,
+            action: "social.post.created",
+            targetType: "AgentPost",
+            targetId: created.id,
+            correlationId: request.id,
+            payloadHash
+          }
+        });
+        return created;
+      });
+      return reply.code(201).send({ post });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "social post creation failed");
+      return reply.code(503).send({
+        error: { code: "SOCIAL_POST_CREATE_FAILED", message: "The social post could not be saved.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.post<{ Params: { postId: string } }>("/v1/posts/:postId/replies", async (request, reply) => {
+    const parsedPostId = uuidSchema.safeParse(request.params.postId);
+    const parsedBody = socialReplyCreateSchema.safeParse(request.body);
+    if (!parsedPostId.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_POST_ID", message: "The post identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!parsedBody.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_SOCIAL_REPLY", message: "The reply is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Social replies are temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+    const authorization = request.headers.authorization;
+    const bearer = typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice(7).trim()
+      : "";
+    if (!bearer || bearer.length > 256) {
+      return reply.code(401).send({
+        error: { code: "AUTHENTICATION_REQUIRED", message: "A valid agent bearer token is required.", correlationId: request.id, retryable: false }
+      });
+    }
+
+    try {
+      const secretHash = createHash("sha256").update(bearer).digest("hex");
+      const credential = await prismaClient.agentCredential.findUnique({
+        where: { secretHash },
+        select: {
+          id: true, agentId: true, scopes: true, expiresAt: true, revokedAt: true,
+          agent: { select: { status: true } }
+        }
+      });
+      if (
+        !credential ||
+        credential.revokedAt ||
+        (credential.expiresAt && credential.expiresAt <= new Date(now())) ||
+        credential.agent.status !== "ACTIVE" ||
+        !credential.scopes.includes("social:write")
+      ) {
+        return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+        });
+      }
+      const targetPost = await prismaClient.agentPost.findFirst({
+        where: {
+          id: parsedPostId.data,
+          status: "PUBLISHED",
+          agent: { is: { status: "ACTIVE" } }
+        },
+        select: { id: true }
+      });
+      if (!targetPost) {
+        return reply.code(404).send({
+          error: { code: "POST_NOT_FOUND", message: "The post does not exist.", correlationId: request.id, retryable: false }
+        });
+      }
+
+      const payloadHash = createHash("sha256").update(JSON.stringify({
+        postId: parsedPostId.data,
+        body: parsedBody.data.body
+      })).digest("hex");
+      const result = await prismaClient.$transaction(async (tx) => {
+        const created = await tx.agentPostReply.create({
+          data: {
+            postId: parsedPostId.data,
+            agentId: credential.agentId,
+            body: parsedBody.data.body
+          },
+          select: {
+            id: true, postId: true, agentId: true, body: true, status: true, createdAt: true,
+            agent: { select: { id: true, name: true, mode: true } }
+          }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorType: "AGENT_CREDENTIAL",
+            actorId: credential.id,
+            action: "social.reply.created",
+            targetType: "AgentPostReply",
+            targetId: created.id,
+            correlationId: request.id,
+            payloadHash
+          }
+        });
+        return created;
+      });
+      return reply.code(201).send({ reply: result });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "social reply creation failed");
+      return reply.code(503).send({
+        error: { code: "SOCIAL_REPLY_CREATE_FAILED", message: "The reply could not be saved.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/posts", async (request, reply) => {
+    const query = pageQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The post-feed pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The social post feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    try {
+      const { limit, cursor } = query.data;
+      if (cursor) {
+        const cursorRow = await prismaClient.agentPost.findFirst({
+          where: { id: cursor, status: "PUBLISHED", agent: { is: { status: "ACTIVE" } } },
+          select: { id: true }
+        });
+        if (!cursorRow) {
+          return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The post cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+      }
+      const rows = await prismaClient.agentPost.findMany({
+        where: { status: "PUBLISHED", agent: { is: { status: "ACTIVE" } } },
+        orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true, body: true, tags: true, provenance: true, publishedAt: true, createdAt: true,
+          agent: { select: { id: true, name: true, description: true, mode: true } },
+          _count: {
+            select: {
+              replies: { where: { status: "PUBLISHED", agent: { is: { status: "ACTIVE" } } } }
+            }
+          },
+          replies: {
+            where: { status: "PUBLISHED", agent: { is: { status: "ACTIVE" } } },
+            orderBy: { createdAt: "desc" },
+            take: 3,
+            select: {
+              id: true, body: true, createdAt: true,
+              agent: { select: { id: true, name: true, mode: true } }
+            }
+          }
+        }
+      });
+      const hasMore = rows.length > limit;
+      const items = rows.slice(0, limit);
+      return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "social post feed read failed");
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The social post feed is temporarily unavailable.", correlationId: request.id, retryable: true }
       });
     }
   });
