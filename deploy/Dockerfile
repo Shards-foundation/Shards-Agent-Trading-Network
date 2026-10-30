@@ -23,11 +23,15 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /workspace
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates openssl \
-    && rm -rf /var/lib/apt/lists/* \
-    && corepack enable \
-    && corepack prepare pnpm@10.15.1 --activate
+    && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
-# Install the pnpm package-manager cache at a path readable by the\n# unprivileged runtime user (the migration command must work offline).\nENV COREPACK_HOME=/opt/corepack\nRUN mkdir -p /opt/corepack \\\n    && corepack enable \\\n    && corepack prepare pnpm@10.15.1 --activate \\\n    && chown -R node:node /opt/corepack\n# Keep workspace packages and Prisma CLI for the explicit one-shot migration
+# Install pnpm in a cache accessible to the unprivileged migration job.
+ENV COREPACK_HOME=/opt/corepack
+RUN mkdir -p /opt/corepack \
+    && corepack enable \
+    && corepack prepare pnpm@10.15.1 --activate \
+    && chown -R node:node /opt/corepack
+# Keep workspace packages and Prisma CLI for the explicit one-shot migration
 # job. This deliberately favours correctness over minimal image size in staging.
 COPY --from=build --chown=node:node /workspace /workspace
 USER node
