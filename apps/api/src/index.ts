@@ -6,6 +6,7 @@ import { simulateLimitOrder } from "@satn/paper-engine";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
+import { PolymarketReadOnlyDiscoveryAdapter, type PolymarketMarketDiscoveryProvider } from "@satn/venue-adapters/polymarket";
 import type { MarketSnapshot } from "@satn/venue-adapters";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
@@ -32,6 +33,7 @@ export interface DatabaseHealthProbe {
 
 export interface BuildServerOptions {
   marketDataProvider?: MarketDataProvider;
+  polymarketMarketProvider?: PolymarketMarketDiscoveryProvider;
   marketCacheTtlMs?: number;
   databaseProbe?: DatabaseHealthProbe | null;
   queueProbe?: DatabaseHealthProbe | null;
@@ -182,6 +184,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   const workerProbe = options.workerProbe ?? null;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
+  const polymarketMarketProvider = options.polymarketMarketProvider ?? new PolymarketReadOnlyDiscoveryAdapter({ now });
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
   const inFlight = new Map<string, Promise<MarketSnapshot>>();
 
@@ -1244,6 +1247,32 @@ export function buildServer(options: BuildServerOptions = {}) {
     ],
     liveExecutionEnabled: false
   }));
+
+  app.get<{ Querystring: { venue?: string; limit?: string; offset?: string } }>("/v1/markets", async (request, reply) => {
+    const querySchema = z.object({
+      venue: z.string().min(1).optional(),
+      limit: z.coerce.number().int().min(1).max(50).default(20),
+      offset: z.coerce.number().int().min(0).max(10_000).default(0)
+    }).strict();
+    const query = querySchema.safeParse(request.query);
+    if (!query.success || !query.data.venue) {
+      return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "Provide venue=polymarket and valid pagination.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (query.data.venue !== "polymarket") {
+      return reply.code(422).send({
+        error: { code: "VENUE_DISCOVERY_UNSUPPORTED", message: "Read-only market discovery is currently implemented for Polymarket only.", correlationId: request.id, retryable: false }
+      });
+    }
+    try {
+      return reply.send(await polymarketMarketProvider.listMarkets({ limit: query.data.limit, offset: query.data.offset }));
+    } catch {
+      return reply.code(502).send({
+        error: { code: "MARKET_DISCOVERY_UNAVAILABLE", message: "Polymarket market discovery is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
 
   app.get<{ Params: { instrumentId: string } }>("/v1/market/:instrumentId", async (request, reply) => {
     const parsed = instrumentSchema.safeParse(request.params.instrumentId);
