@@ -151,7 +151,7 @@ describe("WorkerQueue", () => {
       queue: "default", queued: 2, retryWait: 3, running: 1, succeeded: 9,
       deadLetter: 1, cancelled: 0, queueDepth: 5, oldestPendingAgeMs: 1250.5, expiredLeases: 1,
     });
-    expect(stats.sampledAt).toMatch(/^\\d{4}-\\d{2}-\\d{2}T/);
+    expect(stats.sampledAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     const [sql, ...params] = db.query.mock.calls[0]![0] as [string, ...unknown[]];
     expect(sql).toContain('COUNT(*) FILTER (WHERE "status" = \'DEAD_LETTER\')');
     expect(sql).toContain('"oldestPendingAgeMs"');
