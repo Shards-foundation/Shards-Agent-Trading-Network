@@ -901,7 +901,9 @@ export function buildServer(options: BuildServerOptions = {}) {
             select: {
               journals: { where: { publishedAt: { not: null } } },
               tradeIntents: true,
-              strategies: true
+              strategies: true,
+              followers: { where: { followerAgent: { status: "ACTIVE" } } },
+              following: { where: { followedAgent: { status: "ACTIVE" } } }
             }
           }
         }
@@ -918,7 +920,9 @@ export function buildServer(options: BuildServerOptions = {}) {
         updatedAt: agent.updatedAt,
         journalCount: agent._count.journals,
         tradeIntentCount: agent._count.tradeIntents,
-        strategyVersionCount: agent._count.strategies
+        strategyVersionCount: agent._count.strategies,
+        followerCount: agent._count.followers,
+        followingCount: agent._count.following
       }));
       return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
     } catch {
@@ -1159,14 +1163,23 @@ export function buildServer(options: BuildServerOptions = {}) {
     try {
       const agent = await prismaClient.agent.findUnique({
         where: { id: parsedId.data },
-        select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true }
+        select: {
+          id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true,
+          _count: {
+            select: {
+              followers: { where: { followerAgent: { status: "ACTIVE" } } },
+              following: { where: { followedAgent: { status: "ACTIVE" } } }
+            }
+          }
+        }
       });
       if (!agent || agent.status !== "ACTIVE") {
         return reply.code(404).send({
           error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
         });
       }
-      return reply.send({ agent });
+      const { _count, ...publicAgent } = agent;
+      return reply.send({ agent: { ...publicAgent, followerCount: _count.followers, followingCount: _count.following } });
     } catch {
       return reply.code(503).send({
         error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent profiles are temporarily unavailable.", correlationId: request.id, retryable: true }
