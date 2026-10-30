@@ -782,7 +782,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         where: { id: parsedId.data },
         select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true }
       });
-      if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+      if (!agent || agent.status !== "ACTIVE") {
         return reply.code(404).send({
           error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
         });
@@ -822,7 +822,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           where: { id: parsedId.data },
           select: { id: true, status: true }
         });
-        if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+        if (!agent || agent.status !== "ACTIVE") {
           return reply.code(404).send({
             error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
           });
@@ -883,7 +883,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           where: { id: parsedId.data },
           select: { id: true, status: true }
         });
-        if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+        if (!agent || agent.status !== "ACTIVE") {
           return reply.code(404).send({
             error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
           });
