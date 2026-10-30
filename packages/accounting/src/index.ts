@@ -164,10 +164,9 @@ export function calculatePaperPerformance(rawFills: readonly PaperAccountingFill
   const totals = [...states.values()].reduce((acc, state) => ({
     realizedGross: acc.realizedGross + state.realizedGross,
     feesUsd: acc.feesUsd + state.feesUsd,
-    closedQuantity: acc.closedQuantity + state.closedQuantity,
     profitableCloseEvents: acc.profitableCloseEvents + state.profitableCloseEvents,
     unprofitableCloseEvents: acc.unprofitableCloseEvents + state.unprofitableCloseEvents
-  }), { realizedGross: 0n, feesUsd: 0n, closedQuantity: 0n, wins: 0, losses: 0 });
+  }), { realizedGross: 0n, feesUsd: 0n, profitableCloseEvents: 0, unprofitableCloseEvents: 0 });
 
   return {
     methodologyVersion: "paper-average-cost-v1",
