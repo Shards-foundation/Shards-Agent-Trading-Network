@@ -40,6 +40,10 @@ export interface BuildServerOptions {
   databaseProbe?: DatabaseHealthProbe | null;
   queueProbe?: DatabaseHealthProbe | null;
   workerProbe?: DatabaseHealthProbe | null;
+  rateLimitStore?: RateLimitStore | null;
+  rateLimitReadLimit?: number;
+  rateLimitWriteLimit?: number;
+  rateLimitWindowSeconds?: number;
   prismaClient?: PrismaClient | null;
   now?: () => number;
 }
@@ -136,6 +140,65 @@ function createDefaultQueueProbe(): DatabaseHealthProbe | null {
   };
 }
 
+
+export interface RateLimitStore {
+  consume(key: string, windowSeconds: number): Promise<number>;
+  close(): Promise<void>;
+}
+
+class MemoryRateLimitStore implements RateLimitStore {
+  private readonly buckets = new Map<string, { count: number; resetAt: number }>();
+  constructor(private readonly now: () => number) {}
+  async consume(key: string, windowSeconds: number): Promise<number> {
+    const currentTime = this.now();
+    let bucket = this.buckets.get(key);
+    if (!bucket || bucket.resetAt <= currentTime) {
+      bucket = { count: 0, resetAt: currentTime + windowSeconds * 1000 };
+      this.buckets.set(key, bucket);
+    }
+    bucket.count += 1;
+    if (this.buckets.size > 10_000) {
+      for (const [storedKey, stored] of this.buckets) {
+        if (stored.resetAt <= currentTime) this.buckets.delete(storedKey);
+      }
+      while (this.buckets.size > 10_000) {
+        const oldest = this.buckets.keys().next().value;
+        if (oldest === undefined) break;
+        this.buckets.delete(oldest);
+      }
+    }
+    return bucket.count;
+  }
+  async close(): Promise<void> { this.buckets.clear(); }
+}
+
+const REDIS_RATE_LIMIT_SCRIPT = [
+  "local count = redis.call('INCR', KEYS[1])",
+  "if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end",
+  "return count"
+].join("\n");
+
+function createDefaultRateLimitStore(now: () => number): RateLimitStore | null {
+  if (env.NODE_ENV === "test") return new MemoryRateLimitStore(now);
+  if (!process.env.REDIS_URL) return env.NODE_ENV === "production" ? null : new MemoryRateLimitStore(now);
+  const client = createClient({ url: process.env.REDIS_URL });
+  client.on("error", () => {
+    // Rate-limit backend failures are returned as a generic 503; do not log credentials.
+  });
+  return {
+    async consume(key, windowSeconds) {
+      if (!client.isOpen) await client.connect();
+      const result = await client.eval(REDIS_RATE_LIMIT_SCRIPT, { keys: [key], arguments: [String(windowSeconds)] });
+      const count = Number(result);
+      if (!Number.isSafeInteger(count) || count < 1) throw new Error("Invalid rate-limit counter.");
+      return count;
+    },
+    async close() {
+      if (client.isOpen) await client.quit();
+    }
+  };
+}
+
 const instrumentSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9@._/-]+$/);
 const uuidSchema = z.string().uuid();
 const pageQuerySchema = z.object({
@@ -179,6 +242,15 @@ export function buildServer(options: BuildServerOptions = {}) {
     },
     requestIdHeader: "x-correlation-id"
   });
+  const now = options.now ?? Date.now;
+  const ownsRateLimitStore = options.rateLimitStore === undefined;
+  const rateLimitStore = options.rateLimitStore === undefined ? createDefaultRateLimitStore(now) : options.rateLimitStore;
+  const rateLimitReadLimit = options.rateLimitReadLimit ?? 120;
+  const rateLimitWriteLimit = options.rateLimitWriteLimit ?? 30;
+  const rateLimitWindowSeconds = options.rateLimitWindowSeconds ?? 60;
+  if (![rateLimitReadLimit, rateLimitWriteLimit, rateLimitWindowSeconds].every((value) => Number.isInteger(value) && value > 0)) {
+    throw new Error("Rate-limit values must be positive integers.");
+  }
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
   const ownsPrismaClient = options.prismaClient === undefined;
   const prismaClient = options.prismaClient === undefined
@@ -193,7 +265,6 @@ export function buildServer(options: BuildServerOptions = {}) {
   // No worker is registered in this release, so readiness remains closed by default.
   const workerProbe = options.workerProbe ?? null;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-  const now = options.now ?? Date.now;
   const polymarketMarketProvider = options.polymarketMarketProvider ?? new PolymarketReadOnlyDiscoveryAdapter({ now });
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
   const inFlight = new Map<string, Promise<MarketSnapshot>>();
@@ -203,8 +274,38 @@ export function buildServer(options: BuildServerOptions = {}) {
   }
 
   app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  app.addHook("onRequest", async (request, reply) => {
+    if (!request.url.startsWith("/v1/")) return;
+    if (!rateLimitStore) {
+      return reply.code(503).send({
+        error: { code: "RATE_LIMIT_UNAVAILABLE", message: "The API rate-limit store is unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+    const readOnly = request.method === "GET" || request.method === "HEAD";
+    const limit = readOnly ? rateLimitReadLimit : rateLimitWriteLimit;
+    const bucket = readOnly ? "read" : "write";
+    const digest = createHash("sha256").update(`${request.ip}:${bucket}`).digest("hex").slice(0, 32);
+    try {
+      const count = await rateLimitStore.consume(`satn:rate:v1:${digest}`, rateLimitWindowSeconds);
+      reply.header("x-ratelimit-limit", String(limit));
+      reply.header("x-ratelimit-remaining", String(Math.max(0, limit - count)));
+      if (count > limit) {
+        reply.header("retry-after", String(rateLimitWindowSeconds));
+        return reply.code(429).send({
+          error: { code: "RATE_LIMITED", message: "The request rate limit has been exceeded.", correlationId: request.id, retryable: true }
+        });
+      }
+    } catch {
+      return reply.code(503).send({
+        error: { code: "RATE_LIMIT_UNAVAILABLE", message: "The API rate-limit store is unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
   app.addHook("onClose", async () => {
-    await Promise.all([databaseProbe?.close(), queueProbe?.close(), workerProbe?.close()]);
+    await Promise.all([
+      databaseProbe?.close(), queueProbe?.close(), workerProbe?.close(),
+      ownsRateLimitStore ? rateLimitStore?.close() : undefined
+    ]);
     if (ownsPrismaClient) await prismaClient?.$disconnect();
   });
 

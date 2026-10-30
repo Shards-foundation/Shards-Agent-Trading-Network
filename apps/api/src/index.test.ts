@@ -33,6 +33,31 @@ describe("SATN API", () => {
     }
   });
 
+  it("rate limits API routes but leaves liveness available", async () => {
+    let count = 0;
+    const rateLimitStore = { consume: async () => ++count, close: async () => undefined };
+    const testApp = buildServer({ rateLimitStore, rateLimitReadLimit: 1, databaseProbe: null, queueProbe: null });
+    try {
+      expect((await testApp.inject({ method: "GET", url: "/v1/venues" })).statusCode).toBe(200);
+      const limited = await testApp.inject({ method: "GET", url: "/v1/venues" });
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers["retry-after"]).toBe("60");
+      expect(limited.json().error.code).toBe("RATE_LIMITED");
+      expect((await testApp.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
+    } finally { await testApp.close(); }
+  });
+
+  it("fails closed when the configured rate-limit store errors", async () => {
+    const rateLimitStore = { consume: async () => { throw new Error("private Redis error"); }, close: async () => undefined };
+    const testApp = buildServer({ rateLimitStore, databaseProbe: null, queueProbe: null });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/v1/venues" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe("RATE_LIMIT_UNAVAILABLE");
+      expect(response.body).not.toContain("private Redis error");
+    } finally { await testApp.close(); }
+  });
+
   it("exposes liveness without requiring external services", async () => {
     const response = await app.inject({ method: "GET", url: "/health/live" });
     expect(response.statusCode).toBe(200);
