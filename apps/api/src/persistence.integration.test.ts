@@ -719,6 +719,38 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     await expect(prisma.workerJob.findUnique({ where: { id: rolledBackId! } })).resolves.toBeNull();
   });
 
+  it("dead-letters a job whose final allowed attempt expires with a crashed worker", async () => {
+    const queueName = `satn-expired-${randomUUID()}`;
+    const queue = new WorkerQueue(prisma, { leaseMs: 5_000 });
+    try {
+      const job = await queue.enqueue({
+        queue: queueName,
+        kind: "integration.worker-crash",
+        payload: { simulateCrash: true },
+        maxAttempts: 1,
+      });
+      const claim = await queue.claim(queueName, "worker-crashed");
+      expect(claim?.id).toBe(job.id);
+      await prisma.$executeRaw`
+        UPDATE "WorkerJob"
+        SET "lockedAt" = CURRENT_TIMESTAMP - INTERVAL '1 hour'
+        WHERE "id" = ${job.id}::uuid
+      `;
+      await expect(queue.claim(queueName, "worker-replacement")).resolves.toBeNull();
+      await expect(prisma.workerJob.findUnique({
+        where: { id: job.id },
+        select: { status: true, lockedAt: true, lockedBy: true, completedAt: true, lastError: true },
+      })).resolves.toMatchObject({
+        status: "DEAD_LETTER",
+        lockedAt: null,
+        lockedBy: null,
+        lastError: "Worker lease expired after maximum attempts",
+      });
+    } finally {
+      await prisma.workerJob.deleteMany({ where: { queue: queueName } });
+    }
+  });
+
   it("round-trips a namespaced ephemeral value through Redis", async () => {
     const key = `satn:ci:integration:${randomUUID()}`;
     try {
