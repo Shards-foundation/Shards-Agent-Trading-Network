@@ -65,12 +65,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
       - name: Check formatting on changed files
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         shell: bash
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             base="origin/${GITHUB_BASE_REF}"
           else
-            base="${GITHUB_EVENT_BEFORE}"
+            base="${BEFORE_SHA}"
           fi
           if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]]; then
             base="HEAD^"
