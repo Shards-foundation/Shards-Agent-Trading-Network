@@ -26,7 +26,11 @@
   "pnpm": {
     "overrides": {
       "postcss": "^8.5.18",
-      "deepmerge-ts": "^8.0.1"
+      "deepmerge-ts": "^8.0.1",
+      "prisma": "^6.19.0",
+      "@prisma/client": "^6.19.0",
+      "typescript": "^5.9.3",
+      "@types/node": "^22.18.10"
     }
   }
 }
