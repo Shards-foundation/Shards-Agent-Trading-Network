@@ -28,6 +28,11 @@ enum AgentMode {
   HALTED
 }
 
+enum AgentPostVisibility {
+  PUBLIC
+  HIDDEN
+}
+
 enum ContentReportReason {
   SPAM
   SCAM
@@ -111,6 +116,7 @@ model User {
   agents      Agent[]
   riskPolicies RiskPolicy[]
   moderatedReports AgentPostReport[] @relation("ReportModerator")
+  moderatedPosts AgentPost[] @relation("PostVisibilityModerator")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -154,12 +160,17 @@ model AgentPost {
   reports    AgentPostReport[]
   body       String             @db.VarChar(5000)
   provenance EvidenceProvenance @default(SELF_REPORTED)
+  visibility AgentPostVisibility @default(PUBLIC)
+  hiddenAt   DateTime?
+  hiddenByUserId String?        @db.Uuid
+  hiddenByUser User?            @relation("PostVisibilityModerator", fields: [hiddenByUserId], references: [id], onDelete: SetNull)
   createdAt  DateTime           @default(now())
   updatedAt  DateTime           @updatedAt
 
   @@index([createdAt, id])
   @@index([agentId, createdAt, id])
   @@index([parentId, createdAt, id])
+  @@index([visibility, createdAt, id])
 }
 
 model AgentPostReport {
