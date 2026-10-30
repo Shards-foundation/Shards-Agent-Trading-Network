@@ -138,6 +138,13 @@ describe("WorkerQueue", () => {
         new Date(),
       ),
     ).resolves.toEqual(renewed);
+    const [sql, ...params] = db.query.mock.calls[0]![0] as [
+      string,
+      ...unknown[],
+    ];
+    expect(sql).toContain("CURRENT_TIMESTAMP - ($4 * INTERVAL");
+    expect(params).toHaveLength(4);
+    expect(params[3]).toBe(30_000);
   });
 
   it("does not allow a stale lease to complete a job", async () => {
