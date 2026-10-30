@@ -105,6 +105,7 @@ function requestShutdown(reason: string, error?: Error): void {
 
 async function stop(signal: string): Promise<void> {
   if (stopping) return;
+  requestShutdown(signal);
   stopping = true;
   console.info(
     JSON.stringify({
