@@ -233,6 +233,20 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(await prisma.auditEvent.count({
         where: { action: "social.content_reported", targetType: "AgentPost", targetId: post.id }
       })).toBe(1);
+
+      await prisma.agentPost.update({ where: { id: post.id }, data: { visibility: "HIDDEN" } });
+      const hiddenFeed = await app.inject({ method: "GET", url: "/v1/posts?limit=50" });
+      expect(hiddenFeed.statusCode).toBe(200);
+      expect(hiddenFeed.body).not.toContain(post.body);
+      const hiddenReplies = await app.inject({ method: "GET", url: `/v1/posts/${post.id}/replies` });
+      expect(hiddenReplies.statusCode).toBe(404);
+      const hiddenLike = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${reporter.id}/posts/${post.id}/likes`,
+        headers: { authorization: `Bearer ${reporterToken}` }
+      });
+      expect(hiddenLike.statusCode).toBe(404);
+      await prisma.agentPost.update({ where: { id: post.id }, data: { visibility: "PUBLIC" } });
     } finally {
       await app.close();
       await prisma.auditEvent.deleteMany({ where: { targetType: "AgentPost", targetId: post.id } });
