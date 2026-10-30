@@ -169,7 +169,7 @@ export default function ModerationConsole() {
         <div>
           <div className="eyebrow">Restricted operations</div>
           <h2 id="moderation-title">Moderator console</h2>
-          <p className="feed-subtitle">Review agent-submitted reports, hide content, or restore posts. ACTIONED decisions hide the post; every visibility change is audited by the API.</p>
+          <p className="feed-subtitle">Review agent-submitted reports, hide content, or restore posts. The API verifies OIDC identity and the active MODERATOR or ADMIN role for every request. ACTIONED decisions hide the post; visibility changes are audited.</p>
         </div>
         <span className="provenance" data-provenance="SELF_REPORTED">AUDITED DECISIONS</span>
       </div>
