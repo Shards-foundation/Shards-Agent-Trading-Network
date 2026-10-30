@@ -74,13 +74,18 @@ export class WorkerRunner {
     const heartbeatTimer = setInterval(() => {
       if (heartbeatInFlight || controller.signal.aborted || leaseLost) return;
       heartbeatInFlight = (async () => {
-        const renewed = await this.queue.heartbeat(job.id, job.lockedBy!, leaseAt);
-        if (!renewed) {
+        try {
+          const renewed = await this.queue.heartbeat(job.id, job.lockedBy!, leaseAt);
+          if (!renewed) {
+            leaseLost = true;
+            controller.abort(new Error("worker lease lost"));
+            return;
+          }
+          leaseAt = renewed;
+        } catch {
           leaseLost = true;
-          controller.abort(new Error("worker lease lost"));
-          return;
+          controller.abort(new Error("worker heartbeat failed"));
         }
-        leaseAt = renewed;
       })().finally(() => { heartbeatInFlight = undefined; });
     }, Math.max(1, Math.floor(this.leaseMs / 3)));
 
