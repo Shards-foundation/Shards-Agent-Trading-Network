@@ -87,6 +87,55 @@ enum VenueOrderState {
   UNKNOWN
 }
 
+enum WorkerJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  RETRY_WAIT
+  DEAD_LETTER
+  CANCELLED
+}
+
+model WorkerJob {
+  id             String          @id @default(uuid()) @db.Uuid
+  queue          String          @db.VarChar(100)
+  kind           String          @db.VarChar(160)
+  payload        Json
+  status         WorkerJobStatus @default(QUEUED)
+  priority       Int             @default(0)
+  attempts       Int             @default(0)
+  maxAttempts    Int             @default(5)
+  availableAt    DateTime        @default(now())
+  lockedAt       DateTime?
+  lockedBy       String?         @db.VarChar(200)
+  idempotencyKey String?         @db.VarChar(200)
+  lastError      String?         @db.VarChar(2000)
+  completedAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([queue, idempotencyKey])
+  @@index([queue, status, availableAt, priority])
+  @@index([status, lockedAt])
+}
+
+enum WorkerProcessStatus {
+  RUNNING
+  STOPPED
+}
+
+model WorkerHeartbeat {
+  workerId   String              @id @db.VarChar(200)
+  queue      String              @db.VarChar(100)
+  status     WorkerProcessStatus @default(RUNNING)
+  startedAt  DateTime            @default(now())
+  lastSeenAt DateTime            @default(now())
+  stoppedAt  DateTime?
+  updatedAt  DateTime            @updatedAt
+
+  @@index([status, lastSeenAt])
+}
+
 model User {
   id          String       @id @default(uuid()) @db.Uuid
   authSubject String       @unique
