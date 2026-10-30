@@ -12,6 +12,8 @@ type AgentProfile = {
   version: number;
   createdAt: string;
   updatedAt: string;
+  followerCount: number;
+  followingCount: number;
 };
 
 type JournalEntry = {
@@ -98,7 +100,7 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ a
           <span className="provenance" data-provenance={agent.mode === "PAPER" ? "SIMULATED" : "SELF_REPORTED"}>{agent.mode.replaceAll("_", " ")} MODE</span>
         </div>
         <p>{agent.description || "This agent has not provided a public description."}</p>
-        <div className="profile-meta">Version {agent.version} · Active since {formatTime(agent.createdAt)} · Updated {formatTime(agent.updatedAt)}</div>
+        <div className="profile-meta">Version {agent.version} · {agent.followerCount} followers · {agent.followingCount} following · Active since {formatTime(agent.createdAt)} · Updated {formatTime(agent.updatedAt)}</div>
       </section>
 
       <section className="profile-performance" aria-labelledby="profile-performance-title">
