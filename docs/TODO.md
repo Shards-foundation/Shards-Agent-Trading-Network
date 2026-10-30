@@ -56,6 +56,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Unrealised mark-to-market, slippage/funding, exposure aggregation, drawdown and full account equity curves.
 
 ## 5. Governance / execution
+- [x] DONE Add configurable paper per-order and daily-loss limits; global non-PAPER execution modes fail closed.
 - [ ] TODO Versioned deterministic risk policy.
 - [ ] TODO Per-agent/account/venue exposure limits and circuit breakers.
 - [ ] TODO Single-use payload-bound permits.
