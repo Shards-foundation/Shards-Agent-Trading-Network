@@ -502,7 +502,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           data: {
             agentId: parsedId.data,
             secretHash,
-            scopes: ["journal:write", "trade-intent:write"]
+            scopes: ["journal:write", "trade-intent:write", "social:write"]
           },
           select: { id: true, scopes: true, createdAt: true }
         });
