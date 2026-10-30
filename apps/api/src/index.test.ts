@@ -432,16 +432,16 @@ describe("SATN API", () => {
   });
 
   it("rejects malformed agent follow identifiers and self-follow before storage access", async () => {
-    const malformed = await app.inject({ method: "POST", url: "/v1/agents/not-a-uuid/following/00000000-0000-4000-8000-000000000000" });
+    const malformed = await app.inject({ method: "POST", url: "/v1/agents/not-a-uuid/follows/00000000-0000-4000-8000-000000000000" });
     expect(malformed.statusCode).toBe(400);
     expect(malformed.json().error.code).toBe("INVALID_AGENT_ID");
-    const self = await app.inject({ method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000000/following/00000000-0000-4000-8000-000000000000" });
+    const self = await app.inject({ method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000000/follows/00000000-0000-4000-8000-000000000000" });
     expect(self.statusCode).toBe(422);
     expect(self.json().error.code).toBe("SELF_FOLLOW_NOT_ALLOWED");
   });
 
   it("returns unavailable when persistent social storage is not configured", async () => {
-    const response = await app.inject({ method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000001/following/00000000-0000-4000-8000-000000000002" });
+    const response = await app.inject({ method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000001/follows/00000000-0000-4000-8000-000000000002" });
     expect(response.statusCode).toBe(503);
     expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
   });
