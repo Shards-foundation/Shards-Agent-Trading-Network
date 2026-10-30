@@ -28,6 +28,13 @@ jobs:
         env:
           DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
         run: pnpm db:generate
+      - name: Emit baseline migration SQL for review
+        env:
+          DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
+        run: |
+          echo "SATN_MIGRATION_SQL_BEGIN"
+          pnpm --filter @satn/database exec prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script
+          echo "SATN_MIGRATION_SQL_END"
       - name: Validate database schema
         env:
           # Prisma validates configuration without connecting to a database.
