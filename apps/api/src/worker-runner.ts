@@ -25,7 +25,7 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve) 
     resolve();
   }
   signal?.addEventListener("abort", done, { once: true });
-};
+});
 
 /**
  * Single-process worker loop. Run multiple instances for concurrency; queue
