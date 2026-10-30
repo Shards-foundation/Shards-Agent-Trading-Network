@@ -113,6 +113,43 @@ describe("WorkerRunner", () => {
     });
   });
 
+  it("does not start a claimed handler if shutdown arrives while claiming", async () => {
+    const queue = queueMock();
+    let resolveClaim!: (value: WorkerJob) => void;
+    queue.claim.mockImplementation(
+      () => new Promise<WorkerJob>((resolve) => {
+        resolveClaim = resolve;
+      }),
+    );
+    queue.fail.mockResolvedValue("RETRY_WAIT");
+    const parent = new AbortController();
+    const handler = vi.fn(async () => undefined);
+    const runner = new WorkerRunner(
+      queue,
+      "default",
+      "worker-a",
+      new Map([["test", handler]]),
+      { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 },
+    );
+
+    const running = runner.runOne(parent.signal);
+    parent.abort(new Error("shutdown requested"));
+    resolveClaim(job);
+
+    await expect(running).resolves.toEqual({
+      outcome: "RETRY_WAIT",
+      jobId: job.id,
+    });
+    expect(handler).not.toHaveBeenCalled();
+    expect(queue.fail).toHaveBeenCalledWith(
+      job.id,
+      job.lockedBy,
+      job.lockedAt,
+      expect.any(Error),
+    );
+    expect(queue.complete).not.toHaveBeenCalled();
+  });
+
   it("propagates shutdown abort to an active handler and retries cooperative cancellation", async () => {
     const queue = queueMock();
     queue.claim.mockResolvedValue(job);
