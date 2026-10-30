@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   refresh-lockfile:
-    if: github.event.head_commit.message == 'chore(security): resolve vulnerable transitive dependencies'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout trusted remediation branch
