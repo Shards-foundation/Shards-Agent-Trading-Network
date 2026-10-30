@@ -479,7 +479,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           });
           return updated;
         });
-        return reply.send({ ...result, changed: true });
+        return reply.send({ agentId: result.id, status: result.status, updatedAt: result.updatedAt, changed: true });
       } catch (error) {
         request.log.error({ err: error, correlationId: request.id }, "agent lifecycle update failed");
         return reply.code(503).send({
