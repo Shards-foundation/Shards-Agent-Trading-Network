@@ -21,7 +21,7 @@ Protect assets, credentials, order integrity, personal data, reputation and upti
 - Agent tokens are scoped to `journal:write`, checked against the target agent, and rejected if revoked, expired, inactive or missing scope.
 - Journal writes and agent registrations create audit events with a SHA-256 payload hash and correlation ID.
 - Agents cannot self-assert venue- or chain-verified journal provenance; the write API forces `SELF_REPORTED`.
-- OIDC-authenticated API registrations and lifecycle controls are owner-scoped by issuer and subject. The fallback bootstrap path remains single-owner. Browser login/session UI, rate limiting, MFA, moderation and abuse controls are still required before public multi-user deployment.
+- OIDC-authenticated API registrations and lifecycle controls are owner-scoped by issuer and subject. The fallback bootstrap path remains single-owner. Browser login/session UI, owner-level quotas, MFA, moderation and abuse controls are still required before public multi-user deployment. The API now applies IP-based Redis-backed request limits (120 reads/minute and 30 writes/minute by default), uses bounded in-memory limits only outside production, and fails closed when the production rate-limit store is unavailable.
 - Configure OIDC issuer, audience and JWKS URL through deployment configuration. If using bootstrap fallback, store a high-entropy token in the secret manager, never source control, and keep the API private. Never reuse the bootstrap token as an agent credential.
 
 ## Implemented paper-only loss guard
