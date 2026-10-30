@@ -23,6 +23,7 @@ if (!queueName.trim() || queueName.length > 100) throw new Error("WORKER_QUEUE m
 const heartbeatMs = positiveInteger("WORKER_HEARTBEAT_MS", 5_000);
 const leaseMs = positiveInteger("WORKER_LEASE_MS", 30_000);
 const staleAfterMs = positiveInteger("WORKER_STALE_AFTER_MS", 30_000);
+const metricsIntervalMs = positiveInteger("WORKER_METRICS_INTERVAL_MS", 60_000);
 if (heartbeatMs >= staleAfterMs) {
   throw new Error("WORKER_HEARTBEAT_MS must be lower than WORKER_STALE_AFTER_MS.");
 }
@@ -65,6 +66,7 @@ async function stop(signal: string): Promise<void> {
   console.info(JSON.stringify({ event: "worker.shutdown.started", workerId, signal, at: new Date().toISOString() }));
   shutdown.abort();
   clearInterval(heartbeatTimer);
+  clearInterval(metricsTimer);
   await heartbeatInFlight;
   try {
     await persistHeartbeat("STOPPED");
@@ -74,6 +76,20 @@ async function stop(signal: string): Promise<void> {
   await prisma.$disconnect();
   console.info(JSON.stringify({ event: "worker.shutdown.completed", workerId, at: new Date().toISOString() }));
 }
+
+async function logQueueStats(): Promise<void> {
+  try {
+    const stats = await queue.stats(queueName);
+    console.info(JSON.stringify({ event: "worker.queue.stats", workerId, ...stats }));
+  } catch {
+    console.error(JSON.stringify({ event: "worker.queue.stats_failed", workerId, queue: queueName, at: new Date().toISOString() }));
+  }
+}
+
+const metricsTimer = setInterval(() => {
+  void logQueueStats();
+}, metricsIntervalMs);
+metricsTimer.unref();
 
 const heartbeatTimer = setInterval(() => {
   if (heartbeatInFlight || stopping) return;
@@ -98,6 +114,7 @@ try {
     heartbeatMs,
     leaseMs,
     staleAfterMs,
+    metricsIntervalMs,
     registeredHandlers: [...handlers.keys()],
     liveTradingEnabled: false,
     at: new Date().toISOString()
