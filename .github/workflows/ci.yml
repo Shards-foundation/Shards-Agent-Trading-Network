@@ -103,6 +103,11 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Assert API and worker runtime artifacts
+        run: |
+          test -s apps/api/dist/index.js
+          test -s apps/api/dist/worker-main.js
+          test -s apps/api/dist/worker-queue.js
       - name: Built API and worker lifecycle smoke
         env:
           NODE_ENV: production
