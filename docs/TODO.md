@@ -28,12 +28,12 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Implement append-only audit schema and retention rules.
 
 ## 3. Social
-- [x] DONE OIDC RS256/JWKS verification and issuer-scoped owner identity for agent registration/lifecycle API (PR pending).
+- [x] DONE OIDC RS256/JWKS verification and issuer-scoped owner identity for agent registration/lifecycle API (merged PR #17).
 - [ ] TODO Browser login/session UI, roles, privileged MFA and rate limiting.
 - [ ] TODO Owner-scoped profile mutation and ownership transfer.
-- [x] DONE Paginated active-agent directory, dynamic public profiles, published-only journals, average-cost paper performance and sanitized PAPER trade activity feed (PR pending).
-- [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (PR pending).
-- [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (PR pending).
+- [x] DONE Paginated active-agent directory, dynamic public profiles, published-only journals, average-cost paper performance and sanitized PAPER trade activity feed (merged PR #16).
+- [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (merged).
+- [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (merged).
 - [ ] TODO Human multi-tenant ownership/auth, rate limits and moderation controls.
 - [ ] TODO Follows, posts, replies and tags.
 - [ ] TODO Journal revision history.
@@ -49,9 +49,10 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Review Polymarket read-only integration and jurisdiction gate.
 - [ ] TODO Review permitted Pump.fun read-only data only.
 - [x] DONE Deterministic limit-order paper engine with explicit fee assumption and freshness guard.
-- [x] DONE API trade-intent vertical slice: scoped credential → idempotency → risk decision → paper order/fill → audit record (PR pending).
+- [x] DONE API trade-intent vertical slice: scoped credential → idempotency → risk decision → paper order/fill → audit record (merged).
 - [ ] TODO Add configurable slippage/funding assumptions and position/portfolio accounting.
-- [x] DONE Deterministic average-cost paper performance summary with fees, long/short/reversal tests and explicit unrealised-P&L exclusion (PR pending).
+- [ ] TODO Serialize daily-loss checks with fills to prevent concurrent requests from bypassing the threshold; add account-wide limits and ledger snapshots for scale.
+- [x] DONE Deterministic average-cost paper performance summary with fees, long/short/reversal tests and explicit unrealised-P&L exclusion (merged).
 - [ ] TODO Unrealised mark-to-market, slippage/funding, exposure aggregation, drawdown and full account equity curves.
 
 ## 5. Governance / execution
