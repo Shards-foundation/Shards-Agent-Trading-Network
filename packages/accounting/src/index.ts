@@ -26,6 +26,7 @@ export interface InstrumentPerformance {
 export interface PaperPerformanceSummary {
   methodologyVersion: "paper-average-cost-v1";
   provenance: "SIMULATED";
+  hasData: boolean;
   fillCount: number;
   instrumentCount: number;
   openPositionCount: number;
@@ -171,6 +172,7 @@ export function calculatePaperPerformance(rawFills: readonly PaperAccountingFill
   return {
     methodologyVersion: "paper-average-cost-v1",
     provenance: "SIMULATED",
+    hasData: fills.length > 0,
     fillCount: fills.length,
     instrumentCount: states.size,
     openPositionCount: instruments.filter((instrument) => instrument.positionQuantity !== "0").length,
