@@ -12,8 +12,8 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 
 ## 1. Repository / CI
 - [ ] TODO Set up pnpm/Turborepo and strict TypeScript.
-- [ ] TODO Add lint, formatting, typecheck, unit tests and coverage.
-- [ ] TODO Add PR CI and protected main branch.
+- [ ] IN_PROGRESS Add lint, formatting, typecheck, unit tests and coverage; CI currently runs schema validation, typecheck, tests and build.
+- [x] DONE Add PR CI workflow. [ ] TODO Verify main branch protection settings.
 - [ ] TODO Add secret, dependency, SAST and container scanning.
 - [ ] TODO Add CODEOWNERS, security policy, contribution guide and licence.
 - [ ] TODO Add local PostgreSQL/Redis compose and environment validation.
@@ -34,8 +34,10 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Responsive black/gold interface and accessibility tests.
 
 ## 4. Market data / paper
-- [ ] TODO Define adapter capability contract.
-- [ ] TODO Hyperliquid read-only info/WebSocket ingestion.
+- [x] DONE Define adapter capability contract and unsupported-capability guard.
+- [x] DONE Hyperliquid read-only info endpoint adapter with deterministic tests (PR #3).
+- [x] DONE Read-only API snapshot endpoint with bounded in-memory TTL cache and request coalescing (PR in progress).
+- [ ] TODO WebSocket ingestion and reconnect/snapshot recovery.
 - [ ] TODO Reconnect, snapshot recovery, freshness and rate-limit handling.
 - [ ] TODO Review Polymarket read-only integration and jurisdiction gate.
 - [ ] TODO Review permitted Pump.fun read-only data only.

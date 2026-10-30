@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
+import type { MarketSnapshot } from "@satn/venue-adapters";
 import { z } from "zod";
 
 const envSchema = z.object({
@@ -12,7 +14,21 @@ const envSchema = z.object({
 });
 const env = envSchema.parse(process.env);
 
-export function buildServer() {
+export interface MarketDataProvider {
+  getMarketSnapshot(instrumentId: string): Promise<MarketSnapshot>;
+}
+
+export interface BuildServerOptions {
+  marketDataProvider?: MarketDataProvider;
+  marketCacheTtlMs?: number;
+  now?: () => number;
+}
+
+const instrumentSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9@._/-]+$/);
+const DEFAULT_CACHE_TTL_MS = 1_000;
+const MAX_CACHE_ENTRIES = 500;
+
+export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({
     logger: {
       level: env.NODE_ENV === "production" ? "info" : "debug",
@@ -21,13 +37,22 @@ export function buildServer() {
     requestIdHeader: "x-correlation-id",
     disableRequestLogging: false
   });
+  const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
+  const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+  const now = options.now ?? Date.now;
+  const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
+  const inFlight = new Map<string, Promise<MarketSnapshot>>();
+
+  if (!Number.isInteger(cacheTtlMs) || cacheTtlMs < 0 || cacheTtlMs > 60_000) {
+    throw new Error("marketCacheTtlMs must be an integer between 0 and 60000.");
+  }
 
   app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
 
   app.get("/health/live", async () => ({
     status: "ok",
     service: "satn-api",
-    timestamp: new Date().toISOString()
+    timestamp: new Date(now()).toISOString()
   }));
 
   app.get("/health/ready", async (_request, reply) => {
@@ -45,13 +70,66 @@ export function buildServer() {
 
   app.get("/v1/venues", async () => ({
     venues: [
-      { id: "hyperliquid", status: "planned", capabilities: ["market-data", "paper-trading"] },
+      { id: "hyperliquid", status: "read-only", capabilities: ["market-data", "paper-trading"] },
       { id: "polymarket", status: "planned", capabilities: ["market-discovery"] },
       { id: "pump-fun", status: "read-only-review", capabilities: ["approved-public-data"] },
       { id: "uniswap", status: "planned", capabilities: ["quote-only"] }
     ],
     liveExecutionEnabled: false
   }));
+
+  app.get<{ Params: { instrumentId: string } }>("/v1/market/:instrumentId", async (request, reply) => {
+    const parsed = instrumentSchema.safeParse(request.params.instrumentId);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: {
+          code: "INVALID_INSTRUMENT",
+          message: "The instrument identifier is invalid.",
+          correlationId: request.id,
+          retryable: false
+        }
+      });
+    }
+
+    const instrumentId = parsed.data;
+    const cached = marketCache.get(instrumentId);
+    if (cached && cached.expiresAt > now()) {
+      return reply.header("x-cache", "HIT").send({ snapshot: cached.snapshot });
+    }
+    marketCache.delete(instrumentId);
+
+    try {
+      let pending = inFlight.get(instrumentId);
+      if (!pending) {
+        pending = marketDataProvider.getMarketSnapshot(instrumentId);
+        inFlight.set(instrumentId, pending);
+      }
+      const snapshot = await pending;
+      if (snapshot.instrumentId !== instrumentId || snapshot.venue !== "hyperliquid") {
+        throw new Error("Market-data provider returned a mismatched instrument or venue.");
+      }
+
+      if (cacheTtlMs > 0) {
+        if (marketCache.size >= MAX_CACHE_ENTRIES && !marketCache.has(instrumentId)) {
+          const oldestKey = marketCache.keys().next().value;
+          if (oldestKey !== undefined) marketCache.delete(oldestKey);
+        }
+        marketCache.set(instrumentId, { snapshot, expiresAt: now() + cacheTtlMs });
+      }
+      return reply.header("x-cache", "MISS").send({ snapshot });
+    } catch {
+      return reply.code(502).send({
+        error: {
+          code: "MARKET_DATA_UNAVAILABLE",
+          message: "Market data is temporarily unavailable.",
+          correlationId: request.id,
+          retryable: true
+        }
+      });
+    } finally {
+      inFlight.delete(instrumentId);
+    }
+  });
 
   app.setNotFoundHandler(async (_request, reply) => {
     return reply.code(404).send({
