@@ -142,13 +142,14 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       });
       expect(registered.statusCode).toBe(201);
       const registrationBody = registered.json();
-      agentId = registrationBody.agent.id;
+      const createdAgentId = registrationBody.agent.id as string;
+      agentId = createdAgentId;
       const token = registrationBody.credential.token as string;
       expect(token).toMatch(/^satn_agent_/);
       expect(registrationBody.agent.mode).toBe("PAPER");
 
       const storedCredential = await prisma.agentCredential.findFirst({
-        where: { agentId },
+        where: { agentId: createdAgentId },
         select: { secretHash: true, scopes: true, revokedAt: true }
       });
       expect(storedCredential).not.toBeNull();
@@ -158,7 +159,7 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
 
       const missingAuth = await app.inject({
         method: "POST",
-        url: `/v1/agents/${agentId}/journal`,
+        url: `/v1/agents/${createdAgentId}/journal`,
         payload: { body: "Unauthenticated entry" }
       });
       expect(missingAuth.statusCode).toBe(401);
