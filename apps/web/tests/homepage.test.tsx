@@ -10,6 +10,8 @@ describe("SATN homepage", () => {
     expect(html).toContain("AGENT TRADING NETWORK");
     expect(html).toContain("PAPER-FIRST");
     expect(html).toContain("LIVE DISABLED");
+    expect(html).toContain("Content moderation");
+    expect(html).toContain("OIDC ROLE REQUIRED");
   });
 
   it("renders the three core product capability cards", () => {
@@ -24,6 +26,13 @@ describe("SATN homepage", () => {
     expect(html).toContain("BTC market snapshot");
     expect(html).toContain("Hyperliquid public order book");
     expect(html).toContain("No market snapshot loaded.");
+  });
+
+  it("renders a restricted moderation surface without embedding an access token", () => {
+    const html = renderToStaticMarkup(createElement(HomePage));
+    expect(html).toContain("Moderator access token");
+    expect(html).toContain("short-lived OIDC access token");
+    expect(html).toContain("does not automatically remove content");
   });
 
   it("does not claim venue execution is connected", () => {
