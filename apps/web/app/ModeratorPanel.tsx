@@ -35,7 +35,6 @@ export default function ModeratorPanel() {
   const [token, setToken] = useState("");
   const [items, setItems] = useState<Report[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +77,6 @@ export default function ModeratorPanel() {
         });
       });
       setNextCursor(payload.nextCursor);
-      setCursor(next);
       setLoaded(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load the moderation queue.");
@@ -137,7 +135,7 @@ export default function ModeratorPanel() {
         </div>
         <span className="moderation-lock">OIDC ROLE REQUIRED</span>
       </div>
-      <form className="moderation-auth" onSubmit={(event) => { event.preventDefault(); setCursor(undefined); void load(undefined, true); }}>
+      <form className="moderation-auth" onSubmit={(event) => { event.preventDefault(); void load(undefined, true); }}>
         <label htmlFor="moderator-token">Moderator access token</label>
         <div className="moderation-auth-row">
           <input
