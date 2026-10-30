@@ -702,6 +702,23 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+
+  it("rolls back a queued job when the surrounding PostgreSQL transaction aborts", async () => {
+    const queueName = `satn-tx-${randomUUID()}`;
+    let rolledBackId: string | undefined;
+    await expect(prisma.$transaction(async (tx) => {
+      const job = await new WorkerQueue(tx).enqueue({
+        queue: queueName,
+        kind: "integration.transaction-rollback",
+        payload: { shouldPersist: false },
+      });
+      rolledBackId = job.id;
+      throw new Error("force transaction rollback");
+    })).rejects.toThrow("force transaction rollback");
+    expect(rolledBackId).toBeDefined();
+    await expect(prisma.workerJob.findUnique({ where: { id: rolledBackId! } })).resolves.toBeNull();
+  });
+
   it("round-trips a namespaced ephemeral value through Redis", async () => {
     const key = `satn:ci:integration:${randomUUID()}`;
     try {
