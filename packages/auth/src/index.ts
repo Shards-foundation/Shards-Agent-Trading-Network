@@ -82,10 +82,10 @@ async function loadJwks(
   return keys;
 }
 
-function validateJwksUrl(urlValue: string): void {
+function validateHttpsUrl(urlValue: string, label: string): void {
   const url = new URL(urlValue);
   if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(url.hostname))) {
-    throw new Error("OIDC JWKS URL must use HTTPS.");
+    throw new Error(`${label} must use HTTPS.`);
   }
 }
 
@@ -94,6 +94,8 @@ export async function verifyOidcAccessToken(
   config: OidcConfig,
   options: { fetcher?: JwksFetcher; nowMs?: number } = {}
 ): Promise<VerifiedOidcIdentity> {
+  if (!config.issuer.trim() || !config.audience.trim() || !config.jwksUrl.trim()) throw new Error("OIDC issuer, audience and JWKS URL are required.");
+  validateHttpsUrl(config.issuer, "OIDC issuer");
   if (token.length > 16_384) throw new Error("OIDC access token is too large.");
   const segments = token.split(".");
   if (segments.length !== 3) throw new Error("Malformed JWT.");
@@ -118,7 +120,7 @@ export async function verifyOidcAccessToken(
     throw new Error("OIDC token is not yet valid.");
   }
 
-  validateJwksUrl(config.jwksUrl);
+  validateHttpsUrl(config.jwksUrl, "OIDC JWKS URL");
   const fetcher = options.fetcher ?? ((url, init) => fetch(url, init));
   const ttlMs = config.jwksCacheTtlMs ?? 300_000;
   let keys = await loadJwks(config.jwksUrl, fetcher, nowMs, ttlMs);
