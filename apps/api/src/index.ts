@@ -65,13 +65,21 @@ export function buildServer() {
 
   app.setErrorHandler(async (error, request, reply) => {
     request.log.error({ err: error, correlationId: request.id }, "request failed");
-    const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600
-      ? error.statusCode
+    const details: Record<string, unknown> =
+      error !== null && typeof error === "object" ? error as Record<string, unknown> : {};
+    const candidateStatus = details.statusCode;
+    const candidateMessage = details.message;
+    const status = typeof candidateStatus === "number" &&
+      candidateStatus >= 400 && candidateStatus < 600
+      ? candidateStatus
       : 500;
+    const message = typeof candidateMessage === "string"
+      ? candidateMessage
+      : "An unexpected error occurred.";
     return reply.code(status).send({
       error: {
         code: status === 500 ? "INTERNAL_ERROR" : "REQUEST_ERROR",
-        message: status === 500 ? "An unexpected error occurred." : error.message,
+        message: status === 500 ? "An unexpected error occurred." : message,
         correlationId: request.id,
         retryable: status >= 500
       }
