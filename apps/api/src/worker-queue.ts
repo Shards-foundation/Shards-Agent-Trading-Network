@@ -117,7 +117,7 @@ export class WorkerQueue {
   async heartbeat(jobId: string, leaseOwnerToken: string, leaseAt: Date): Promise<Date | null> {
     const rows = await this.db.$queryRawUnsafe<Array<{ lockedAt: Date }>>(
       `UPDATE "WorkerJob" SET "lockedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND "lockedAt" = $3 RETURNING "lockedAt"`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3 RETURNING "lockedAt"`,
       jobId, leaseOwnerToken, leaseAt,
     );
     return rows[0]?.lockedAt ?? null;
@@ -127,7 +127,7 @@ export class WorkerQueue {
     const rows = await this.db.$queryRawUnsafe<Array<{ id: string }>>(
       `UPDATE "WorkerJob" SET "status" = 'SUCCEEDED', "completedAt" = CURRENT_TIMESTAMP,
          "lockedAt" = NULL, "lockedBy" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND "lockedAt" = $3 RETURNING "id"`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3 RETURNING "id"`,
       jobId, leaseOwnerToken, leaseAt,
     );
     return rows.length === 1;
@@ -136,7 +136,7 @@ export class WorkerQueue {
   async fail(jobId: string, leaseOwnerToken: string, leaseAt: Date, error: unknown): Promise<"RETRY_WAIT" | "DEAD_LETTER" | "LEASE_LOST"> {
     const jobs = await this.db.$queryRawUnsafe<Array<Pick<WorkerJob, "id" | "attempts" | "maxAttempts">>>(
       `SELECT "id","attempts","maxAttempts" FROM "WorkerJob"
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND "lockedAt" = $3`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3`,
       jobId, leaseOwnerToken, leaseAt,
     );
     const job = jobs[0];
@@ -149,7 +149,7 @@ export class WorkerQueue {
       `UPDATE "WorkerJob" SET "status" = $4::"WorkerJobStatus",
          "availableAt" = CASE WHEN $4 = 'RETRY_WAIT' THEN CURRENT_TIMESTAMP + ($5 * INTERVAL '1 millisecond') ELSE "availableAt" END,
          "lastError" = $6, "lockedAt" = NULL, "lockedBy" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND "lockedAt" = $3`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3`,
       jobId, leaseOwnerToken, leaseAt, status, delay, message,
     );
     return result === 1 ? status : "LEASE_LOST";
