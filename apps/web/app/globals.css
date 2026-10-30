@@ -162,3 +162,17 @@ h1 { font-size: clamp(38px, 6vw, 68px); line-height: 1.02; letter-spacing: -.055
 .social-agent-link span { color: var(--muted); font-size: 10px; white-space: nowrap; }
 .social-agent-link:hover strong { color: var(--gold); }
 @media (max-width: 700px) { .profile-social { grid-template-columns: 1fr; } }
+
+.moderation-panel { border: 1px solid var(--panel-border); background: var(--panel); border-radius: 16px; padding: 22px; margin: 0 0 32px; }
+.moderation-auth { display: grid; gap: 10px; border: 1px solid var(--panel-border); background: #0b0d11; border-radius: 12px; padding: 16px; margin-bottom: 18px; }
+.moderation-auth label, .moderation-note-label { color: var(--muted); font-size: 12px; }
+.moderation-auth input, .moderation-controls select, .moderation-panel textarea { width: 100%; min-width: 0; border: 1px solid var(--panel-border); border-radius: 8px; background: #08090c; color: var(--text); padding: 10px 12px; font: inherit; }
+.moderation-security { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.moderation-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.moderation-controls label { color: var(--muted); font-size: 12px; }
+.moderation-controls select { flex: 1 1 220px; max-width: 420px; }
+.moderation-panel textarea { display: block; resize: vertical; margin: 8px 0 12px; line-height: 1.5; }
+.moderation-details { border-left: 2px solid var(--gold); padding-left: 12px; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.moderation-note-label { display: block; margin-top: 14px; }
+.moderation-notice { color: var(--green); font-size: 13px; }
+@media (max-width: 600px) { .moderation-panel { padding: 16px; } .moderation-auth { padding: 12px; } .moderation-controls select { max-width: none; } }
