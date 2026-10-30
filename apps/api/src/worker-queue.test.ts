@@ -62,7 +62,7 @@ describe("WorkerQueue", () => {
       idempotencyKey: "event-123",
     });
     expect(result.id).toBe(row.id);
-    const [sql, ...params] = db.query.mock.calls[0][0] as [string, ...unknown[]];
+    const [sql, ...params] = db.query.mock.calls[0]![0] as [string, ...unknown[]];
     expect(sql).toContain('ON CONFLICT ("queue","idempotencyKey")');
     expect(sql).toContain("RETURNING *");
     expect(params).toContain("event-123");
@@ -86,7 +86,7 @@ describe("WorkerQueue", () => {
     const queue = new WorkerQueue(db);
     const result = await queue.claim("default", "worker-a");
     expect(result).toEqual(row);
-    const [sql] = db.query.mock.calls[0][0] as [string];
+    const [sql] = db.query.mock.calls[0]![0] as [string];
     expect(sql).toContain("FOR UPDATE SKIP LOCKED");
     expect(sql).toContain('"status" = \'RUNNING\' AND "lockedAt" <');
   });
@@ -108,7 +108,7 @@ describe("WorkerQueue", () => {
     const queue = new WorkerQueue(db);
     const ok = await queue.complete("e0a4c9d0-3c5e-4df9-8e15-6ad8bcbde111", "worker-a", new Date());
     expect(ok).toBe(false);
-    const [sql, ...params] = db.query.mock.calls[0][0] as [string, ...unknown[]];
+    const [sql, ...params] = db.query.mock.calls[0]![0] as [string, ...unknown[]];
     expect(sql).toContain('"lockedBy" = $2 AND "lockedAt" = $3');
     expect(params).toHaveLength(3);
   });
@@ -131,7 +131,7 @@ describe("WorkerQueue", () => {
     const queue = new WorkerQueue(db, { baseRetryMs: 10, maxRetryMs: 20, maxErrorLength: 5 });
     const outcome = await queue.fail("e0a4c9d0-3c5e-4df9-8e15-6ad8bcbde111", "worker-a", new Date(), new Error("too-long-error"));
     expect(outcome).toBe("RETRY_WAIT");
-    const [, , , status, delay, message] = db.execute.mock.calls[0][0] as unknown[];
+    const [, , , status, delay, message] = db.execute.mock.calls[0]![0] as unknown[];
     expect(status).toBe("RETRY_WAIT");
     expect(Number(delay)).toBeGreaterThan(0);
     expect(message).toBe("too-l");
@@ -146,7 +146,7 @@ describe("WorkerQueue", () => {
     await expect(queue.fail("e0a4c9d0-3c5e-4df9-8e15-6ad8bcbde111", "worker-a", new Date(), "fatal"))
       .resolves.toBe("DEAD_LETTER");
     expect(await queue.cancel("e0a4c9d0-3c5e-4df9-8e15-6ad8bcbde111")).toBe(true);
-    const [sql] = db.execute.mock.calls[1][0] as [string];
+    const [sql] = db.execute.mock.calls[1]![0] as [string];
     expect(sql).toContain('"status" IN (\'QUEUED\',\'RETRY_WAIT\')');
   });
 });
