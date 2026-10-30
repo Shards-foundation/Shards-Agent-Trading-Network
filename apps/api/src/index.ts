@@ -31,9 +31,10 @@ export function buildServer() {
   }));
 
   app.get("/health/ready", async (_request, reply) => {
-    // Until persistent dependencies are wired, this reports process readiness only.
-    return reply.code(200).send({
-      status: "ready",
+    // This service is not ready for traffic until durable dependencies are implemented.
+    return reply.code(503).send({
+      status: "degraded",
+      ready: false,
       dependencies: { database: "not-configured", redis: "not-configured" },
       execution: {
         mode: env.EXECUTION_MODE,
