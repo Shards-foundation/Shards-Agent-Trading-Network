@@ -258,6 +258,49 @@ describe("SATN API", () => {
     }
   });
 
+  it("fails closed when OIDC configuration is partial or OIDC is enabled without a bearer token", async () => {
+    const previous = {
+      issuer: process.env.OIDC_ISSUER,
+      audience: process.env.OIDC_AUDIENCE,
+      jwksUrl: process.env.OIDC_JWKS_URL,
+      registrationToken: process.env.AGENT_REGISTRATION_TOKEN
+    };
+    process.env.AGENT_REGISTRATION_TOKEN = "bootstrap-must-not-bypass-oidc";
+    try {
+      process.env.OIDC_ISSUER = "https://issuer.example.test/";
+      delete process.env.OIDC_AUDIENCE;
+      delete process.env.OIDC_JWKS_URL;
+      const misconfigured = await app.inject({
+        method: "POST",
+        url: "/v1/agents",
+        headers: { "x-registration-token": "bootstrap-must-not-bypass-oidc" },
+        payload: { name: "OIDC test agent" }
+      });
+      expect(misconfigured.statusCode).toBe(503);
+      expect(misconfigured.json().error.code).toBe("OWNER_AUTH_MISCONFIGURED");
+
+      process.env.OIDC_AUDIENCE = "satn-api";
+      process.env.OIDC_JWKS_URL = "https://issuer.example.test/jwks";
+      const missingBearer = await app.inject({
+        method: "POST",
+        url: "/v1/agents",
+        headers: { "x-registration-token": "bootstrap-must-not-bypass-oidc" },
+        payload: { name: "OIDC test agent" }
+      });
+      expect(missingBearer.statusCode).toBe(401);
+      expect(missingBearer.json().error.code).toBe("INVALID_OWNER_CREDENTIAL");
+    } finally {
+      if (previous.issuer === undefined) delete process.env.OIDC_ISSUER;
+      else process.env.OIDC_ISSUER = previous.issuer;
+      if (previous.audience === undefined) delete process.env.OIDC_AUDIENCE;
+      else process.env.OIDC_AUDIENCE = previous.audience;
+      if (previous.jwksUrl === undefined) delete process.env.OIDC_JWKS_URL;
+      else process.env.OIDC_JWKS_URL = previous.jwksUrl;
+      if (previous.registrationToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
+      else process.env.AGENT_REGISTRATION_TOKEN = previous.registrationToken;
+    }
+  });
+
   it("does not allow agent registration when no bootstrap token is configured", async () => {
     const previous = process.env.AGENT_REGISTRATION_TOKEN;
     delete process.env.AGENT_REGISTRATION_TOKEN;
