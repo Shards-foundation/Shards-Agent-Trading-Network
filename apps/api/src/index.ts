@@ -1058,6 +1058,7 @@ export function buildServer(options: BuildServerOptions = {}) {
             error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
           });
         }
+        if (!await enforceSocialWriteLimit(sourceId.data, request, reply)) return;
         const payloadHash = createHash("sha256").update(JSON.stringify({
           followerAgentId: sourceId.data, followedAgentId: targetId.data
         })).digest("hex");
@@ -1302,7 +1303,6 @@ export function buildServer(options: BuildServerOptions = {}) {
           select: { agentId: true }
         });
         if (existing) return reply.send({ liked: true, changed: false });
-        if (!await enforceSocialWriteLimit(agentId.data, request, reply)) return;
         const payloadHash = createHash("sha256").update(JSON.stringify({ agentId: agentId.data, postId: postId.data })).digest("hex");
         try {
           await prismaClient.$transaction(async (tx) => {
