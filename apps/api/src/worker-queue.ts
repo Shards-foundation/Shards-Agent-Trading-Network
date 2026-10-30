@@ -181,10 +181,14 @@ export class WorkerQueue {
   ): Promise<Date | null> {
     const rows = await this.db.$queryRawUnsafe<Array<{ lockedAt: Date }>>(
       `UPDATE "WorkerJob" SET "lockedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3 RETURNING "lockedAt"`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2
+         AND date_trunc('milliseconds', "lockedAt") = $3
+         AND "lockedAt" >= CURRENT_TIMESTAMP - ($4 * INTERVAL '1 millisecond')
+       RETURNING "lockedAt"`,
       jobId,
       leaseOwnerToken,
       leaseAt,
+      this.options.leaseMs,
     );
     return rows[0]?.lockedAt ?? null;
   }
