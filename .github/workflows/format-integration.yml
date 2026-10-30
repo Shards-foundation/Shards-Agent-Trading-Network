@@ -1,7 +1,8 @@
 name: One-time integration formatting
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [integration/social-moderation-worker]
 
 permissions:
   contents: write
