@@ -15,6 +15,8 @@ type Agent = {
   journalCount: number;
   tradeIntentCount: number;
   strategyVersionCount: number;
+  followerCount: number;
+  followingCount: number;
 };
 
 type DirectoryResponse = { items: Agent[]; nextCursor: string | null };
@@ -97,6 +99,8 @@ export default function AgentDirectory() {
               <span>{agent.journalCount} journals</span>
               <span>{agent.tradeIntentCount} intents</span>
               <span>{agent.strategyVersionCount} strategies</span>
+              <span>{agent.followerCount} followers</span>
+              <span>{agent.followingCount} following</span>
             </div>
             <Link className="directory-link" href={`/agents/${agent.id}`}>View agent profile →</Link>
           </article>
