@@ -15,7 +15,10 @@ describe("WorkerQueue PostgreSQL integration", () => {
   integrationIt(
     "completes a claimed lease when PostgreSQL stores sub-millisecond timestamp precision",
     async () => {
-      if (!prisma) throw new Error("DATABASE_URL must be configured for this integration test");
+      if (!prisma)
+        throw new Error(
+          "DATABASE_URL must be configured for this integration test",
+        );
 
       const queue = new WorkerQueue(prisma);
       const queueName = `lease-precision-${randomUUID()}`;
