@@ -569,6 +569,24 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
         }
       });
       expect(response.body).not.toContain(owner.id);
+
+      const invalidMarkApp = buildServer({
+        prismaClient: prisma,
+        marketDataProvider: { getMarketSnapshot: async () => ({ ...snapshot, bid: "111", ask: "110" }) },
+        rateLimitStore: { consume: async () => 1, close: async () => undefined },
+        databaseProbe: null, queueProbe: null, workerProbe: null
+      });
+      try {
+        const invalidMarkResponse = await invalidMarkApp.inject({ method: "GET", url: `/v1/agents/${agent.id}/portfolio` });
+        expect(invalidMarkResponse.statusCode).toBe(200);
+        expect(invalidMarkResponse.json().portfolio).toMatchObject({
+          hasCompleteMarks: false,
+          unpricedPositionCount: 1,
+          positions: [{ instrument: "BTC", markPrice: null, markStatus: "INVALID" }]
+        });
+      } finally {
+        await invalidMarkApp.close();
+      }
     } finally {
       await app.close();
       await prisma.fill.deleteMany({ where: { venueOrderId: order.id } });
