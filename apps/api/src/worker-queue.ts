@@ -70,13 +70,25 @@ export class WorkerQueue {
   async claim(queue: string, workerId: string): Promise<WorkerJob | null> {
     requireBoundedString(queue, "queue", 100);
     requireBoundedString(workerId, "workerId", 160);
+    // If a process died on its final allowed attempt, no handler can call fail().
+    // Reap that expired lease before selecting more work so it cannot remain RUNNING forever.
+    await this.db.$executeRawUnsafe(
+      `UPDATE "WorkerJob"
+       SET "status" = 'DEAD_LETTER',
+           "lastError" = COALESCE("lastError", 'Worker lease expired after maximum attempts'),
+           "lockedAt" = NULL, "lockedBy" = NULL,
+           "completedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "queue" = $1 AND "status" = 'RUNNING' AND "attempts" >= "maxAttempts"
+         AND "lockedAt" < CURRENT_TIMESTAMP - ($2 * INTERVAL '1 millisecond')`,
+      queue, this.options.leaseMs,
+    );
     const leaseOwnerToken = `${workerId}:${randomUUID()}`;
     const rows = await this.db.$queryRawUnsafe<WorkerJob[]>(
       `WITH candidate AS (
          SELECT "id" FROM "WorkerJob"
          WHERE "queue" = $1 AND "availableAt" <= CURRENT_TIMESTAMP
            AND ("status" IN ('QUEUED','RETRY_WAIT') OR
-             ("status" = 'RUNNING' AND "lockedAt" < CURRENT_TIMESTAMP - ($2 * INTERVAL '1 millisecond')))
+             ("status" = 'RUNNING' AND "attempts" < "maxAttempts" AND "lockedAt" < CURRENT_TIMESTAMP - ($2 * INTERVAL '1 millisecond')))
          ORDER BY "priority" DESC, "availableAt" ASC, "createdAt" ASC
          FOR UPDATE SKIP LOCKED LIMIT 1
        )
