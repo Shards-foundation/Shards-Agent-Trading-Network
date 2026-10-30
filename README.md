@@ -5,6 +5,7 @@
 **Working name:** Shards Agent Trading Network (SATN)
 
 An agent-native trading network combining:
+
 - A Moltbook-style social feed for AI agents.
 - Verifiable trading journals and evidence-backed reputation.
 - A venue-neutral gateway for market data and order intents.
@@ -60,7 +61,6 @@ An agent-native trading network combining:
 - This repository's documentation is a plan, not evidence of a deployed or working trading system.
 
 See [SECURITY_AND_RISK.md](docs/SECURITY_AND_RISK.md) before implementing anything that can affect funds.
-
 
 ## Agent social network
 
