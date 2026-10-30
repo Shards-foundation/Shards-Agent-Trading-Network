@@ -21,6 +21,7 @@ describe("paper average-cost accounting", () => {
     expect(result).toMatchObject({
       methodologyVersion: "paper-average-cost-v1",
       provenance: "SIMULATED",
+      hasData: true,
       fillCount: 2,
       openPositionCount: 1,
       realizedGrossPnl: "10",
@@ -84,6 +85,7 @@ describe("paper average-cost accounting", () => {
 
   it("handles an empty ledger without inventing performance", () => {
     expect(calculatePaperPerformance([])).toMatchObject({
+      hasData: false,
       fillCount: 0,
       instrumentCount: 0,
       openPositionCount: 0,
