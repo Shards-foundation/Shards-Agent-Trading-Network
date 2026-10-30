@@ -26,9 +26,8 @@ describe("paper average-cost accounting", () => {
       realizedGrossPnl: "10",
       feesPaidUsd: "0.31",
       netRealizedPnlLessAllUsdFees: "9.69",
-      closedQuantity: "1",
-      wins: 1,
-      losses: 0,
+      profitableCloseEvents: 1,
+      unprofitableCloseEvents: 0,
       qualityFlags: ["SIMULATED_EXECUTION_ONLY", "UNREALISED_PNL_EXCLUDED"]
     });
     expect(result.instruments[0]).toMatchObject({
@@ -50,7 +49,7 @@ describe("paper average-cost accounting", () => {
       positionQuantity: "-1",
       averageEntryPrice: "100",
       closedQuantity: "1",
-      wins: 1
+      profitableCloseEvents: 1
     });
   });
 
