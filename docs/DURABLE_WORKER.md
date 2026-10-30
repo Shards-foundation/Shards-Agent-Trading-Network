@@ -10,6 +10,7 @@ The queue uses the existing PostgreSQL database rather than adding a broker. It 
 - `WorkerRunner`: registered handler dispatch, lease heartbeat while handlers run, fail-closed behaviour for unknown kinds, idle backoff and abortable polling.
 - `WorkerJob`: durable state, JSON payload, priority, availability, attempts, lease metadata, idempotency key, bounded error summary and completion timestamp.
 - `WorkerHeartbeat`: per-process status and last-seen timestamp; API readiness requires at least one fresh RUNNING heartbeat.
+- `WorkerQueue.stats()`: per-queue counts by terminal/active state, queue depth, oldest pending age and expired lease count; the worker emits periodic structured `worker.queue.stats` logs. Sampling errors are logged without exposing database details.
 - `apps/api/src/worker-main.ts`: dedicated worker process with unique process identity, periodic heartbeat, signal-aware loop shutdown and structured lifecycle logs.
 - The only built-in handler is `system.healthcheck`, a payload-validated no-side-effect handler. All other job kinds fail closed until explicitly registered.
 
@@ -66,6 +67,6 @@ If either write throws, PostgreSQL rolls back both. The integration suite verifi
 ## Remaining work
 
 1. Deploy the worker as a separately supervised service and configure restart policy, resource limits and log shipping.
-2. Add queue-depth/oldest-job metrics and alerts; a fresh heartbeat alone does not prove useful jobs are completing.
+2. Export `worker.queue.stats` logs to the monitoring system and configure alerts for queue depth/age, dead letters and expired leases; a fresh heartbeat alone does not prove useful jobs are completing.
 3. Add deployment-level restart and stale-heartbeat tests; queue integration now covers lease expiry, final-attempt crash recovery and retry exhaustion.
 5. Keep live trading disabled until the isolated execution/risk/permit path has passed end-to-end review.
