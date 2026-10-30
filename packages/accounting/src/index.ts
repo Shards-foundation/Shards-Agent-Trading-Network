@@ -251,3 +251,127 @@ export function calculatePaperPerformance(rawFills: readonly PaperAccountingFill
     instruments
   };
 }
+
+
+export interface PaperPortfolioMark {
+  bid: string;
+  ask: string;
+}
+
+export interface PaperPortfolioPosition {
+  instrument: string;
+  positionQuantity: string;
+  averageEntryPrice: string;
+  markPrice: string | null;
+  grossExposureUsd: string | null;
+  unrealizedGrossPnlUsd: string | null;
+  realizedGrossPnlUsd: string;
+  feesPaidUsd: string;
+}
+
+export interface PaperPortfolioSummary {
+  methodologyVersion: "paper-average-cost-mtm-v1";
+  provenance: "SIMULATED";
+  hasData: boolean;
+  hasCompleteMarks: boolean;
+  fillCount: number;
+  openPositionCount: number;
+  pricedPositionCount: number;
+  unpricedPositionCount: number;
+  realizedGrossPnlUsd: string;
+  unrealizedGrossPnlUsd: string;
+  feesPaidUsd: string;
+  netPnlLessAllUsdFees: string;
+  totalGrossExposureUsd: string;
+  qualityFlags: string[];
+  positions: PaperPortfolioPosition[];
+}
+
+function toSignedUnits(value: string): bigint {
+  if (!/^-?(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/.test(value)) {
+    throw new Error("Signed accounting decimals must have at most eight fractional digits.");
+  }
+  return value.startsWith("-") ? -toUnits(value.slice(1)) : toUnits(value);
+}
+
+/**
+ * Computes mark-to-market paper positions using integer fixed-point arithmetic.
+ * Missing marks are reported as unpriced; aggregate P&L is partial when marks are incomplete.
+ * The output is simulated accounting evidence, not an exchange statement or account equity.
+ */
+export function calculatePaperPortfolio(
+  rawFills: readonly PaperAccountingFill[],
+  marks: Readonly<Record<string, PaperPortfolioMark | undefined>>
+): PaperPortfolioSummary {
+  const performance = calculatePaperPerformance(rawFills);
+  const qualityFlags = new Set(performance.qualityFlags.filter((flag) => flag !== "UNREALISED_PNL_EXCLUDED"));
+  qualityFlags.add("MARK_TO_MARKET_INCLUDED");
+  const positions: PaperPortfolioPosition[] = [];
+  let unrealizedGross = 0n;
+  let grossExposure = 0n;
+  let pricedPositionCount = 0;
+  let unpricedPositionCount = 0;
+
+  for (const instrument of performance.instruments) {
+    if (instrument.positionQuantity === "0" || instrument.averageEntryPrice === null) continue;
+    const quantity = toSignedUnits(instrument.positionQuantity);
+    const averageEntry = toUnits(instrument.averageEntryPrice);
+    const mark = marks[instrument.instrument];
+    let markPrice: string | null = null;
+    let exposure: string | null = null;
+    let unrealized: string | null = null;
+
+    if (mark) {
+      const bid = toUnits(mark.bid);
+      const ask = toUnits(mark.ask);
+      if (bid <= 0n || ask <= 0n || ask < bid) {
+        throw new Error("Portfolio marks require positive bid/ask prices with ask greater than or equal to bid.");
+      }
+      const midpoint = (bid + ask) / 2n;
+      const positionUnrealized = ((midpoint - averageEntry) * quantity) / SCALE;
+      const positionExposure = (absolute(quantity) * midpoint) / SCALE;
+      markPrice = fromUnits(midpoint);
+      exposure = fromUnits(positionExposure);
+      unrealized = fromUnits(positionUnrealized);
+      unrealizedGross += positionUnrealized;
+      grossExposure += positionExposure;
+      pricedPositionCount += 1;
+    } else {
+      unpricedPositionCount += 1;
+    }
+
+    positions.push({
+      instrument: instrument.instrument,
+      positionQuantity: instrument.positionQuantity,
+      averageEntryPrice: instrument.averageEntryPrice,
+      markPrice,
+      grossExposureUsd: exposure,
+      unrealizedGrossPnlUsd: unrealized,
+      realizedGrossPnlUsd: instrument.realizedGrossPnl,
+      feesPaidUsd: instrument.feesPaidUsd
+    });
+  }
+
+  if (unpricedPositionCount > 0) qualityFlags.add("UNPRICED_POSITIONS");
+  if (unpricedPositionCount > 0) qualityFlags.add("PARTIAL_MARK_TO_MARKET");
+  const realizedGross = toSignedUnits(performance.realizedGrossPnl);
+  const feesUsd = toUnits(performance.feesPaidUsd);
+
+  return {
+    methodologyVersion: "paper-average-cost-mtm-v1",
+    provenance: "SIMULATED",
+    hasData: performance.hasData,
+    hasCompleteMarks: unpricedPositionCount === 0,
+    fillCount: performance.fillCount,
+    openPositionCount: positions.length,
+    pricedPositionCount,
+    unpricedPositionCount,
+    realizedGrossPnlUsd: fromUnits(realizedGross),
+    unrealizedGrossPnlUsd: fromUnits(unrealizedGross),
+    feesPaidUsd: fromUnits(feesUsd),
+    netPnlLessAllUsdFees: fromUnits(realizedGross + unrealizedGross - feesUsd),
+    totalGrossExposureUsd: fromUnits(grossExposure),
+    qualityFlags: [...qualityFlags].sort(),
+    positions
+  };
+}
