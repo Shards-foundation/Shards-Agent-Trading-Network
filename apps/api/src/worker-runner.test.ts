@@ -117,9 +117,10 @@ describe("WorkerRunner", () => {
     const queue = queueMock();
     let resolveClaim!: (value: WorkerJob) => void;
     queue.claim.mockImplementation(
-      () => new Promise<WorkerJob>((resolve) => {
-        resolveClaim = resolve;
-      }),
+      () =>
+        new Promise<WorkerJob>((resolve) => {
+          resolveClaim = resolve;
+        }),
     );
     queue.fail.mockResolvedValue("RETRY_WAIT");
     const parent = new AbortController();
