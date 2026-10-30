@@ -605,6 +605,46 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+  it("persists worker heartbeats and degrades readiness when the worker stops", async () => {
+    const workerId = `satn-ci-worker-${randomUUID()}`;
+    const heartbeatProbe = {
+      check: async () => {
+        const rows = await prisma.$queryRaw<Array<{ workerId: string }>>`
+          SELECT "workerId" FROM "WorkerHeartbeat"
+          WHERE "workerId" = ${workerId} AND "status" = 'RUNNING'
+            AND "lastSeenAt" >= CURRENT_TIMESTAMP - (30000 * INTERVAL '1 millisecond')
+          LIMIT 1
+        `;
+        if (rows.length === 0) throw new Error("Worker heartbeat missing or stale");
+      },
+      close: async () => undefined
+    };
+    const app = buildServer({
+      databaseProbe: null,
+      queueProbe: null,
+      workerProbe: heartbeatProbe
+    });
+    try {
+      await prisma.workerHeartbeat.create({
+        data: { workerId, queue: "default", status: "RUNNING" }
+      });
+      const healthy = await app.inject({ method: "GET", url: "/health/ready" });
+      expect(healthy.statusCode).toBe(200);
+      expect(healthy.json().dependencies.worker).toBe("connected");
+
+      await prisma.workerHeartbeat.update({
+        where: { workerId },
+        data: { status: "STOPPED", stoppedAt: new Date() }
+      });
+      const stopped = await app.inject({ method: "GET", url: "/health/ready" });
+      expect(stopped.statusCode).toBe(503);
+      expect(stopped.json().dependencies.worker).toBe("unavailable");
+    } finally {
+      await app.close();
+      await prisma.workerHeartbeat.deleteMany({ where: { workerId } });
+    }
+  });
+
   it("atomically claims one durable job across competing workers and dead-letters exhausted work", async () => {
     const queueName = `satn-ci-${randomUUID()}`;
     const queue = new WorkerQueue(prisma, { leaseMs: 5_000, baseRetryMs: 5, maxRetryMs: 10 });
