@@ -67,7 +67,8 @@ describe("OIDC JWT verification", () => {
     await expect(verifyOidcAccessToken(tampered, config, { fetcher, nowMs: 1_750_000_000_000 })).rejects.toThrow("signature");
   });
 
-  it("requires HTTPS for remote JWKS endpoints", async () => {
+  it("requires HTTPS for remote issuer and JWKS endpoints", async () => {
+    await expect(verifyOidcAccessToken(token(), { ...config, issuer: "http://identity.example.test/" }, { fetcher, nowMs: 1_750_000_000_000 })).rejects.toThrow("HTTPS");
     await expect(verifyOidcAccessToken(token(), { ...config, jwksUrl: "http://identity.example.test/jwks" }, { fetcher, nowMs: 1_750_000_000_000 })).rejects.toThrow("HTTPS");
   });
 
