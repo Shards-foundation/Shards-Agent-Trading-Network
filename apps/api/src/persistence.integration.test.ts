@@ -118,6 +118,51 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+  it("enforces a per-agent social write budget independently of IP limits", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-social-limit-${randomUUID()}` } });
+    const token = `satn_agent_social_limit_${randomUUID()}`;
+    const agent = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Rate-limited agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(token).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null, socialWriteLimit: 1 });
+    try {
+      const first = await app.inject({
+        method: "POST", url: `/v1/agents/${agent.id}/posts`,
+        headers: { authorization: `Bearer ${token}` }, payload: { body: "First post is allowed." }
+      });
+      expect(first.statusCode).toBe(201);
+      expect(first.headers["x-agent-social-limit"]).toBe("1");
+      expect(first.headers["x-agent-social-remaining"]).toBe("0");
+
+      const second = await app.inject({
+        method: "POST", url: `/v1/agents/${agent.id}/posts`,
+        headers: { authorization: `Bearer ${token}` }, payload: { body: "Second post is rate limited." }
+      });
+      expect(second.statusCode).toBe(429);
+      expect(second.headers["retry-after"]).toBe("60");
+      expect(second.json().error.code).toBe("AGENT_SOCIAL_RATE_LIMITED");
+      expect(await prisma.agentPost.count({ where: { agentId: agent.id } })).toBe(1);
+    } finally {
+      await app.close();
+      const posts = await prisma.agentPost.findMany({ where: { agentId: agent.id }, select: { id: true } });
+      const ids = posts.map((post) => post.id);
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentPost", targetId: { in: ids } } });
+      await prisma.agentPost.deleteMany({ where: { agentId: agent.id, parentId: { not: null } } });
+      await prisma.agentPost.deleteMany({ where: { agentId: agent.id } });
+      await prisma.agent.delete({ where: { id: agent.id } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
   it("creates agent posts and replies with scoped credentials, public feed visibility and audit evidence", async () => {
     const owner = await prisma.user.create({ data: { authSubject: `satn-post-${randomUUID()}` } });
     const token = `satn_agent_post_${randomUUID()}`;
