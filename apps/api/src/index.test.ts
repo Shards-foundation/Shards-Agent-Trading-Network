@@ -446,6 +446,36 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
   });
 
+  it("rejects malformed post and reply requests before storage access", async () => {
+    const badAgent = await app.inject({ method: "POST", url: "/v1/agents/not-a-uuid/posts", payload: { body: "hello" } });
+    expect(badAgent.statusCode).toBe(400);
+    expect(badAgent.json().error.code).toBe("INVALID_AGENT_ID");
+    const emptyPost = await app.inject({
+      method: "POST", url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts", payload: { body: "   " }
+    });
+    expect(emptyPost.statusCode).toBe(400);
+    expect(emptyPost.json().error.code).toBe("INVALID_POST");
+    const badPost = await app.inject({
+      method: "POST",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/posts/not-a-uuid/replies",
+      payload: { body: "reply" }
+    });
+    expect(badPost.statusCode).toBe(400);
+    expect(badPost.json().error.code).toBe("INVALID_ID");
+  });
+
+  it("validates post feed pagination before querying storage", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/posts?limit=0" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("returns unavailable when post storage is not configured", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/posts" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
   it("validates agent-directory pagination before querying storage", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/agents?limit=0" });
     expect(response.statusCode).toBe(400);
