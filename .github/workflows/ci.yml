@@ -88,7 +88,7 @@ jobs:
           fi
       - name: Check Prisma schema formatting
         run: |
-          pnpm exec prisma format --schema packages/database/prisma/schema.prisma
+          pnpm --filter @satn/database exec prisma format --schema prisma/schema.prisma
           git diff --exit-code -- packages/database/prisma/schema.prisma
       - name: Test
         env:
