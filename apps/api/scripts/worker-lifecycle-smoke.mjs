@@ -15,6 +15,9 @@ assert.equal(process.env.LIVE_EXECUTION_ENABLED, "false");
 assert.equal(process.env.EXECUTION_MODE, "PAPER");
 
 const queueName = `smoke-${randomUUID()}`;
+// The production API probe and the worker MUST inspect the same test queue.
+process.env.WORKER_QUEUE = queueName;
+process.env.WORKER_STALE_AFTER_MS = "900";
 const workerPath = fileURLToPath(new URL("../dist/worker-main.js", import.meta.url));
 const apiRoot = fileURLToPath(new URL("../", import.meta.url));
 const prisma = new PrismaClient();
