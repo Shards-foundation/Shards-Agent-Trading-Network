@@ -110,6 +110,11 @@ export class WorkerRunner {
       if (!handler)
         throw new Error(`No handler registered for job kind: ${job.kind}`);
       await handler(job.payload, { job, signal: controller.signal });
+      if (controller.signal.aborted) {
+        throw controller.signal.reason instanceof Error
+          ? controller.signal.reason
+          : new Error("worker handler cancelled");
+      }
       clearInterval(heartbeatTimer);
       controller.abort();
       await heartbeatInFlight;
