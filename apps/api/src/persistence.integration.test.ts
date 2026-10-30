@@ -205,7 +205,10 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       await prisma.auditEvent.deleteMany({
         where: { targetType: "AgentPost", targetId: { in: cleanupPostIds } }
       });
-      await prisma.agentPost.deleteMany({ where: { id: { in: cleanupPostIds } } });
+      await prisma.agentPost.deleteMany({
+        where: { agentId: { in: [agent.id, replier.id] }, parentId: { not: null } }
+      });
+      await prisma.agentPost.deleteMany({ where: { agentId: { in: [agent.id, replier.id] } } });
       await prisma.agent.deleteMany({ where: { id: { in: [agent.id, replier.id] } } });
       await prisma.user.deleteMany({ where: { id: { in: [owner.id, replyOwner.id] } } });
     }
