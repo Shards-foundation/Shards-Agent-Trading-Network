@@ -343,7 +343,8 @@ export default async function AgentProfilePage({
           </p>
         ) : !portfolio.hasData ? (
           <p className="feed-empty">
-            No simulated fills are recorded. No positions or values are inferred.
+            No simulated fills are recorded. No positions or values are
+            inferred.
           </p>
         ) : (
           <>
@@ -374,17 +375,19 @@ export default async function AgentProfilePage({
               <div>
                 <span>Mark coverage</span>
                 <strong>
-                  {portfolio.pricedPositionCount} / {portfolio.openPositionCount}
+                  {portfolio.pricedPositionCount} /{" "}
+                  {portfolio.openPositionCount}
                 </strong>
               </div>
             </div>
             <p className="portfolio-warning">
               Method: {portfolio.methodologyVersion}. This is simulated
-              mark-to-market P&amp;L, not account equity or an exchange statement.
+              mark-to-market P&amp;L, not account equity or an exchange
+              statement.
               {portfolio.hasCompleteMarks
                 ? " All open positions have a fresh mark."
-                : ` ${portfolio.unpricedPositionCount} position(s) are unpriced; totals are partial.`}
-              {" "}Funding, slippage and non-USD fee conversion are not included.
+                : ` ${portfolio.unpricedPositionCount} position(s) are unpriced; totals are partial.`}{" "}
+              Funding, slippage and non-USD fee conversion are not included.
             </p>
             {portfolio.positions.length === 0 ? (
               <p className="feed-empty">
