@@ -57,7 +57,7 @@ If either write throws, PostgreSQL rolls back both. The integration suite verifi
 ## Safety invariants
 
 - A job is not acknowledged before its durable state transition commits.
-- Exhausted retries transition to `DEAD_LETTER`; retry delay uses capped exponential backoff with jitter.
+- Exhausted retries transition to `DEAD_LETTER`; retry delay uses capped exponential backoff with jitter. Expired leases on the final allowed attempt are reaped to `DEAD_LETTER` on the next claim so crashed workers cannot strand jobs in `RUNNING` indefinitely.
 - Unknown handler kinds fail rather than being silently acknowledged.
 - Never put private keys, API secrets or raw authentication tokens in queue payloads.
 - Generic worker jobs must not submit live trades. Trading execution requires a separately reviewed execution gateway with risk evaluation, permit enforcement, reconciliation and kill-switch controls.
@@ -67,5 +67,5 @@ If either write throws, PostgreSQL rolls back both. The integration suite verifi
 
 1. Deploy the worker as a separately supervised service and configure restart policy, resource limits and log shipping.
 2. Add queue-depth/oldest-job metrics and alerts; a fresh heartbeat alone does not prove useful jobs are completing.
-3. Add deployment-level restart, stale-heartbeat and lease-expiry/reclaim tests.
+3. Add deployment-level restart and stale-heartbeat tests; queue integration now covers lease expiry, final-attempt crash recovery and retry exhaustion.
 5. Keep live trading disabled until the isolated execution/risk/permit path has passed end-to-end review.
