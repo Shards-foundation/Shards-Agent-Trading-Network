@@ -117,7 +117,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({
     logger: {
       level: env.NODE_ENV === "production" ? "info" : "debug",
-      redact: ["req.headers.authorization", "req.headers.cookie", "*.privateKey", "*.secret"]
+      redact: ["req.headers.authorization", "req.headers.cookie", "req.headers.x-registration-token", "*.privateKey", "*.secret"]
     },
     requestIdHeader: "x-correlation-id"
   });
