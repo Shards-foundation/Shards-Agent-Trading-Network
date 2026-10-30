@@ -42,7 +42,12 @@ function decodeSegment(segment: string): Buffer {
 }
 
 function decodeJsonSegment(segment: string): Record<string, unknown> {
-  const decoded = JSON.parse(decodeSegment(segment).toString("utf8")) as unknown;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(decodeSegment(segment).toString("utf8")) as unknown;
+  } catch {
+    throw new Error("Malformed JWT JSON.");
+  }
   if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) throw new Error("Malformed JWT JSON.");
   return decoded as Record<string, unknown>;
 }
