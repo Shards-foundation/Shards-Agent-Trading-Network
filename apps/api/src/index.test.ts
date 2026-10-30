@@ -18,10 +18,15 @@ describe("SATN API baseline", () => {
     expect(response.json()).toMatchObject({ status: "ok", service: "satn-api" });
   });
 
-  it("reports paper-first readiness and no live execution", async () => {
+  it("does not claim readiness before database and queue adapters exist", async () => {
     const response = await app.inject({ method: "GET", url: "/health/ready" });
-    expect(response.statusCode).toBe(200);
-    expect(response.json().execution).toEqual({ mode: "PAPER", liveEnabled: false });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      status: "degraded",
+      ready: false,
+      dependencies: { database: "not-configured", redis: "not-configured" }
+    });
+    expect(response.json().execution.liveEnabled).toBe(false);
   });
 
   it("declares venue capability without pretending adapters are connected", async () => {
