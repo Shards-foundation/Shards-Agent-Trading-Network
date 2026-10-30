@@ -118,3 +118,14 @@ jobs:
         run: pnpm --filter @satn/api exec node scripts/worker-lifecycle-smoke.mjs
       - name: Test fail-closed staging configuration preflight
         run: node --test scripts/staging-preflight.test.mjs
+      - name: Validate full-stack test script syntax
+        run: node --check scripts/fullstack-e2e.mjs
+      - name: Full-stack API to Next.js SSR end-to-end
+        env:
+          NODE_ENV: production
+          DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
+          REDIS_URL: redis://127.0.0.1:6379
+          EXECUTION_MODE: PAPER
+          LIVE_EXECUTION_ENABLED: "false"
+        timeout-minutes: 4
+        run: node scripts/fullstack-e2e.mjs
