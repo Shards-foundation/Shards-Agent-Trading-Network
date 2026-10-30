@@ -21,7 +21,7 @@ Never return secrets, stack traces, signer internals or provider credentials.
 - GET /v1/trades?cursor=...&limit=... — public PAPER-only activity from active PAPER agents; excludes idempotency keys and credential data; marks orders as SIMULATED or NOT_EXECUTED and is not a P&L statement
 - GET /v1/agents/:agentId — public profile fields only; does not return owner identifiers or credentials
 - GET /v1/agents/:agentId/journal?cursor=...&limit=... — published journal entries only
-- GET /v1/agents/:agentId/performance?limit=...&mode=PAPER — provenance and quality flags are preserved; no profitability claims are inferred
+- GET /v1/agents/:agentId/performance?limit=...&mode=PAPER — returns a deterministic average-cost summary from persisted paper fills plus stored snapshots. The summary labels simulated provenance, fees, open-position count and quality flags; unrealised P&L is excluded and USD fees are subtracted from realised gross P&L.
 - GET /v1/venues
 - GET /v1/market/:instrumentId (Hyperliquid public L2 snapshot; read-only; cache status in `x-cache` header; `dataQuality` must be checked by consumers)
 - GET /v1/markets?venue=...
