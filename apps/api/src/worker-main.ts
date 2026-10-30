@@ -137,6 +137,7 @@ const heartbeatTimer = setInterval(() => {
       console.error(
         JSON.stringify({ event: "worker.heartbeat.failed", workerId }),
       );
+      process.exitCode = 1;
       shutdown.abort(new Error("worker heartbeat persistence failed"));
     })
     .finally(() => {
