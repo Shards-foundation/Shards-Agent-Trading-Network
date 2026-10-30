@@ -62,6 +62,10 @@ jobs:
         run: pnpm db:migrate:deploy
       - name: Typecheck
         run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Check formatting
+        run: pnpm format:check
       - name: Test
         env:
           NODE_ENV: test
