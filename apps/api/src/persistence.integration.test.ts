@@ -278,6 +278,14 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     } finally {
       await app.close();
       if (agentId) {
+        const intents = await prisma.tradeIntent.findMany({ where: { agentId }, select: { id: true } });
+        const intentIds = intents.map((intent) => intent.id);
+        const orders = await prisma.venueOrder.findMany({ where: { intentId: { in: intentIds } }, select: { id: true } });
+        const orderIds = orders.map((order) => order.id);
+        await prisma.fill.deleteMany({ where: { venueOrderId: { in: orderIds } } });
+        await prisma.venueOrder.deleteMany({ where: { intentId: { in: intentIds } } });
+        await prisma.riskDecision.deleteMany({ where: { intentId: { in: intentIds } } });
+        await prisma.tradeIntent.deleteMany({ where: { agentId } });
         await prisma.journalEntry.deleteMany({ where: { agentId } });
         await prisma.agent.delete({ where: { id: agentId } });
       }
