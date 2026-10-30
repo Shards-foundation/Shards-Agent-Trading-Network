@@ -39,7 +39,11 @@ describe("WorkerRunner", () => {
   it("returns IDLE when no job is ready", async () => {
     const queue = queueMock();
     queue.claim.mockResolvedValue(null);
-    const runner = new WorkerRunner(queue, "default", "worker-a", new Map(), { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 });
+    const runner = new WorkerRunner(queue, "default", "worker-a", new Map(), {
+      leaseMs: 30,
+      idlePollMs: 5,
+      maxIdlePollMs: 10,
+    });
     await expect(runner.runOne()).resolves.toEqual({ outcome: "IDLE" });
   });
 
@@ -48,19 +52,47 @@ describe("WorkerRunner", () => {
     queue.claim.mockResolvedValue(job);
     queue.complete.mockResolvedValue(true);
     const handler = vi.fn(async () => undefined);
-    const runner = new WorkerRunner(queue, "default", "worker-a", new Map([["test", handler]]), { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 });
-    await expect(runner.runOne()).resolves.toEqual({ outcome: "SUCCEEDED", jobId: job.id });
-    expect(handler).toHaveBeenCalledWith(job.payload, expect.objectContaining({ job, signal: expect.any(AbortSignal) }));
-    expect(queue.complete).toHaveBeenCalledWith(job.id, job.lockedBy, job.lockedAt);
+    const runner = new WorkerRunner(
+      queue,
+      "default",
+      "worker-a",
+      new Map([["test", handler]]),
+      { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 },
+    );
+    await expect(runner.runOne()).resolves.toEqual({
+      outcome: "SUCCEEDED",
+      jobId: job.id,
+    });
+    expect(handler).toHaveBeenCalledWith(
+      job.payload,
+      expect.objectContaining({ job, signal: expect.any(AbortSignal) }),
+    );
+    expect(queue.complete).toHaveBeenCalledWith(
+      job.id,
+      job.lockedBy,
+      job.lockedAt,
+    );
   });
 
   it("fails closed for unknown job kinds instead of silently acknowledging them", async () => {
     const queue = queueMock();
     queue.claim.mockResolvedValue(job);
     queue.fail.mockResolvedValue("DEAD_LETTER");
-    const runner = new WorkerRunner(queue, "default", "worker-a", new Map(), { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 });
-    await expect(runner.runOne()).resolves.toEqual({ outcome: "DEAD_LETTER", jobId: job.id });
-    expect(queue.fail).toHaveBeenCalledWith(job.id, job.lockedBy, job.lockedAt, expect.any(Error));
+    const runner = new WorkerRunner(queue, "default", "worker-a", new Map(), {
+      leaseMs: 30,
+      idlePollMs: 5,
+      maxIdlePollMs: 10,
+    });
+    await expect(runner.runOne()).resolves.toEqual({
+      outcome: "DEAD_LETTER",
+      jobId: job.id,
+    });
+    expect(queue.fail).toHaveBeenCalledWith(
+      job.id,
+      job.lockedBy,
+      job.lockedAt,
+      expect.any(Error),
+    );
     expect(queue.complete).not.toHaveBeenCalled();
   });
 
@@ -68,7 +100,16 @@ describe("WorkerRunner", () => {
     const queue = queueMock();
     queue.claim.mockResolvedValue(job);
     queue.complete.mockResolvedValue(false);
-    const runner = new WorkerRunner(queue, "default", "worker-a", new Map([["test", vi.fn(async () => undefined)]]), { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 });
-    await expect(runner.runOne()).resolves.toEqual({ outcome: "LEASE_LOST", jobId: job.id });
+    const runner = new WorkerRunner(
+      queue,
+      "default",
+      "worker-a",
+      new Map([["test", vi.fn(async () => undefined)]]),
+      { leaseMs: 30, idlePollMs: 5, maxIdlePollMs: 10 },
+    );
+    await expect(runner.runOne()).resolves.toEqual({
+      outcome: "LEASE_LOST",
+      jobId: job.id,
+    });
   });
 });
