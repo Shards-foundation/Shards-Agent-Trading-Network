@@ -39,6 +39,17 @@ export interface BuildServerOptions {
   now?: () => number;
 }
 
+function hasValidRegistrationToken(suppliedToken: unknown, expectedToken: string | undefined): expectedToken is string {
+  if (!expectedToken || typeof suppliedToken !== "string") return false;
+  const expectedHash = createHash("sha256").update(expectedToken).digest();
+  const suppliedHash = createHash("sha256").update(suppliedToken).digest();
+  return timingSafeEqual(expectedHash, suppliedHash);
+}
+
+function registrationAuthSubject(token: string): string {
+  return `bootstrap:${createHash("sha256").update(token).digest("hex")}`;
+}
+
 function createDatabaseProbe(prisma: PrismaClient): DatabaseHealthProbe {
   return {
     async check() {
@@ -268,6 +279,220 @@ export function buildServer(options: BuildServerOptions = {}) {
       });
     }
   });
+
+  app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/credentials/rotate", async (request, reply) => {
+    const parsedId = uuidSchema.safeParse(request.params.agentId);
+    if (!parsedId.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
+    if (!registrationToken) {
+      return reply.code(503).send({
+        error: { code: "REGISTRATION_DISABLED", message: "Credential management is not configured.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!hasValidRegistrationToken(request.headers["x-registration-token"], registrationToken)) {
+      return reply.code(401).send({
+        error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Credential rotation is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    const authSubject = registrationAuthSubject(registrationToken);
+    try {
+      const agent = await prismaClient.agent.findUnique({
+        where: { id: parsedId.data },
+        select: { id: true, owner: { select: { authSubject: true } } }
+      });
+      if (!agent || agent.owner.authSubject !== authSubject) {
+        return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+      }
+
+      const token = `satn_agent_${randomBytes(32).toString("base64url")}`;
+      const secretHash = createHash("sha256").update(token).digest("hex");
+      const result = await prismaClient.$transaction(async (tx) => {
+        await tx.agentCredential.updateMany({
+          where: { agentId: parsedId.data, revokedAt: null },
+          data: { revokedAt: new Date(now()) }
+        });
+        const credential = await tx.agentCredential.create({
+          data: {
+            agentId: parsedId.data,
+            secretHash,
+            scopes: ["journal:write", "trade-intent:write"]
+          },
+          select: { id: true, scopes: true, createdAt: true }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorType: "REGISTRATION_TOKEN",
+            actorId: authSubject,
+            action: "agent.credentials_rotated",
+            targetType: "Agent",
+            targetId: parsedId.data,
+            correlationId: request.id,
+            payloadHash: createHash("sha256").update(JSON.stringify({ agentId: parsedId.data, action: "rotate" })).digest("hex")
+          }
+        });
+        return credential;
+      });
+      return reply.code(201).send({
+        credential: { ...result, token, warning: "This token is shown once. Previous agent credentials have been revoked." }
+      });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "credential rotation failed");
+      return reply.code(503).send({
+        error: { code: "CREDENTIAL_ROTATION_FAILED", message: "Credential rotation could not be completed.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/credentials/revoke", async (request, reply) => {
+    const parsedId = uuidSchema.safeParse(request.params.agentId);
+    if (!parsedId.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
+    if (!registrationToken) {
+      return reply.code(503).send({
+        error: { code: "REGISTRATION_DISABLED", message: "Credential management is not configured.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!hasValidRegistrationToken(request.headers["x-registration-token"], registrationToken)) {
+      return reply.code(401).send({
+        error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Credential revocation is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    const authSubject = registrationAuthSubject(registrationToken);
+    try {
+      const agent = await prismaClient.agent.findUnique({
+        where: { id: parsedId.data },
+        select: { id: true, owner: { select: { authSubject: true } } }
+      });
+      if (!agent || agent.owner.authSubject !== authSubject) {
+        return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+      }
+      const result = await prismaClient.$transaction(async (tx) => {
+        const revoked = await tx.agentCredential.updateMany({
+          where: { agentId: parsedId.data, revokedAt: null },
+          data: { revokedAt: new Date(now()) }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorType: "REGISTRATION_TOKEN",
+            actorId: authSubject,
+            action: "agent.credentials_revoked",
+            targetType: "Agent",
+            targetId: parsedId.data,
+            correlationId: request.id,
+            payloadHash: createHash("sha256").update(JSON.stringify({ agentId: parsedId.data, action: "revoke" })).digest("hex")
+          }
+        });
+        return revoked.count;
+      });
+      return reply.send({ agentId: parsedId.data, revokedCount: result });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "credential revocation failed");
+      return reply.code(503).send({
+        error: { code: "CREDENTIAL_REVOCATION_FAILED", message: "Credential revocation could not be completed.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  const setAgentStatus = (targetStatus: "ACTIVE" | "PAUSED") =>
+    async (request: { params: { agentId: string }; headers: Record<string, string | string[] | undefined>; id: string; log: { error: (data: unknown, message: string) => void } }, reply: {
+      code: (statusCode: number) => { send: (payload: unknown) => unknown };
+      send: (payload: unknown) => unknown
+    }) => {
+      const parsedId = uuidSchema.safeParse(request.params.agentId);
+      if (!parsedId.success) {
+        return reply.code(400).send({
+          error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+        });
+      }
+      const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
+      if (!registrationToken) {
+        return reply.code(503).send({
+          error: { code: "REGISTRATION_DISABLED", message: "Agent lifecycle controls are not configured.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!hasValidRegistrationToken(request.headers["x-registration-token"], registrationToken)) {
+        return reply.code(401).send({
+          error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (!prismaClient) {
+        return reply.code(503).send({
+          error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent lifecycle controls are temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+      const authSubject = registrationAuthSubject(registrationToken);
+      try {
+        const agent = await prismaClient.agent.findUnique({
+          where: { id: parsedId.data },
+          select: { id: true, status: true, owner: { select: { authSubject: true } } }
+        });
+        if (!agent || agent.owner.authSubject !== authSubject) {
+          return reply.code(404).send({
+            error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+          });
+        }
+        if (agent.status === "REVOKED" || agent.status === "DISABLED") {
+          return reply.code(409).send({
+            error: { code: "AGENT_TERMINAL_STATE", message: "A revoked or disabled agent cannot be resumed or paused.", correlationId: request.id, retryable: false }
+          });
+        }
+        if (agent.status === targetStatus) {
+          return reply.send({ agentId: agent.id, status: agent.status, changed: false });
+        }
+        const result = await prismaClient.$transaction(async (tx) => {
+          const updated = await tx.agent.update({
+            where: { id: parsedId.data },
+            data: { status: targetStatus },
+            select: { id: true, status: true, updatedAt: true }
+          });
+          await tx.auditEvent.create({
+            data: {
+              actorType: "REGISTRATION_TOKEN",
+              actorId: authSubject,
+              action: targetStatus === "PAUSED" ? "agent.paused" : "agent.resumed",
+              targetType: "Agent",
+              targetId: parsedId.data,
+              correlationId: request.id,
+              payloadHash: createHash("sha256").update(JSON.stringify({ agentId: parsedId.data, status: targetStatus })).digest("hex")
+            }
+          });
+          return updated;
+        });
+        return reply.send({ ...result, changed: true });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "agent lifecycle update failed");
+        return reply.code(503).send({
+          error: { code: "AGENT_LIFECYCLE_UPDATE_FAILED", message: "The agent lifecycle update could not be completed.", correlationId: request.id, retryable: true }
+        });
+      }
+    };
+
+  app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/pause", setAgentStatus("PAUSED"));
+  app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/resume", setAgentStatus("ACTIVE"));
 
   app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/journal", async (request, reply) => {
     const parsedId = uuidSchema.safeParse(request.params.agentId);
