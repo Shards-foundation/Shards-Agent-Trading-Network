@@ -24,6 +24,10 @@ jobs:
           node-version: 22
       - name: Install
         run: pnpm install --no-frozen-lockfile
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
+        run: pnpm db:generate
       - name: Validate database schema
         env:
           # Prisma validates configuration without connecting to a database.

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketSnapshot } from "@satn/venue-adapters";
-import { buildServer, type MarketDataProvider } from "./index.js";
+import { buildServer, type DatabaseHealthProbe, type MarketDataProvider } from "./index.js";
 
 const snapshot: MarketSnapshot = {
   venue: "hyperliquid",
@@ -40,6 +40,72 @@ describe("SATN API", () => {
       dependencies: { database: "not-configured", redis: "not-configured" }
     });
     expect(response.json().execution.liveEnabled).toBe(false);
+  });
+
+
+  it("reports the database as connected but keeps readiness closed without Redis", async () => {
+    const probe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const testApp = buildServer({ databaseProbe: probe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({
+        status: "degraded",
+        ready: false,
+        dependencies: { database: "connected", redis: "not-configured" }
+      });
+    } finally {
+      await testApp.close();
+    }
+  });
+
+  it("reports ready only when database, Redis and worker probes pass", async () => {
+    const probe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const testApp = buildServer({ databaseProbe: probe, queueProbe: probe, workerProbe: probe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: "ok",
+        ready: true,
+        dependencies: { database: "connected", redis: "connected", worker: "connected" }
+      });
+    } finally {
+      await testApp.close();
+    }
+  });
+
+  it("reports an unavailable Redis dependency without leaking connection details", async () => {
+    const databaseProbe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const queueProbe: DatabaseHealthProbe = {
+      check: async () => { throw new Error("private Redis connection details"); },
+      close: async () => undefined
+    };
+    const testApp = buildServer({ databaseProbe, queueProbe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().dependencies.redis).toBe("unavailable");
+      expect(response.body).not.toContain("private Redis connection details");
+    } finally {
+      await testApp.close();
+    }
+  });
+
+  it("reports a database probe failure without leaking connection details", async () => {
+    const probe: DatabaseHealthProbe = {
+      check: async () => { throw new Error("private database connection string"); },
+      close: async () => undefined
+    };
+    const testApp = buildServer({ databaseProbe: probe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().dependencies.database).toBe("unavailable");
+      expect(response.body).not.toContain("private database connection string");
+    } finally {
+      await testApp.close();
+    }
   });
 
   it("declares actual adapter capability without implying live execution", async () => {

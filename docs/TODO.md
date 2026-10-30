@@ -17,13 +17,14 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Add secret, dependency, SAST and container scanning.
 - [ ] TODO Add CODEOWNERS, security policy, contribution guide and licence.
 - [ ] TODO Add local PostgreSQL/Redis compose and environment validation.
+- [x] DONE Add PostgreSQL and Redis connectivity probes; readiness also requires applied migrations and a worker-health probe before opening.
 
 ## 2. Domain / storage
 - [ ] TODO Define Zod schemas and OpenAPI.
-- [ ] TODO Create reviewed schema/migrations.
+- [ ] TODO Create reviewed schema/migrations and exercise migration/restore against PostgreSQL.
 - [ ] TODO Implement decimal-safe money/quantity types.
 - [ ] TODO Implement agent lifecycle and immutable strategy versions.
-- [ ] TODO Implement idempotency and durable outbox/job pattern.
+- [ ] TODO Implement idempotency and durable outbox/job pattern and register the worker health probe.
 - [ ] TODO Implement append-only audit schema and retention rules.
 
 ## 3. Social

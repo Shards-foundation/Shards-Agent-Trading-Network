@@ -15,7 +15,9 @@
     "@fastify/cors": "^11.1.0",
     "fastify": "^5.6.1",
     "zod": "^4.1.12",
-    "@satn/venue-adapters": "workspace:*"
+    "@satn/venue-adapters": "workspace:*",
+    "@prisma/client": "^6.19.0",
+    "redis": "^5.8.2"
   },
   "devDependencies": {
     "@types/node": "^22.18.10",

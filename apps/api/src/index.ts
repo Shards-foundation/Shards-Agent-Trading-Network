@@ -3,6 +3,8 @@ import cors from "@fastify/cors";
 import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
 import type { MarketSnapshot } from "@satn/venue-adapters";
 import { z } from "zod";
+import { PrismaClient } from "@prisma/client";
+import { createClient } from "redis";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -18,10 +20,56 @@ export interface MarketDataProvider {
   getMarketSnapshot(instrumentId: string): Promise<MarketSnapshot>;
 }
 
+export interface DatabaseHealthProbe {
+  check(): Promise<void>;
+  close(): Promise<void>;
+}
+
 export interface BuildServerOptions {
   marketDataProvider?: MarketDataProvider;
   marketCacheTtlMs?: number;
+  databaseProbe?: DatabaseHealthProbe | null;
+  queueProbe?: DatabaseHealthProbe | null;
+  workerProbe?: DatabaseHealthProbe | null;
   now?: () => number;
+}
+
+function createDefaultDatabaseProbe(): DatabaseHealthProbe | null {
+  if (!process.env.DATABASE_URL) return null;
+  const prisma = new PrismaClient();
+  return {
+    async check() {
+      const migrations = await prisma.$queryRaw<Array<{ migration_name: string }>>`
+        SELECT migration_name
+        FROM "_prisma_migrations"
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+        LIMIT 1
+      `;
+      if (migrations.length === 0) {
+        throw new Error("No successfully applied Prisma migrations were found.");
+      }
+    },
+    async close() {
+      await prisma.$disconnect();
+    }
+  };
+}
+
+function createDefaultQueueProbe(): DatabaseHealthProbe | null {
+  if (!process.env.REDIS_URL) return null;
+  const client = createClient({ url: process.env.REDIS_URL });
+  client.on("error", () => {
+    // Connection details are intentionally not surfaced in health responses.
+  });
+  return {
+    async check() {
+      if (!client.isOpen) await client.connect();
+      await client.ping();
+    },
+    async close() {
+      if (client.isOpen) await client.quit();
+    }
+  };
 }
 
 const instrumentSchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9@._/-]+$/);
@@ -38,6 +86,14 @@ export function buildServer(options: BuildServerOptions = {}) {
     disableRequestLogging: false
   });
   const marketDataProvider = options.marketDataProvider ?? new HyperliquidReadOnlyAdapter();
+  const databaseProbe = options.databaseProbe === undefined
+    ? createDefaultDatabaseProbe()
+    : options.databaseProbe;
+  const queueProbe = options.queueProbe === undefined
+    ? createDefaultQueueProbe()
+    : options.queueProbe;
+  // No worker is registered in this release, so readiness remains closed by default.
+  const workerProbe = options.workerProbe ?? null;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
@@ -48,6 +104,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   }
 
   app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  app.addHook("onClose", async () => {
+    await Promise.all([databaseProbe?.close(), queueProbe?.close(), workerProbe?.close()]);
+  });
 
   app.get("/health/live", async () => ({
     status: "ok",
@@ -56,14 +115,45 @@ export function buildServer(options: BuildServerOptions = {}) {
   }));
 
   app.get("/health/ready", async (_request, reply) => {
-    // This service is not ready for traffic until durable dependencies are implemented.
-    return reply.code(503).send({
-      status: "degraded",
-      ready: false,
-      dependencies: { database: "not-configured", redis: "not-configured" },
+    let databaseState: "connected" | "unavailable" | "not-configured" = "not-configured";
+    if (databaseProbe) {
+      try {
+        await databaseProbe.check();
+        databaseState = "connected";
+      } catch {
+        databaseState = "unavailable";
+      }
+    }
+
+    let redisState: "connected" | "unavailable" | "not-configured" = "not-configured";
+    if (queueProbe) {
+      try {
+        await queueProbe.check();
+        redisState = "connected";
+      } catch {
+        redisState = "unavailable";
+      }
+    }
+
+    let workerState: "connected" | "unavailable" | "not-configured" = "not-configured";
+    if (workerProbe) {
+      try {
+        await workerProbe.check();
+        workerState = "connected";
+      } catch {
+        workerState = "unavailable";
+      }
+    }
+
+    const ready = databaseState === "connected" &&
+      redisState === "connected" && workerState === "connected";
+    return reply.code(ready ? 200 : 503).send({
+      status: ready ? "ok" : "degraded",
+      ready,
+      dependencies: { database: databaseState, redis: redisState, worker: workerState },
       execution: {
         mode: env.EXECUTION_MODE,
-        liveEnabled: env.LIVE_EXECUTION_ENABLED === "true" && env.EXECUTION_MODE === "LIVE_RESTRICTED"
+        liveEnabled: false
       }
     });
   });
