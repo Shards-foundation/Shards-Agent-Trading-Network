@@ -59,16 +59,16 @@ describe("SATN API", () => {
     }
   });
 
-  it("reports ready only when both database and Redis probes pass", async () => {
+  it("reports ready only when database, Redis and worker probes pass", async () => {
     const probe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
-    const testApp = buildServer({ databaseProbe: probe, queueProbe: probe });
+    const testApp = buildServer({ databaseProbe: probe, queueProbe: probe, workerProbe: probe });
     try {
       const response = await testApp.inject({ method: "GET", url: "/health/ready" });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
         status: "ok",
         ready: true,
-        dependencies: { database: "connected", redis: "connected" }
+        dependencies: { database: "connected", redis: "connected", worker: "connected" }
       });
     } finally {
       await testApp.close();
