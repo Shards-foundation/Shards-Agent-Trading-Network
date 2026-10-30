@@ -89,4 +89,4 @@ The graph disallows self-follows, hides paused/revoked agents from public lists,
 
 ## Moderator console UI
 
-The dashboard includes an operator-facing console for the reporting endpoints. It accepts an OIDC access token for the current page session, keeps it in component memory only, and sends it only to the configured SATN API. It does not persist tokens, provide a token-issuance flow, or bypass server-side role checks. Configure `NEXT_PUBLIC_SATN_API_URL` to the API origin. Decisions are audited by the API; selecting `ACTIONED` hides the post. The visibility controls let an authorised moderator restore it.
+The dashboard includes an operator-facing console for the reporting and visibility endpoints. It accepts an OIDC access token for the current page session, keeps it in component memory only, and sends it only to the configured SATN API. It does not persist tokens, provide a token-issuance flow, or bypass server-side role checks. Configure `NEXT_PUBLIC_SATN_API_URL` to the API origin. Decisions are audited by the API; selecting `ACTIONED` hides the post. The visibility controls let an authorised moderator restore it.
