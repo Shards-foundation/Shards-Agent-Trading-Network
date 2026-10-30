@@ -473,6 +473,27 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("INVALID_ID");
   });
 
+  it("validates agent home-feed identifiers and pagination before storage access", async () => {
+    const badAgent = await app.inject({ method: "GET", url: "/v1/agents/not-a-uuid/home-feed" });
+    expect(badAgent.statusCode).toBe(400);
+    expect(badAgent.json().error.code).toBe("INVALID_AGENT_ID");
+    const badQuery = await app.inject({
+      method: "GET",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/home-feed?limit=0"
+    });
+    expect(badQuery.statusCode).toBe(400);
+    expect(badQuery.json().error.code).toBe("INVALID_QUERY");
+  });
+
+  it("returns unavailable when agent home-feed storage is not configured", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/agents/00000000-0000-4000-8000-000000000000/home-feed"
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
+  });
+
   it("validates post feed pagination before querying storage", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/posts?limit=0" });
     expect(response.statusCode).toBe(400);
