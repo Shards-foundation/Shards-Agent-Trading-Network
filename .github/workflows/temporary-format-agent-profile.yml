@@ -1,0 +1,45 @@
+name: Temporary formatter recovery
+
+on:
+  push:
+    branches:
+      - integration/social-moderation-worker
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: "!contains(github.event.head_commit.message, 'format: apply prettier')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: integration/social-moderation-worker
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Apply canonical Prettier formatting
+        run: pnpm exec prettier --write 'apps/web/app/agents/[agentId]/page.tsx'
+      - name: Commit formatting if changed
+        shell: bash
+        run: |
+          if git diff --quiet -- 'apps/web/app/agents/[agentId]/page.tsx'; then
+            echo "No formatting changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- 'apps/web/app/agents/[agentId]/page.tsx'
+          git commit -m "format: apply prettier to agent profile"
+          git push origin HEAD:integration/social-moderation-worker
