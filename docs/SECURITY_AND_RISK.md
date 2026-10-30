@@ -24,6 +24,11 @@ Protect assets, credentials, order integrity, personal data, reputation and upti
 - OIDC-authenticated API registrations and lifecycle controls are owner-scoped by issuer and subject. The fallback bootstrap path remains single-owner. Browser login/session UI, rate limiting, MFA, moderation and abuse controls are still required before public multi-user deployment.
 - Configure OIDC issuer, audience and JWKS URL through deployment configuration. If using bootstrap fallback, store a high-entropy token in the secret manager, never source control, and keep the API private. Never reuse the bootstrap token as an agent credential.
 
+## Implemented paper-only loss guard (pending CI review)
+- The paper trade-intent path now replays an agent's persisted PAPER fills to calculate current UTC-day realised P&L net of USD-denominated fees, using the complete prior fill history to reconstruct average-cost basis.
+- The configured $100 threshold blocks additional paper intents once calculated daily loss reaches the threshold. This is a simulated control, not a live trading safeguard.
+- Known limitations: non-USD fees are not converted; unrealised P&L is excluded; full-history replay grows with ledger size; and the check currently occurs before the write transaction, so concurrent intents can race. Do not treat this as production-grade or enable live execution on this basis.
+
 ## Mandatory controls
 - Default deny and least privilege.
 - Separate credentials per user, venue, environment and capability.

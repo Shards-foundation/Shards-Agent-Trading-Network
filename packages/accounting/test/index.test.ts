@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculatePaperPerformance, type PaperAccountingFill } from "../src/index.js";
+import { calculatePaperDailyLoss, calculatePaperPerformance, type PaperAccountingFill } from "../src/index.js";
 
 const fill = (overrides: Partial<PaperAccountingFill> = {}): PaperAccountingFill => ({
   instrument: "BTC",
@@ -81,6 +81,30 @@ describe("paper average-cost accounting", () => {
   it("rejects invalid decimals and timestamps", () => {
     expect(() => calculatePaperPerformance([fill({ quantity: "-1" })])).toThrow();
     expect(() => calculatePaperPerformance([fill({ filledAt: "not-a-date" })])).toThrow();
+  });
+
+  it("computes UTC-day loss using prior-day average-cost basis and daily fees", () => {
+    const result = calculatePaperDailyLoss([
+      fill({ quantity: "2", price: "100", fee: "0", filledAt: "2026-10-29T23:00:00.000Z" }),
+      fill({ side: "SELL", quantity: "1", price: "90", fee: "0.1", filledAt: "2026-10-30T01:00:00.000Z" })
+    ], "2026-10-30T00:00:00.000Z");
+    expect(result).toEqual({ dailyNetPnl: "-10.1", dailyLoss: "10.1" });
+  });
+
+  it("does not count prior-day realised losses in today's loss", () => {
+    const result = calculatePaperDailyLoss([
+      fill({ quantity: "1", price: "100", fee: "0", filledAt: "2026-10-29T12:00:00.000Z" }),
+      fill({ side: "SELL", quantity: "1", price: "80", fee: "0", filledAt: "2026-10-29T13:00:00.000Z" })
+    ], "2026-10-30T00:00:00.000Z");
+    expect(result).toEqual({ dailyNetPnl: "0", dailyLoss: "0" });
+  });
+
+  it("treats daily USD fees as loss and ignores non-USD fees without conversion", () => {
+    const result = calculatePaperDailyLoss([
+      fill({ fee: "1", feeAsset: "USD" }),
+      fill({ fee: "5", feeAsset: "ETH" })
+    ], "2026-10-30T00:00:00.000Z");
+    expect(result).toEqual({ dailyNetPnl: "-1", dailyLoss: "1" });
   });
 
   it("handles an empty ledger without inventing performance", () => {

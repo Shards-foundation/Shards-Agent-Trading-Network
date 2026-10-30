@@ -72,6 +72,72 @@ function absolute(value: bigint): bigint {
   return value < 0n ? -value : value;
 }
 
+export interface PaperDailyLossResult {
+  /** Net realised P&L for fills on or after the UTC day boundary, including USD fees. */
+  dailyNetPnl: string;
+  /** Non-negative loss amount derived from dailyNetPnl. */
+  dailyLoss: string;
+}
+
+/**
+ * Computes UTC-day realised net P&L while replaying the full fill history to
+ * preserve average-cost basis for positions opened before the day boundary.
+ * Non-USD fees are excluded because no conversion source is available.
+ */
+export function calculatePaperDailyLoss(
+  rawFills: readonly PaperAccountingFill[],
+  utcDayStart: string
+): PaperDailyLossResult {
+  const boundary = Date.parse(utcDayStart);
+  if (!Number.isFinite(boundary) || new Date(boundary).toISOString() !== utcDayStart) {
+    throw new Error("utcDayStart must be a canonical ISO timestamp.");
+  }
+  const fills = rawFills.map((fill, index) => {
+    if (!fill.instrument.trim() || fill.instrument.length > 128) throw new Error("Invalid accounting instrument.");
+    if (fill.side !== "BUY" && fill.side !== "SELL") throw new Error("Invalid accounting side.");
+    if (!Number.isFinite(Date.parse(fill.filledAt))) throw new Error("Invalid fill timestamp.");
+    const quantity = toUnits(fill.quantity);
+    const price = toUnits(fill.price);
+    const fee = toUnits(fill.fee);
+    if (quantity <= 0n || price <= 0n) throw new Error("Fill quantity and price must be positive.");
+    return { ...fill, index, quantity, price, fee, timestamp: Date.parse(fill.filledAt) };
+  }).sort((a, b) => a.timestamp - b.timestamp || a.index - b.index);
+
+  const states = new Map<string, { position: bigint; averageEntry: bigint }>();
+  let dailyRealized = 0n;
+  let dailyUsdFees = 0n;
+  for (const fill of fills) {
+    let state = states.get(fill.instrument);
+    if (!state) {
+      state = { position: 0n, averageEntry: 0n };
+      states.set(fill.instrument, state);
+    }
+    const inWindow = fill.timestamp >= boundary;
+    if (inWindow && fill.feeAsset === "USD") dailyUsdFees += fill.fee;
+    const signed = fill.side === "BUY" ? fill.quantity : -fill.quantity;
+    const oldPosition = state.position;
+    if (oldPosition === 0n || (oldPosition > 0n && signed > 0n) || (oldPosition < 0n && signed < 0n)) {
+      const oldAbs = absolute(oldPosition);
+      const addedAbs = absolute(signed);
+      state.averageEntry = oldAbs + addedAbs === 0n ? 0n :
+        (oldAbs * state.averageEntry + addedAbs * fill.price) / (oldAbs + addedAbs);
+      state.position = oldPosition + signed;
+      continue;
+    }
+    const closed = absolute(oldPosition) < absolute(signed) ? absolute(oldPosition) : absolute(signed);
+    if (inWindow) {
+      const perUnitPnl = oldPosition > 0n ? fill.price - state.averageEntry : state.averageEntry - fill.price;
+      dailyRealized += (perUnitPnl * closed) / SCALE;
+    }
+    const newPosition = oldPosition + signed;
+    if (newPosition === 0n) state.averageEntry = 0n;
+    else if ((newPosition > 0n) !== (oldPosition > 0n)) state.averageEntry = fill.price;
+    state.position = newPosition;
+  }
+  const net = dailyRealized - dailyUsdFees;
+  return { dailyNetPnl: fromUnits(net), dailyLoss: fromUnits(net < 0n ? -net : 0n) };
+}
+
 /**
  * Computes realised gross P&L using average-cost accounting for paper fills.
  * USD fees are deducted in the summary; unrealised P&L is deliberately excluded.
