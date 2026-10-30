@@ -6,7 +6,7 @@ on:
     branches: [main, master]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -37,6 +37,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          persist-credentials: true
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -47,6 +50,17 @@ jobs:
           node-version: 22
       - name: Install
         run: pnpm install --no-frozen-lockfile
+      - name: Commit generated lockfile to this trusted feature branch (temporary)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/database-initial-migration'
+        env:
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore: add pnpm lockfile"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
       - name: Upload generated lockfile for reproducibility
         uses: actions/upload-artifact@v4
         with:
