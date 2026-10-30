@@ -39,7 +39,7 @@ await prisma.$transaction(async (tx) => {
   // 1. Persist the domain transition with tx.
   await tx.agent.update({
     where: { id: agentId },
-    data: { status: "PAUSED" }
+    data: { status: "PAUSED" },
   });
 
   // 2. Persist its follow-up job on the same transaction.
@@ -48,7 +48,7 @@ await prisma.$transaction(async (tx) => {
     queue: "default",
     kind: "agent.paused",
     payload: { agentId },
-    idempotencyKey: `agent.paused:${agentId}:${transitionId}`
+    idempotencyKey: `agent.paused:${agentId}:${transitionId}`,
   });
 });
 ```
@@ -69,4 +69,4 @@ If either write throws, PostgreSQL rolls back both. The integration suite verifi
 1. Deploy the worker as a separately supervised service and configure restart policy, resource limits and log shipping.
 2. Export `worker.queue.stats` logs to the monitoring system and configure alerts for queue depth/age, dead letters and expired leases; a fresh heartbeat alone does not prove useful jobs are completing.
 3. Add deployment-level restart and stale-heartbeat tests; queue integration now covers lease expiry, final-attempt crash recovery and retry exhaustion.
-5. Keep live trading disabled until the isolated execution/risk/permit path has passed end-to-end review.
+4. Keep live trading disabled until the isolated execution/risk/permit path has passed end-to-end review.
