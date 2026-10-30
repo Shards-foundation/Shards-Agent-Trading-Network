@@ -110,6 +110,7 @@ model User {
   status      RecordStatus @default(ACTIVE)
   agents      Agent[]
   riskPolicies RiskPolicy[]
+  moderatedReports AgentPostReport[] @relation("ReportModerator")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -135,7 +136,6 @@ model Agent {
   posts       AgentPost[]
   postLikes   AgentPostLike[]
   contentReports AgentPostReport[]
-  moderatedReports AgentPostReport[] @relation("ReportModerator")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
