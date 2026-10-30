@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
 import { buildServer } from "./index.js";
+import { WorkerQueue } from "./worker-queue.js";
 
 const integrationEnabled = Boolean(process.env.DATABASE_URL && process.env.REDIS_URL);
 
@@ -601,6 +602,62 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       else process.env.OIDC_JWKS_URL = previous.jwksUrl;
       if (previous.registrationToken === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
       else process.env.AGENT_REGISTRATION_TOKEN = previous.registrationToken;
+    }
+  });
+
+  it("atomically claims one durable job across competing workers and dead-letters exhausted work", async () => {
+    const queueName = `satn-ci-${randomUUID()}`;
+    const queue = new WorkerQueue(prisma, { leaseMs: 5_000, baseRetryMs: 5, maxRetryMs: 10 });
+    const jobIds: string[] = [];
+    try {
+      const enqueued = await queue.enqueue({
+        queue: queueName,
+        kind: "integration.test",
+        payload: { nonce: "stable" },
+        idempotencyKey: "dedupe-one",
+      });
+      jobIds.push(enqueued.id);
+      const duplicate = await queue.enqueue({
+        queue: queueName,
+        kind: "integration.test",
+        payload: { nonce: "stable" },
+        idempotencyKey: "dedupe-one",
+      });
+      expect(duplicate.id).toBe(enqueued.id);
+
+      await expect(queue.enqueue({
+        queue: queueName,
+        kind: "integration.test",
+        payload: { nonce: "different" },
+        idempotencyKey: "dedupe-one",
+      })).rejects.toThrow("enqueue returned no persisted job");
+
+      const claims = await Promise.all([
+        queue.claim(queueName, "worker-a"),
+        queue.claim(queueName, "worker-b"),
+      ]);
+      const claimed = claims.filter((value): value is NonNullable<typeof value> => value !== null);
+      expect(claimed).toHaveLength(1);
+      expect(claimed[0]?.id).toBe(enqueued.id);
+      expect(claimed[0]?.lockedBy).toMatch(/^worker-[ab]:/);
+      const completed = await queue.complete(claimed[0]!.id, claimed[0]!.lockedBy!, claimed[0]!.lockedAt!);
+      expect(completed).toBe(true);
+
+      const doomed = await queue.enqueue({
+        queue: queueName,
+        kind: "integration.dead-letter",
+        payload: { nonce: "terminal" },
+        maxAttempts: 1,
+      });
+      jobIds.push(doomed.id);
+      const doomedClaim = await queue.claim(queueName, "worker-c");
+      expect(doomedClaim?.id).toBe(doomed.id);
+      await expect(queue.fail(doomed.id, doomedClaim!.lockedBy!, doomedClaim!.lockedAt!, new Error("terminal test failure")))
+        .resolves.toBe("DEAD_LETTER");
+      await expect(prisma.workerJob.findUnique({ where: { id: doomed.id }, select: { status: true } }))
+        .resolves.toEqual({ status: "DEAD_LETTER" });
+    } finally {
+      await prisma.workerJob.deleteMany({ where: { queue: queueName } });
     }
   });
 
