@@ -81,19 +81,18 @@ export class WorkerQueue {
        )
        UPDATE "WorkerJob" AS job
        SET "status" = 'RUNNING', "attempts" = job."attempts" + 1,
-           "lockedAt" = $4, "lockedBy" = $5, "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+           "lockedAt" = CURRENT_TIMESTAMP, "lockedBy" = $4, "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
        FROM candidate WHERE job."id" = candidate."id" RETURNING job.*`,
-      queue, now, expiredBefore, now, leaseOwnerToken,
+      queue, now, expiredBefore, leaseOwnerToken,
     );
     return rows[0] ?? null;
   }
 
   async heartbeat(jobId: string, leaseOwnerToken: string, leaseAt: Date): Promise<Date | null> {
-    const renewedAt = new Date();
     const rows = await this.db.$queryRawUnsafe<Array<{ lockedAt: Date }>>(
-      `UPDATE "WorkerJob" SET "lockedAt" = $4, "updatedAt" = CURRENT_TIMESTAMP
+      `UPDATE "WorkerJob" SET "lockedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
        WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND "lockedAt" = $3 RETURNING "lockedAt"`,
-      jobId, leaseOwnerToken, leaseAt, renewedAt,
+      jobId, leaseOwnerToken, leaseAt,
     );
     return rows[0]?.lockedAt ?? null;
   }
