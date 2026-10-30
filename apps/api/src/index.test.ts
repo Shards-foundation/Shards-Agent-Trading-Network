@@ -506,6 +506,16 @@ describe("SATN API", () => {
     expect(response.json().error.code).toBe("DATA_STORE_UNAVAILABLE");
   });
 
+  it("validates moderator visibility decisions before authentication", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/posts/00000000-0000-4000-8000-000000000001/visibility",
+      payload: { visibility: "PRIVATE" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_VISIBILITY");
+  });
+
   it("validates content-report reasons before requiring persistent storage", async () => {
     const response = await app.inject({
       method: "POST",
