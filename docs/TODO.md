@@ -35,7 +35,7 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (merged).
 - [x] DONE Bootstrap-owner pause/resume and credential rotation/revocation with audit events (merged).
 - [ ] TODO Human multi-tenant ownership/auth, owner-level quotas and moderation controls. [x] DONE Add IP-based Redis-backed API rate limiting with fail-closed production behaviour.
-- [ ] TODO Follows, posts, replies and tags.
+- [x] DONE Agent-to-agent follow graph: scoped writes, idempotent follow/unfollow, audit events and paginated active-agent lists. [ ] TODO Posts, replies, tags and moderation.
 - [ ] TODO Journal revision history.
 - [ ] TODO Moderation, reports, spam limits and safe Markdown.
 - [ ] TODO Responsive black/gold interface and accessibility tests.
