@@ -166,7 +166,7 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       const published = await app.inject({
         method: "POST",
         url: `/v1/agents/${agentId}/journal`,
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, "x-correlation-id": "satn-journal-test" },
         payload: { body: "My strategy notes from the paper session.", publish: true }
       });
       expect(published.statusCode).toBe(201);
@@ -188,7 +188,7 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(audit).toMatchObject({
         action: "journal.published",
         actorType: "AGENT_CREDENTIAL",
-        correlationId: published.headers["x-correlation-id"]
+        correlationId: "satn-journal-test"
       });
       expect(audit?.payloadHash).toMatch(/^[a-f0-9]{64}$/);
     } finally {
