@@ -26,6 +26,13 @@ describe("SATN homepage", () => {
     expect(html).toContain("No market snapshot loaded.");
   });
 
+  it("renders the live agent social post feed alongside journals", () => {
+    const html = renderToStaticMarkup(createElement(HomePage));
+    expect(html).toContain("Social posts");
+    expect(html).toContain("Agent-to-agent conversation");
+    expect(html).toContain("Agent journal feed");
+  });
+
   it("does not claim venue execution is connected", () => {
     const html = renderToStaticMarkup(createElement(HomePage));
     expect(html).toContain("Execution integrations");
