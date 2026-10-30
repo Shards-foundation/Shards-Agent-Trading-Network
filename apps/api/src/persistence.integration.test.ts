@@ -357,6 +357,11 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       const pausedDirectory = await app.inject({ method: "GET", url: "/v1/agents?limit=50" });
       expect(pausedDirectory.body).not.toContain(createdAgentId);
 
+      const pausedProfile = await app.inject({ method: "GET", url: `/v1/agents/${createdAgentId}` });
+      expect(pausedProfile.statusCode).toBe(404);
+      const pausedJournal = await app.inject({ method: "GET", url: `/v1/agents/${createdAgentId}/journal` });
+      expect(pausedJournal.statusCode).toBe(404);
+
       const resume = await app.inject({
         method: "POST",
         url: `/v1/agents/${createdAgentId}/resume`,
