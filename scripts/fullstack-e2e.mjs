@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { PrismaClient } from "../apps/api/node_modules/@prisma/client/default.js";
+const require = createRequire(new URL("../apps/api/package.json", import.meta.url));
+const { PrismaClient } = require("@prisma/client");
 import { buildServer } from "../apps/api/dist/index.js";
 
 // Runs real HTTP boundaries: Fastify -> PostgreSQL/Redis -> Next.js SSR.
@@ -19,7 +21,7 @@ assert.equal(process.env.OIDC_ISSUER, undefined, "CI uses an isolated bootstrap 
 assert.equal(process.env.OIDC_AUDIENCE, undefined);
 assert.equal(process.env.OIDC_JWKS_URL, undefined);
 
-const bootstrapToken = \`e2e-only-\${randomUUID()}\`;
+const bootstrapToken = `e2e-only-${randomUUID()}`;
 process.env.AGENT_REGISTRATION_TOKEN = bootstrapToken;
 
 const prisma = new PrismaClient();
@@ -49,7 +51,7 @@ async function eventually(check, label, timeoutMs = 30_000) {
   let lastError;
   while (Date.now() < deadline) {
     if (nextProcess && nextProcess.exitCode !== null) {
-      throw new Error(\`Next.js process exited early (\${nextProcess.exitCode}) while waiting for \${label}\`);
+      throw new Error(`Next.js process exited early (${nextProcess.exitCode}) while waiting for ${label}`);
     }
     try {
       const value = await check();
@@ -59,7 +61,7 @@ async function eventually(check, label, timeoutMs = 30_000) {
     }
     await delay(150);
   }
-  throw new Error(\`Timed out waiting for \${label}\`, { cause: lastError });
+  throw new Error(`Timed out waiting for ${label}`, { cause: lastError });
 }
 
 async function read(url) {
@@ -98,7 +100,7 @@ try {
   // exercise cannot pass using the development in-memory limiter.
   apiUrl = await api.listen({ host: "127.0.0.1", port: 0 });
   const webPort = await availablePort();
-  const webUrl = \`http://127.0.0.1:\${webPort}\`;
+  const webUrl = `http://127.0.0.1:${webPort}`;
   nextProcess = spawn(process.execPath, [nextBin, "start", "-H", "127.0.0.1", "-p", String(webPort)], {
     cwd: webRoot,
     env: {
@@ -123,12 +125,12 @@ try {
   assert.ok(homepage.includes("PAPER-FIRST"));
   assert.ok(!homepage.includes(bootstrapToken), "bootstrap secret must not appear in HTML");
 
-  const unauthorised = await post(\`\${apiUrl}/v1/agents\`, { name: "Unauthorised" });
+  const unauthorised = await post(`${apiUrl}/v1/agents`, { name: "Unauthorised" });
   assert.equal(unauthorised.status, 401);
 
-  const name = \`e2e-agent-\${randomUUID().slice(0, 8)}\`;
+  const name = `e2e-agent-${randomUUID().slice(0, 8)}`;
   const registration = await post(
-    \`\${apiUrl}/v1/agents\`,
+    `${apiUrl}/v1/agents`,
     { name, description: "E2E evidence: simulated activity only" },
     { "x-registration-token": bootstrapToken },
   );
@@ -146,29 +148,29 @@ try {
   assert.ok(persisted);
   ownerId = persisted.ownerId;
 
-  const noAuth = await post(\`\${apiUrl}/v1/agents/\${agentId}/journal\`, { body: "blocked" });
+  const noAuth = await post(`${apiUrl}/v1/agents/${agentId}/journal`, { body: "blocked" });
   assert.equal(noAuth.status, 401);
 
   const privateEntry = await post(
-    \`\${apiUrl}/v1/agents/\${agentId}/journal\`,
-    { body: \`PRIVATE-\${randomUUID()}\`, publish: false },
-    { authorization: \`Bearer \${agentToken}\` },
+    `${apiUrl}/v1/agents/${agentId}/journal`,
+    { body: `PRIVATE-${randomUUID()}`, publish: false },
+    { authorization: `Bearer ${agentToken}` },
   );
   assert.equal(privateEntry.status, 201);
   const privateBody = (await privateEntry.json()).journal.body;
 
-  const publicMarker = \`PUBLISHED-E2E-\${randomUUID().slice(0, 8)}\`;
+  const publicMarker = `PUBLISHED-E2E-${randomUUID().slice(0, 8)}`;
   const journal = await post(
-    \`\${apiUrl}/v1/agents/\${agentId}/journal\`,
-    { body: \`\${publicMarker} <script>alert("injection")</script>\`, publish: true },
-    { authorization: \`Bearer \${agentToken}\` },
+    `${apiUrl}/v1/agents/${agentId}/journal`,
+    { body: `${publicMarker} <script>alert("injection")</script>`, publish: true },
+    { authorization: `Bearer ${agentToken}` },
   );
   assert.equal(journal.status, 201);
   const published = await journal.json();
   journalId = published.journal.id;
   assert.equal(published.journal.provenance, "SELF_REPORTED");
 
-  const profileUrl = \`\${webUrl}/agents/\${agentId}\`;
+  const profileUrl = `${webUrl}/agents/${agentId}`;
   const profile = await eventually(async () => {
     const res = await read(profileUrl);
     if (res.status !== 200) return null;
@@ -181,14 +183,14 @@ try {
   assert.ok(!profile.includes(agentToken), "agent token must not appear in HTML");
   assert.ok(!profile.includes('<script>alert("injection")</script>'), "raw journal script must be escaped");
 
-  const data = await read(\`\${apiUrl}/v1/agents/\${agentId}/journal?limit=10\`);
+  const data = await read(`${apiUrl}/v1/agents/${agentId}/journal?limit=10`);
   assert.equal(data.status, 200);
   const payload = await data.json();
   assert.equal(payload.items.some((item) => item.id === journalId), true);
   assert.equal(payload.items.some((item) => item.body === privateBody), false);
 
   const paused = await post(
-    \`\${apiUrl}/v1/agents/\${agentId}/pause\`,
+    `${apiUrl}/v1/agents/${agentId}/pause`,
     {},
     { "x-registration-token": bootstrapToken },
   );
@@ -197,9 +199,9 @@ try {
   assert.equal(afterPause.status, 404, "paused agents must be absent from public SSR");
 
   const blockedWrite = await post(
-    \`\${apiUrl}/v1/agents/\${agentId}/journal\`,
+    `${apiUrl}/v1/agents/${agentId}/journal`,
     { body: "paused write should fail" },
-    { authorization: \`Bearer \${agentToken}\` },
+    { authorization: `Bearer ${agentToken}` },
   );
   assert.equal(blockedWrite.status, 401);
 
