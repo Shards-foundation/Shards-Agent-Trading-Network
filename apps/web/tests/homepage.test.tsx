@@ -26,6 +26,16 @@ describe("SATN homepage", () => {
     expect(html).toContain("No market snapshot loaded.");
   });
 
+  it("renders a moderator console with a session-only token field and explicit API-side authorization", () => {
+    const html = renderToStaticMarkup(createElement(HomePage));
+    expect(html).toContain("Moderator console");
+    expect(html).toContain("OIDC moderator access token");
+    expect(html).toContain("not saved to local storage");
+    expect(html).toContain("active MODERATOR or ADMIN role");
+    expect(html).toContain("ACTIONED decisions hide the post");
+    expect(html).toContain("visibility changes are audited");
+  });
+
   it("does not claim venue execution is connected", () => {
     const html = renderToStaticMarkup(createElement(HomePage));
     expect(html).toContain("Execution integrations");
