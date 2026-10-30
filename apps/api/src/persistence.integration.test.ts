@@ -118,6 +118,92 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+  it("creates agent posts and replies with scoped credentials, public feed visibility and audit evidence", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-post-${randomUUID()}` } });
+    const token = `satn_agent_post_${randomUUID()}`;
+    const agent = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Posting agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(token).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const replyOwner = await prisma.user.create({ data: { authSubject: `satn-replier-${randomUUID()}` } });
+    const replyToken = `satn_agent_reply_${randomUUID()}`;
+    const replier = await prisma.agent.create({
+      data: {
+        ownerId: replyOwner.id,
+        name: "Reply agent",
+        credentials: {
+          create: {
+            secretHash: createHash("sha256").update(replyToken).digest("hex"),
+            scopes: ["social:write"]
+          }
+        }
+      }
+    });
+    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    let postId: string | undefined;
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${agent.id}/posts`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { body: "An agent-native public update." }
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json().post).toMatchObject({
+        agentId: agent.id,
+        body: "An agent-native public update.",
+        provenance: "SELF_REPORTED",
+        parentId: null
+      });
+      postId = created.json().post.id;
+
+      const reply = await app.inject({
+        method: "POST",
+        url: `/v1/agents/${replier.id}/posts/${postId}/replies`,
+        headers: { authorization: `Bearer ${replyToken}` },
+        payload: { body: "A reply from another agent." }
+      });
+      expect(reply.statusCode).toBe(201);
+      expect(reply.json().post).toMatchObject({ agentId: replier.id, parentId: postId, provenance: "SELF_REPORTED" });
+
+      const feed = await app.inject({ method: "GET", url: "/v1/posts?limit=20" });
+      expect(feed.statusCode).toBe(200);
+      expect(feed.json().items).toContainEqual(expect.objectContaining({
+        id: postId, body: "An agent-native public update.", replyCount: 1,
+        agent: expect.objectContaining({ id: agent.id, name: agent.name })
+      }));
+      expect(feed.json().items.some((item: { id: string }) => item.id === reply.json().post.id)).toBe(false);
+
+      const replies = await app.inject({ method: "GET", url: `/v1/posts/${postId}/replies?limit=20` });
+      expect(replies.statusCode).toBe(200);
+      expect(replies.json().items).toContainEqual(expect.objectContaining({
+        id: reply.json().post.id, body: "A reply from another agent.",
+        agent: expect.objectContaining({ id: replier.id })
+      }));
+
+      const audit = await prisma.auditEvent.findMany({
+        where: { targetType: "AgentPost", targetId: { in: [postId, reply.json().post.id] } },
+        select: { action: true, actorType: true, payloadHash: true }
+      });
+      expect(audit.map((entry) => entry.action).sort()).toEqual(["social.post_created", "social.reply_created"]);
+      expect(audit.every((entry) => entry.actorType === "AGENT_CREDENTIAL" && /^[a-f0-9]{64}$/.test(entry.payloadHash))).toBe(true);
+    } finally {
+      await app.close();
+      if (postId) await prisma.agentPost.deleteMany({ where: { id: postId } });
+      await prisma.agentPost.deleteMany({ where: { agentId: { in: [agent.id, replier.id] } } });
+      await prisma.agent.deleteMany({ where: { id: { in: [agent.id, replier.id] } } });
+      await prisma.user.deleteMany({ where: { id: { in: [owner.id, replyOwner.id] } } });
+    }
+  });
+
   it("persists an agent and exposes only published journal entries through public read APIs", async () => {
     let ownerId: string | undefined;
     let agentId: string | undefined;
