@@ -333,6 +333,7 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       expect(audit?.payloadHash).toMatch(/^[a-f0-9]{64}$/);
 
       expect(storedCredential?.scopes).toContain("trade-intent:write");
+      expect(storedCredential?.scopes).toContain("social:write");
       const intentPayload = {
         venue: "hyperliquid",
         instrument: "BTC",
@@ -544,6 +545,11 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
       const replacementToken = rotated.json().credential.token as string;
       expect(replacementToken).toMatch(/^satn_agent_/);
       expect(replacementToken).not.toBe(token);
+      const rotatedCredential = await prisma.agentCredential.findUnique({
+        where: { secretHash: createHash("sha256").update(replacementToken).digest("hex") },
+        select: { scopes: true }
+      });
+      expect(rotatedCredential?.scopes).toContain("social:write");
 
       const oldTokenWrite = await app.inject({
         method: "POST",
