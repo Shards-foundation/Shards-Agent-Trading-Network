@@ -68,22 +68,21 @@ export class WorkerQueue {
   async claim(queue: string, workerId: string): Promise<WorkerJob | null> {
     requireBoundedString(queue, "queue", 100);
     requireBoundedString(workerId, "workerId", 200);
-    const now = new Date();
-    const expiredBefore = new Date(now.getTime() - this.options.leaseMs);
     const leaseOwnerToken = `${workerId}:${randomUUID()}`;
     const rows = await this.db.$queryRawUnsafe<WorkerJob[]>(
       `WITH candidate AS (
          SELECT "id" FROM "WorkerJob"
-         WHERE "queue" = $1 AND "availableAt" <= $2
-           AND ("status" IN ('QUEUED','RETRY_WAIT') OR ("status" = 'RUNNING' AND "lockedAt" < $3))
+         WHERE "queue" = $1 AND "availableAt" <= CURRENT_TIMESTAMP
+           AND ("status" IN ('QUEUED','RETRY_WAIT') OR
+             ("status" = 'RUNNING' AND "lockedAt" < CURRENT_TIMESTAMP - ($2 * INTERVAL '1 millisecond')))
          ORDER BY "priority" DESC, "availableAt" ASC, "createdAt" ASC
          FOR UPDATE SKIP LOCKED LIMIT 1
        )
        UPDATE "WorkerJob" AS job
        SET "status" = 'RUNNING', "attempts" = job."attempts" + 1,
-           "lockedAt" = CURRENT_TIMESTAMP, "lockedBy" = $4, "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+           "lockedAt" = CURRENT_TIMESTAMP, "lockedBy" = $3, "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP
        FROM candidate WHERE job."id" = candidate."id" RETURNING job.*`,
-      queue, now, expiredBefore, leaseOwnerToken,
+      queue, this.options.leaseMs, leaseOwnerToken,
     );
     return rows[0] ?? null;
   }
