@@ -163,7 +163,9 @@ describe("WorkerQueue", () => {
       ...unknown[],
     ];
     expect(sql).toContain("date_trunc('milliseconds', \"lockedAt\") = $3");
-    expect(sql).toContain('CURRENT_TIMESTAMP - ($4 * INTERVAL \'1 millisecond\')');
+    expect(sql).toContain(
+      'CURRENT_TIMESTAMP - ($4 * INTERVAL \'1 millisecond\')',
+    );
     expect(params).toHaveLength(4);
     expect(params[3]).toBe(30_000);
   });
@@ -205,14 +207,18 @@ describe("WorkerQueue", () => {
       string,
       ...unknown[],
     ];
-    expect(selectSql).toContain('CURRENT_TIMESTAMP - ($4 * INTERVAL \'1 millisecond\')');
+    expect(selectSql).toContain(
+      'CURRENT_TIMESTAMP - ($4 * INTERVAL \'1 millisecond\')',
+    );
     expect(selectParams).toHaveLength(4);
     expect(selectParams[3]).toBe(30_000);
     const [updateSql, ...updateParams] = db.execute.mock.calls[0]![0] as [
       string,
       ...unknown[],
     ];
-    expect(updateSql).toContain('CURRENT_TIMESTAMP - ($7 * INTERVAL \'1 millisecond\')');
+    expect(updateSql).toContain(
+      'CURRENT_TIMESTAMP - ($7 * INTERVAL \'1 millisecond\')',
+    );
     const [, , , status, delay, message, leaseMs] = updateParams;
     expect(leaseMs).toBe(30_000);
     expect(status).toBe("RETRY_WAIT");
