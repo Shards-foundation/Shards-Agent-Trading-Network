@@ -19,7 +19,8 @@
     "@prisma/client": "^6.19.0",
     "redis": "^5.8.2",
     "@satn/risk": "workspace:*",
-    "@satn/paper-engine": "workspace:*"
+    "@satn/paper-engine": "workspace:*",
+    "@satn/accounting": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.18.10",
