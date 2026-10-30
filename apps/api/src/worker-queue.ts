@@ -201,10 +201,14 @@ export class WorkerQueue {
     const rows = await this.db.$queryRawUnsafe<Array<{ id: string }>>(
       `UPDATE "WorkerJob" SET "status" = 'SUCCEEDED', "completedAt" = CURRENT_TIMESTAMP,
          "lockedAt" = NULL, "lockedBy" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3 RETURNING "id"`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2
+         AND date_trunc('milliseconds', "lockedAt") = $3
+         AND "lockedAt" >= CURRENT_TIMESTAMP - ($4 * INTERVAL '1 millisecond')
+       RETURNING "id"`,
       jobId,
       leaseOwnerToken,
       leaseAt,
+      this.options.leaseMs,
     );
     return rows.length === 1;
   }
@@ -219,10 +223,13 @@ export class WorkerQueue {
       Array<Pick<WorkerJob, "id" | "attempts" | "maxAttempts">>
     >(
       `SELECT "id","attempts","maxAttempts" FROM "WorkerJob"
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2
+         AND date_trunc('milliseconds', "lockedAt") = $3
+         AND "lockedAt" >= CURRENT_TIMESTAMP - ($4 * INTERVAL '1 millisecond')`,
       jobId,
       leaseOwnerToken,
       leaseAt,
+      this.options.leaseMs,
     );
     const job = jobs[0];
     if (!job) return "LEASE_LOST";
@@ -240,13 +247,16 @@ export class WorkerQueue {
       `UPDATE "WorkerJob" SET "status" = $4::"WorkerJobStatus",
          "availableAt" = CASE WHEN $4 = 'RETRY_WAIT' THEN CURRENT_TIMESTAMP + ($5 * INTERVAL '1 millisecond') ELSE "availableAt" END,
          "lastError" = $6, "lockedAt" = NULL, "lockedBy" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2 AND date_trunc('milliseconds', "lockedAt") = $3`,
+       WHERE "id" = $1::uuid AND "status" = 'RUNNING' AND "lockedBy" = $2
+         AND date_trunc('milliseconds', "lockedAt") = $3
+         AND "lockedAt" >= CURRENT_TIMESTAMP - ($7 * INTERVAL '1 millisecond')`,
       jobId,
       leaseOwnerToken,
       leaseAt,
       status,
       delay,
       message,
+      this.options.leaseMs,
     );
     return result === 1 ? status : "LEASE_LOST";
   }
