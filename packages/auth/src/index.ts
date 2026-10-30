@@ -15,16 +15,17 @@ export interface VerifiedOidcIdentity {
   expiresAt: number;
 }
 
+interface Jwk {
+  kid?: string;
+  alg?: string;
+  use?: string;
+  key_ops?: string[];
+  n?: string;
+  e?: string;
+  kty?: string;
+}
 interface JwkSet {
-  keys: Array<JsonWebKeyInput & {
-    kid?: string;
-    alg?: string;
-    use?: string;
-    key_ops?: string[];
-    n?: string;
-    e?: string;
-    kty?: string;
-  }>;
+  keys: Jwk[];
 }
 
 type JwksFetcher = (url: string, init?: RequestInit) => Promise<Response>;
@@ -133,7 +134,10 @@ export async function verifyOidcAccessToken(
     throw new Error("No acceptable RSA signing key matched the token.");
   }
 
-  const publicKey = createPublicKey({ key: jwk as JsonWebKeyInput, format: "jwk" });
+  const publicKey = createPublicKey({
+    key: { kty: "RSA", n: jwk.n, e: jwk.e },
+    format: "jwk"
+  } as unknown as JsonWebKeyInput);
   const signature = decodeSegment(encodedSignature);
   const signedContent = Buffer.from(`${encodedHeader}.${encodedPayload}`, "utf8");
   if (!verifySignature("RSA-SHA256", signedContent, publicKey, signature)) {
