@@ -121,8 +121,8 @@ export default function ModerationConsole() {
       if (response.status === 409) throw new Error("This report was already decided by another moderator. Refresh the queue.");
       if (response.status === 401 || response.status === 403) throw new Error("Access denied. Verify the OIDC token and moderator role.");
       if (!response.ok) throw new Error("The moderation decision could not be saved.");
-      setNotice("Decision saved and audit event recorded.");
       await loadReports(undefined, true);
+      setNotice("Decision saved and audit event recorded.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The moderation decision could not be saved.");
     } finally {
