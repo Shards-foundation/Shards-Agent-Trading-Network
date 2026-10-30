@@ -88,7 +88,7 @@ const journalCreateSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
   publish: z.boolean().default(true)
 }).strict();
-const idempotencyKeySchema = z.string().min(1).max(200).regex(/^[\\x21-\\x7E]+$/);
+const idempotencyKeySchema = z.string().min(1).max(200).regex(/^[\x21-\x7E]+$/);
 const paperTradePolicy = {
   allowedVenues: ["hyperliquid"],
   maxOrderNotional: "1000",
