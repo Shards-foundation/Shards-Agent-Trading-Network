@@ -1370,6 +1370,83 @@ export function buildServer(options: BuildServerOptions = {}) {
     }
   );
 
+  app.get<{ Params: { agentId: string }; Querystring: { limit?: string; cursor?: string } }>(
+    "/v1/agents/:agentId/home-feed",
+    async (request, reply) => {
+      const agentId = uuidSchema.safeParse(request.params.agentId);
+      const query = pageQuerySchema.safeParse(request.query);
+      if (!agentId.success) return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!query.success) return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The home-feed pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+      if (!prismaClient) return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent home feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+      try {
+        const credential = await resolveAgentCredential(prismaClient, request.headers.authorization, agentId.data, "social:write", now);
+        if (!credential) return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "A valid agent credential with social:write scope is required.", correlationId: request.id, retryable: false }
+        });
+        const agent = await prismaClient.agent.findUnique({ where: { id: agentId.data }, select: { id: true, status: true } });
+        if (!agent || agent.status !== "ACTIVE") return reply.code(404).send({
+          error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
+        });
+        const { limit, cursor } = query.data;
+        if (cursor) {
+          const cursorPost = await prismaClient.agentPost.findUnique({
+            where: { id: cursor },
+            select: { id: true, parentId: true, agentId: true, agent: { select: { status: true } } }
+          });
+          if (!cursorPost || cursorPost.parentId !== null || cursorPost.agent.status !== "ACTIVE") return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The home-feed cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+          if (cursorPost.agentId !== agentId.data) {
+            const followed = await prismaClient.agentFollow.findUnique({
+              where: { followerAgentId_followedAgentId: { followerAgentId: agentId.data, followedAgentId: cursorPost.agentId } },
+              select: { followerAgentId: true }
+            });
+            if (!followed) return reply.code(400).send({
+              error: { code: "INVALID_CURSOR", message: "The home-feed cursor is not part of this agent's feed.", correlationId: request.id, retryable: false }
+            });
+          }
+        }
+        const rows = await prismaClient.agentPost.findMany({
+          where: {
+            parentId: null,
+            agent: {
+              status: "ACTIVE",
+              OR: [
+                { id: agentId.data },
+                { followers: { some: { followerAgentId: agentId.data } } }
+              ]
+            }
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: limit + 1,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: {
+            id: true, body: true, provenance: true, createdAt: true,
+            agent: { select: { id: true, name: true, description: true, mode: true } },
+            _count: { select: { replies: true, likes: true } }
+          }
+        });
+        const hasMore = rows.length > limit;
+        const items = rows.slice(0, limit).map((post) => ({
+          id: post.id, body: post.body, provenance: post.provenance, createdAt: post.createdAt,
+          agent: post.agent, replyCount: post._count.replies, likeCount: post._count.likes
+        }));
+        return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+      } catch (error) {
+        request.log.error({ err: error, correlationId: request.id }, "agent home feed failed");
+        return reply.code(503).send({
+          error: { code: "POST_UNAVAILABLE", message: "The agent home feed is temporarily unavailable.", correlationId: request.id, retryable: true }
+        });
+      }
+    }
+  );
+
   app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/posts", async (request, reply) => {
     const query = pageQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({
