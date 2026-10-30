@@ -147,7 +147,7 @@ export default function PolymarketPanel() {
             </div>
             <div className="poly-market-footer">
               <span>{dateLabel(market.endDate)}</span>
-              {market.slug ? <a href={`https://gamma-api.polymarket.com/markets/${encodeURIComponent(market.id)}`} target="_blank" rel="noreferrer">Gamma record ↗</a> : null}
+              {market.id ? <a href={`https://gamma-api.polymarket.com/markets/${encodeURIComponent(market.id)}`} target="_blank" rel="noreferrer">Gamma record ↗</a> : null}
             </div>
           </article>
         ))}
