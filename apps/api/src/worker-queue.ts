@@ -56,6 +56,7 @@ export class WorkerQueue {
       `INSERT INTO "WorkerJob" ("id","queue","kind","payload","status","priority","maxAttempts","availableAt","idempotencyKey","updatedAt")
        VALUES ($1::uuid,$2,$3,$4::jsonb,'QUEUED',$5,$6,$7,$8,CURRENT_TIMESTAMP)
        ON CONFLICT ("queue","idempotencyKey") DO UPDATE SET "idempotencyKey" = EXCLUDED."idempotencyKey"
+         WHERE "WorkerJob"."kind" = EXCLUDED."kind" AND "WorkerJob"."payload" = EXCLUDED."payload"
        RETURNING *`,
       randomUUID(), input.queue, input.kind, JSON.stringify(input.payload), priority, maxAttempts,
       input.availableAt ?? new Date(), input.idempotencyKey ?? null,
