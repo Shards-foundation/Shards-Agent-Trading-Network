@@ -61,7 +61,7 @@ export class WorkerRunner {
       throw new Error("idlePollMs cannot exceed maxIdlePollMs");
   }
 
-  async runOne(): Promise<WorkerRunResult> {
+  async runOne(signal?: AbortSignal): Promise<WorkerRunResult> {
     const job = await this.queue.claim(this.queueName, this.workerId);
     if (!job) return { outcome: "IDLE" };
     if (!job.lockedAt || !job.lockedBy) {
@@ -72,6 +72,9 @@ export class WorkerRunner {
 
     const handler = this.handlers.get(job.kind);
     const controller = new AbortController();
+    const abortFromParent = () => controller.abort(signal?.reason);
+    if (signal?.aborted) abortFromParent();
+    else signal?.addEventListener("abort", abortFromParent, { once: true });
     let leaseAt = job.lockedAt;
     let leaseLost = false;
     let heartbeatInFlight: Promise<void> | undefined;
@@ -129,13 +132,16 @@ export class WorkerRunner {
         error,
       );
       return { outcome, jobId: job.id };
+    } finally {
+      signal?.removeEventListener("abort", abortFromParent);
+      clearInterval(heartbeatTimer);
     }
   }
 
   async run(signal: AbortSignal): Promise<void> {
     let idleDelay = this.idlePollMs;
     while (!signal.aborted) {
-      const result = await this.runOne();
+      const result = await this.runOne(signal);
       if (result.outcome === "IDLE") {
         await sleep(idleDelay, signal);
         idleDelay = Math.min(this.maxIdlePollMs, Math.ceil(idleDelay * 1.5));
