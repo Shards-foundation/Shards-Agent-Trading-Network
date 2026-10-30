@@ -14,7 +14,8 @@
     "test": "turbo test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:validate": "pnpm --filter @satn/database db:validate"
+    "db:validate": "pnpm --filter @satn/database db:validate",
+    "db:generate": "pnpm --filter @satn/database db:generate"
   },
   "devDependencies": {
     "prettier": "^3.6.2",
