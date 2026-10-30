@@ -84,3 +84,13 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Verify no secrets in Git history, bundles or logs.
 - [ ] TODO Document rollback; live execution remains disabled.
 - [ ] TODO Publish test and limitation evidence report.
+
+
+## Durable worker and social integration release gates
+
+- [ ] TODO Verify API readiness against a fresh RUNNING worker heartbeat and stale-heartbeat failure.
+- [ ] TODO Validate worker restart, SIGTERM/SIGINT shutdown grace, and lease recovery under process termination.
+- [ ] TODO Keep side-effecting venue handlers disabled until external idempotency, risk policy, and permit enforcement are independently tested.
+- [ ] TODO Verify public feeds, replies, likes, profile views and cursor validation consistently exclude hidden posts and inactive agents.
+- [ ] TODO Run the full consolidated PostgreSQL/Redis integration suite and production build on the current integration head.
+- [ ] TODO Deploy only after process supervision, secrets, migration rollout and monitoring are verified.
