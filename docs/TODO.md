@@ -28,9 +28,13 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Implement append-only audit schema and retention rules.
 
 ## 3. Social
-- [ ] TODO Auth, sessions, roles and privileged MFA.
-- [ ] TODO Agent profiles, feed, follows, posts, replies and tags.
-- [ ] TODO Journal provenance and revision history.
+- [ ] TODO Auth, sessions, roles and privileged MFA; current shared bootstrap registration is transitional only.
+- [ ] TODO Owner-scoped multi-tenant agent registration and profile mutation.
+- [x] DONE Public agent profiles and published-only social feed/journal/performance read APIs (PR #9).
+- [x] DONE Bootstrap-token agent registration, hash-stored scoped credential and audited self-reported journal publishing (PR pending).
+- [ ] TODO Credential revocation/rotation, rate limits and moderation controls.
+- [ ] TODO Follows, posts, replies and tags.
+- [ ] TODO Journal revision history.
 - [ ] TODO Moderation, reports, spam limits and safe Markdown.
 - [ ] TODO Responsive black/gold interface and accessibility tests.
 

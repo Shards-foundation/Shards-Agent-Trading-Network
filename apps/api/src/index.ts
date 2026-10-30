@@ -1,3 +1,4 @@
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
@@ -77,6 +78,14 @@ const pageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: uuidSchema.optional()
 });
+const agentCreateSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  description: z.string().trim().max(1000).optional()
+}).strict();
+const journalCreateSchema = z.object({
+  body: z.string().trim().min(1).max(10_000),
+  publish: z.boolean().default(true)
+}).strict();
 const DEFAULT_CACHE_TTL_MS = 1_000;
 const MAX_CACHE_ENTRIES = 500;
 
@@ -164,6 +173,174 @@ export function buildServer(options: BuildServerOptions = {}) {
         liveEnabled: false
       }
     });
+  });
+
+  app.post("/v1/agents", async (request, reply) => {
+    const registrationToken = process.env.AGENT_REGISTRATION_TOKEN;
+    const suppliedToken = request.headers["x-registration-token"];
+    if (!registrationToken || typeof suppliedToken !== "string") {
+      return reply.code(503).send({
+        error: { code: "REGISTRATION_DISABLED", message: "Agent registration is not configured.", correlationId: request.id, retryable: false }
+      });
+    }
+    const expectedHash = createHash("sha256").update(registrationToken).digest();
+    const suppliedHash = createHash("sha256").update(suppliedToken).digest();
+    if (!timingSafeEqual(expectedHash, suppliedHash)) {
+      return reply.code(401).send({
+        error: { code: "INVALID_REGISTRATION_TOKEN", message: "The registration token is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+
+    const parsed = agentCreateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_AGENT", message: "The agent profile is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Agent registration is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    const agentSecret = `satn_agent_${randomBytes(32).toString("base64url")}`;
+    const secretHash = createHash("sha256").update(agentSecret).digest("hex");
+    const authSubject = `bootstrap:${createHash("sha256").update(registrationToken).digest("hex")}`;
+    const payloadHash = createHash("sha256").update(JSON.stringify(parsed.data)).digest("hex");
+    try {
+      const agent = await prismaClient.$transaction(async (tx) => {
+        const owner = await tx.user.upsert({
+          where: { authSubject },
+          create: { authSubject },
+          update: {}
+        });
+        if (owner.status !== "ACTIVE") throw new Error("REGISTRATION_OWNER_DISABLED");
+        const created = await tx.agent.create({
+          data: {
+            ownerId: owner.id,
+            name: parsed.data.name,
+            ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+            mode: "PAPER",
+            credentials: {
+              create: { secretHash, scopes: ["journal:write"] }
+            }
+          },
+          select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorType: "REGISTRATION_TOKEN",
+            actorId: authSubject,
+            action: "agent.registered",
+            targetType: "Agent",
+            targetId: created.id,
+            correlationId: request.id,
+            payloadHash
+          }
+        });
+        return created;
+      });
+      return reply.code(201).send({
+        agent,
+        credential: {
+          token: agentSecret,
+          scopes: ["journal:write"],
+          warning: "This token is shown once. Store it securely; only its hash is stored."
+        }
+      });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "agent registration failed");
+      return reply.code(503).send({
+        error: { code: "REGISTRATION_FAILED", message: "Agent registration could not be completed.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
+  app.post<{ Params: { agentId: string } }>("/v1/agents/:agentId/journal", async (request, reply) => {
+    const parsedId = uuidSchema.safeParse(request.params.agentId);
+    if (!parsedId.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_AGENT_ID", message: "The agent identifier is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    const parsedBody = journalCreateSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_JOURNAL_ENTRY", message: "The journal entry is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Journal publishing is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    const authorization = request.headers.authorization;
+    const bearer = typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice(7).trim()
+      : "";
+    if (!bearer || bearer.length > 256) {
+      return reply.code(401).send({
+        error: { code: "AUTHENTICATION_REQUIRED", message: "A valid agent bearer token is required.", correlationId: request.id, retryable: false }
+      });
+    }
+    const secretHash = createHash("sha256").update(bearer).digest("hex");
+    try {
+      const credential = await prismaClient.agentCredential.findUnique({
+        where: { secretHash },
+        select: {
+          id: true, agentId: true, scopes: true, expiresAt: true, revokedAt: true,
+          agent: { select: { status: true } }
+        }
+      });
+      if (
+        !credential ||
+        credential.agentId !== parsedId.data ||
+        credential.revokedAt ||
+        (credential.expiresAt && credential.expiresAt <= new Date(now())) ||
+        credential.agent.status !== "ACTIVE" ||
+        !credential.scopes.includes("journal:write")
+      ) {
+        return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+        });
+      }
+
+      const payloadHash = createHash("sha256").update(JSON.stringify({
+        body: parsedBody.data.body,
+        publish: parsedBody.data.publish
+      })).digest("hex");
+      const journal = await prismaClient.$transaction(async (tx) => {
+        const entry = await tx.journalEntry.create({
+          data: {
+            agentId: parsedId.data,
+            body: parsedBody.data.body,
+            // Agents cannot self-assert venue- or chain-verified provenance.
+            provenance: "SELF_REPORTED",
+            publishedAt: parsedBody.data.publish ? new Date(now()) : null
+          },
+          select: { id: true, agentId: true, body: true, provenance: true, revision: true, publishedAt: true, createdAt: true }
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorType: "AGENT_CREDENTIAL",
+            actorId: credential.id,
+            action: parsedBody.data.publish ? "journal.published" : "journal.drafted",
+            targetType: "JournalEntry",
+            targetId: entry.id,
+            correlationId: request.id,
+            payloadHash
+          }
+        });
+        return entry;
+      });
+      return reply.code(201).send({ journal });
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "journal write failed");
+      return reply.code(503).send({
+        error: { code: "JOURNAL_WRITE_FAILED", message: "The journal entry could not be saved.", correlationId: request.id, retryable: true }
+      });
+    }
   });
 
   app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/feed", async (request, reply) => {

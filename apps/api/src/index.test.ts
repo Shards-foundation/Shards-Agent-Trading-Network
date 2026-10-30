@@ -233,6 +233,52 @@ describe("SATN API", () => {
     }
   });
 
+  it("does not allow agent registration when no bootstrap token is configured", async () => {
+    const previous = process.env.AGENT_REGISTRATION_TOKEN;
+    delete process.env.AGENT_REGISTRATION_TOKEN;
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/agents",
+        headers: { "x-registration-token": "anything" },
+        payload: { name: "Example agent" }
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe("REGISTRATION_DISABLED");
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
+      else process.env.AGENT_REGISTRATION_TOKEN = previous;
+    }
+  });
+
+  it("rejects malformed agent registration without requiring a database", async () => {
+    const previous = process.env.AGENT_REGISTRATION_TOKEN;
+    process.env.AGENT_REGISTRATION_TOKEN = "ci-bootstrap-secret";
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/agents",
+        headers: { "x-registration-token": "ci-bootstrap-secret" },
+        payload: { name: "x", unexpected: "field" }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe("INVALID_AGENT");
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_REGISTRATION_TOKEN;
+      else process.env.AGENT_REGISTRATION_TOKEN = previous;
+    }
+  });
+
+  it("requires a valid UUID and body before journal writes", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/agents/not-a-uuid/journal",
+      payload: { body: "hello" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_AGENT_ID");
+  });
+
   it("returns a retryable 503 when the persistent social store is not configured", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/feed" });
     expect(response.statusCode).toBe(503);
