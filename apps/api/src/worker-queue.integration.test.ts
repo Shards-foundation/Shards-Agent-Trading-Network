@@ -93,6 +93,16 @@ describe("WorkerQueue PostgreSQL integration", () => {
           SET "lockedAt" = CURRENT_TIMESTAMP - INTERVAL '1 minute'
           WHERE "id" = ${jobId}::uuid
         `;
+        const expiredLease = await prisma.$queryRaw<Array<{ lockedAt: Date }>>`
+          SELECT "lockedAt" FROM "WorkerJob" WHERE "id" = ${jobId}::uuid
+        `;
+        await expect(
+          queue.heartbeat(
+            jobId,
+            firstClaim!.lockedBy!,
+            expiredLease[0]!.lockedAt,
+          ),
+        ).resolves.toBeNull();
 
         const secondClaim = await queue.claim(queueName, "worker-two");
         expect(secondClaim?.id).toBe(jobId);
