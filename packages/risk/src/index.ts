@@ -18,7 +18,10 @@ export const TradeIntentSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (decimal.safeParse(value.quantity).success && toUnits(value.quantity) === 0n) {
+    if (
+      decimal.safeParse(value.quantity).success &&
+      toUnits(value.quantity) === 0n
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["quantity"],
