@@ -120,6 +120,14 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     } finally {
       await app.close();
       if (agentId) {
+        const intents = await prisma.tradeIntent.findMany({ where: { agentId }, select: { id: true } });
+        const intentIds = intents.map((intent) => intent.id);
+        const orders = await prisma.venueOrder.findMany({ where: { intentId: { in: intentIds } }, select: { id: true } });
+        const orderIds = orders.map((order) => order.id);
+        await prisma.fill.deleteMany({ where: { venueOrderId: { in: orderIds } } });
+        await prisma.venueOrder.deleteMany({ where: { intentId: { in: intentIds } } });
+        await prisma.riskDecision.deleteMany({ where: { intentId: { in: intentIds } } });
+        await prisma.tradeIntent.deleteMany({ where: { agentId } });
         await prisma.journalEntry.deleteMany({ where: { agentId } });
         await prisma.agent.delete({ where: { id: agentId } });
       }
@@ -131,7 +139,26 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     const previousToken = process.env.AGENT_REGISTRATION_TOKEN;
     const registrationToken = `ci-registration-${randomUUID()}`;
     process.env.AGENT_REGISTRATION_TOKEN = registrationToken;
-    const app = buildServer({ prismaClient: prisma, databaseProbe: null, queueProbe: null });
+    const app = buildServer({
+      prismaClient: prisma,
+      databaseProbe: null,
+      queueProbe: null,
+      marketDataProvider: {
+        async getMarketSnapshot(instrumentId) {
+          const observedAt = new Date().toISOString();
+          return {
+            venue: "hyperliquid",
+            instrumentId,
+            observedAt,
+            receivedAt: observedAt,
+            source: "integration-test",
+            bid: "99.5",
+            ask: "100",
+            dataQuality: "LIVE"
+          };
+        }
+      }
+    });
     let agentId: string | undefined;
     try {
       const registered = await app.inject({
@@ -192,9 +219,73 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
         correlationId: "satn-journal-test"
       });
       expect(audit?.payloadHash).toMatch(/^[a-f0-9]{64}$/);
+
+      expect(storedCredential?.scopes).toContain("trade-intent:write");
+      const intentPayload = {
+        venue: "hyperliquid",
+        instrument: "BTC",
+        side: "BUY",
+        quantity: "1",
+        orderType: "LIMIT",
+        limitPrice: "100",
+        mode: "PAPER"
+      };
+      const idempotencyKey = `paper-trade-${randomUUID()}`;
+      const trade = await app.inject({
+        method: "POST",
+        url: "/v1/trade-intents",
+        headers: { authorization: `Bearer ${token}`, "idempotency-key": idempotencyKey },
+        payload: intentPayload
+      });
+      expect(trade.statusCode).toBe(201);
+      expect(trade.json()).toMatchObject({
+        replayed: false,
+        intent: { agentId: createdAgentId, mode: "PAPER", status: "FILLED" },
+        riskDecision: { outcome: "APPROVED", reasonCodes: [] },
+        venueOrder: { state: "FILLED", fills: [{ price: "100", quantity: "1", fee: "0.1", feeAsset: "USD" }] },
+        simulation: { status: "FILLED", evidenceLabel: "SIMULATED", fillPrice: "100", fee: "0.1" }
+      });
+
+      const replay = await app.inject({
+        method: "POST",
+        url: "/v1/trade-intents",
+        headers: { authorization: `Bearer ${token}`, "idempotency-key": idempotencyKey },
+        payload: intentPayload
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json().replayed).toBe(true);
+      expect(await prisma.tradeIntent.count({ where: { agentId: createdAgentId, idempotencyKey } })).toBe(1);
+
+      const conflictingReplay = await app.inject({
+        method: "POST",
+        url: "/v1/trade-intents",
+        headers: { authorization: `Bearer ${token}`, "idempotency-key": idempotencyKey },
+        payload: { ...intentPayload, quantity: "2" }
+      });
+      expect(conflictingReplay.statusCode).toBe(409);
+      expect(conflictingReplay.json().error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+
+      const rejected = await app.inject({
+        method: "POST",
+        url: "/v1/trade-intents",
+        headers: { authorization: `Bearer ${token}`, "idempotency-key": `over-limit-${randomUUID()}` },
+        payload: { ...intentPayload, quantity: "20" }
+      });
+      expect(rejected.statusCode).toBe(422);
+      expect(rejected.json().error.code).toBe("RISK_REJECTED");
+      expect(rejected.json().error.reasons).toContain("ORDER_NOTIONAL_EXCEEDED");
+      expect(rejected.json().intent.status).toBe("RISK_REJECTED");
     } finally {
       await app.close();
       if (agentId) {
+        const intents = await prisma.tradeIntent.findMany({ where: { agentId }, select: { id: true } });
+        const intentIds = intents.map((intent) => intent.id);
+        const orders = await prisma.venueOrder.findMany({ where: { intentId: { in: intentIds } }, select: { id: true } });
+        const orderIds = orders.map((order) => order.id);
+        await prisma.fill.deleteMany({ where: { venueOrderId: { in: orderIds } } });
+        await prisma.venueOrder.deleteMany({ where: { intentId: { in: intentIds } } });
+        await prisma.riskDecision.deleteMany({ where: { intentId: { in: intentIds } } });
+        await prisma.tradeIntent.deleteMany({ where: { agentId } });
         await prisma.journalEntry.deleteMany({ where: { agentId } });
         await prisma.agent.delete({ where: { id: agentId } });
       }

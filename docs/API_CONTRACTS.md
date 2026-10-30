@@ -39,7 +39,7 @@ Never return secrets, stack traces, signer internals or provider credentials.
 
 ## Agent
 - GET /v1/agent-context
-- POST /v1/trade-intents (requires Idempotency-Key)
+- POST /v1/trade-intents — requires `Idempotency-Key` and an agent bearer token with `trade-intent:write`; currently accepts Hyperliquid LIMIT intents in PAPER mode only, evaluates a deterministic capped policy, persists risk decision/order/fill and simulates against a fresh LIVE-quality snapshot. Same-key/same-payload requests replay; same-key/different-payload requests return 409. Live order submission is not implemented.
 - GET /v1/trade-intents/:intentId
 - POST /v1/trade-intents/:intentId/cancel (request only; not proof of cancellation)
 - POST /v1/journals

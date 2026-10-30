@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { evaluateTradeIntent, TradeIntentSchema } from "@satn/risk";
+import { simulateLimitOrder } from "@satn/paper-engine";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { HyperliquidReadOnlyAdapter } from "@satn/venue-adapters/hyperliquid";
@@ -86,6 +88,16 @@ const journalCreateSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
   publish: z.boolean().default(true)
 }).strict();
+const idempotencyKeySchema = z.string().min(1).max(200).regex(/^[\x21-\x7E]+$/);
+const paperTradePolicy = {
+  allowedVenues: ["hyperliquid"],
+  maxOrderNotional: "1000",
+  liveExecutionEnabled: false,
+  halted: false,
+  maxMarketDataAgeMs: 5_000,
+  maxDailyLoss: "100",
+  dailyLoss: "0"
+} as const;
 const DEFAULT_CACHE_TTL_MS = 1_000;
 const MAX_CACHE_ENTRIES = 500;
 
@@ -222,7 +234,7 @@ export function buildServer(options: BuildServerOptions = {}) {
             ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
             mode: "PAPER",
             credentials: {
-              create: { secretHash, scopes: ["journal:write"] }
+              create: { secretHash, scopes: ["journal:write", "trade-intent:write"] }
             }
           },
           select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true }
@@ -244,7 +256,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         agent,
         credential: {
           token: agentSecret,
-          scopes: ["journal:write"],
+          scopes: ["journal:write", "trade-intent:write"],
           warning: "This token is shown once. Store it securely; only its hash is stored."
         }
       });
@@ -536,6 +548,236 @@ export function buildServer(options: BuildServerOptions = {}) {
       }
     }
   );
+
+  app.post("/v1/trade-intents", async (request, reply) => {
+    const idempotencyHeader = request.headers["idempotency-key"];
+    const idempotency = idempotencyKeySchema.safeParse(idempotencyHeader);
+    if (!idempotency.success) {
+      return reply.code(400).send({
+        error: { code: "IDEMPOTENCY_KEY_REQUIRED", message: "Provide a valid Idempotency-Key header.", correlationId: request.id, retryable: false }
+      });
+    }
+    const parsed = TradeIntentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_TRADE_INTENT", message: "The trade intent is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (parsed.data.mode !== "PAPER" || parsed.data.orderType !== "LIMIT") {
+      return reply.code(422).send({
+        error: { code: "PAPER_LIMIT_ORDERS_ONLY", message: "Only LIMIT orders in PAPER mode are supported by this endpoint.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (parsed.data.venue !== "hyperliquid") {
+      return reply.code(422).send({
+        error: { code: "VENUE_NOT_SUPPORTED", message: "This paper endpoint currently supports Hyperliquid market snapshots only.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "Trade-intent persistence is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+
+    const authorization = request.headers.authorization;
+    const bearer = typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice(7).trim()
+      : "";
+    if (!bearer || bearer.length > 256) {
+      return reply.code(401).send({
+        error: { code: "AUTHENTICATION_REQUIRED", message: "A valid agent bearer token is required.", correlationId: request.id, retryable: false }
+      });
+    }
+    const secretHash = createHash("sha256").update(bearer).digest("hex");
+    try {
+      const credential = await prismaClient.agentCredential.findUnique({
+        where: { secretHash },
+        select: {
+          id: true, agentId: true, scopes: true, expiresAt: true, revokedAt: true,
+          agent: { select: { status: true, mode: true } }
+        }
+      });
+      if (
+        !credential ||
+        credential.revokedAt ||
+        (credential.expiresAt && credential.expiresAt <= new Date(now())) ||
+        credential.agent.status !== "ACTIVE" ||
+        !credential.scopes.includes("trade-intent:write")
+      ) {
+        return reply.code(401).send({
+          error: { code: "INVALID_AGENT_CREDENTIAL", message: "The agent credential is invalid or lacks permission.", correlationId: request.id, retryable: false }
+        });
+      }
+      if (credential.agent.mode !== "PAPER") {
+        return reply.code(403).send({
+          error: { code: "AGENT_MODE_FORBIDDEN", message: "Trade-intent writes are restricted to PAPER-mode agents.", correlationId: request.id, retryable: false }
+        });
+      }
+
+      const intentData = parsed.data;
+      const payloadHash = createHash("sha256").update(JSON.stringify(intentData)).digest("hex");
+      const existing = await prismaClient.tradeIntent.findUnique({
+        where: { agentId_idempotencyKey: { agentId: credential.agentId, idempotencyKey: idempotency.data } },
+        include: { riskDecision: true, venueOrder: { include: { fills: true } } }
+      });
+      if (existing) {
+        if (existing.payloadHash !== payloadHash) {
+          return reply.code(409).send({
+            error: { code: "IDEMPOTENCY_KEY_REUSED", message: "This idempotency key was already used for a different request.", correlationId: request.id, retryable: false }
+          });
+        }
+        return reply.code(200).send({ replayed: true, intent: existing });
+      }
+
+      let snapshot: MarketSnapshot;
+      try {
+        snapshot = await marketDataProvider.getMarketSnapshot(intentData.instrument);
+      } catch {
+        return reply.code(502).send({
+          error: { code: "MARKET_DATA_UNAVAILABLE", message: "A current market snapshot could not be obtained; no intent was persisted.", correlationId: request.id, retryable: true }
+        });
+      }
+      if (
+        snapshot.venue !== intentData.venue ||
+        snapshot.instrumentId !== intentData.instrument ||
+        !snapshot.bid ||
+        !snapshot.ask
+      ) {
+        return reply.code(502).send({
+          error: { code: "INVALID_MARKET_SNAPSHOT", message: "The market-data adapter returned an incomplete or mismatched snapshot.", correlationId: request.id, retryable: true }
+        });
+      }
+
+      const observedMs = Date.parse(snapshot.observedAt);
+      const observedAgeMs = Number.isFinite(observedMs) ? now() - observedMs : Number.POSITIVE_INFINITY;
+      const policy = {
+        ...paperTradePolicy,
+        marketDataAgeMs: snapshot.dataQuality === "LIVE" && observedAgeMs >= 0
+          ? observedAgeMs
+          : paperTradePolicy.maxMarketDataAgeMs + 1
+      };
+      const decision = evaluateTradeIntent(intentData, policy, "paper-default-v1");
+      const simulatedAt = now();
+      let simulation: ReturnType<typeof simulateLimitOrder> | null = null;
+      if (decision.allowed) {
+        try {
+          simulation = simulateLimitOrder({
+            side: intentData.side,
+            quantity: intentData.quantity,
+            ...(intentData.limitPrice !== undefined ? { limitPrice: intentData.limitPrice } : {}),
+            feeBps: 10
+          }, {
+            venue: snapshot.venue,
+            instrumentId: snapshot.instrumentId,
+            observedAt: snapshot.observedAt,
+            bid: snapshot.bid,
+            ask: snapshot.ask,
+            dataQuality: snapshot.dataQuality
+          }, { nowMs: simulatedAt, maxSnapshotAgeMs: paperTradePolicy.maxMarketDataAgeMs });
+        } catch {
+          return reply.code(422).send({
+            error: { code: "PAPER_SIMULATION_REJECTED", message: "The paper engine rejected the market snapshot; no order was simulated.", correlationId: request.id, retryable: false }
+          });
+        }
+      }
+
+      try {
+        const result = await prismaClient.$transaction(async (tx) => {
+          const created = await tx.tradeIntent.create({
+            data: {
+              agentId: credential.agentId,
+              venue: intentData.venue,
+              instrument: intentData.instrument,
+              side: intentData.side,
+              orderType: intentData.orderType,
+              quantity: intentData.quantity,
+              ...(intentData.limitPrice !== undefined ? { limitPrice: intentData.limitPrice } : {}),
+              mode: "PAPER",
+              idempotencyKey: idempotency.data,
+              payloadHash,
+              status: decision.allowed ? (simulation?.status === "FILLED" ? "FILLED" : "OPEN") : "RISK_REJECTED"
+            }
+          });
+          const risk = await tx.riskDecision.create({
+            data: {
+              intentId: created.id,
+              outcome: decision.allowed ? "APPROVED" : "REJECTED",
+              reasonCodes: decision.reasons,
+              policyVersion: 1
+            }
+          });
+          let venueOrder = null;
+          if (decision.allowed && simulation) {
+            venueOrder = await tx.venueOrder.create({
+              data: {
+                intentId: created.id,
+                venue: intentData.venue,
+                clientOrderId: `satn-paper-${created.id}`,
+                venueOrderId: `paper-${created.id}`,
+                state: simulation.status === "FILLED" ? "FILLED" : "OPEN",
+                submittedAt: new Date(simulatedAt),
+                ...(simulation.status === "FILLED" && simulation.fillPrice !== null ? {
+                  fills: {
+                    create: {
+                      fillRef: `paper-fill-${created.id}`,
+                      price: simulation.fillPrice,
+                      quantity: simulation.quantity,
+                      fee: simulation.fee,
+                      feeAsset: "USD",
+                      filledAt: new Date(simulatedAt)
+                    }
+                  }
+                } : {})
+              },
+              include: { fills: true }
+            });
+          }
+          await tx.auditEvent.create({
+            data: {
+              actorType: "AGENT_CREDENTIAL",
+              actorId: credential.id,
+              action: !decision.allowed ? "trade_intent.risk_rejected" : simulation?.status === "FILLED" ? "paper_order.filled" : "paper_order.open",
+              targetType: "TradeIntent",
+              targetId: created.id,
+              correlationId: request.id,
+              payloadHash
+            }
+          });
+          return { intent: created, riskDecision: risk, venueOrder };
+        });
+        if (!decision.allowed) {
+          return reply.code(422).send({
+            ...result,
+            error: { code: "RISK_REJECTED", message: "The paper trade was rejected by the deterministic risk policy.", reasons: decision.reasons, correlationId: request.id, retryable: false }
+          });
+        }
+        return reply.code(201).send({ ...result, simulation, replayed: false });
+      } catch (error) {
+        // A concurrent retry may win the unique idempotency constraint.
+        const raced = await prismaClient.tradeIntent.findUnique({
+          where: { agentId_idempotencyKey: { agentId: credential.agentId, idempotencyKey: idempotency.data } },
+          include: { riskDecision: true, venueOrder: { include: { fills: true } } }
+        }).catch(() => null);
+        if (raced) {
+          if (raced.payloadHash !== payloadHash) {
+            return reply.code(409).send({
+              error: { code: "IDEMPOTENCY_KEY_REUSED", message: "This idempotency key was already used for a different request.", correlationId: request.id, retryable: false }
+            });
+          }
+          return reply.code(200).send({ replayed: true, intent: raced });
+        }
+        request.log.error({ err: error, correlationId: request.id }, "paper trade persistence failed");
+        return reply.code(503).send({
+          error: { code: "TRADE_INTENT_PERSISTENCE_FAILED", message: "The paper trade could not be persisted.", correlationId: request.id, retryable: true }
+        });
+      }
+    } catch (error) {
+      request.log.error({ err: error, correlationId: request.id }, "trade-intent request failed");
+      return reply.code(503).send({
+        error: { code: "TRADE_INTENT_UNAVAILABLE", message: "Trade-intent processing is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
 
   app.get("/v1/venues", async () => ({
     venues: [

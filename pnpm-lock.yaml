@@ -26,6 +26,12 @@ importers:
       '@prisma/client':
         specifier: ^6.19.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      '@satn/paper-engine':
+        specifier: workspace:*
+        version: link:../../packages/paper-engine
+      '@satn/risk':
+        specifier: workspace:*
+        version: link:../../packages/risk
       '@satn/venue-adapters':
         specifier: workspace:*
         version: link:../../packages/venue-adapters

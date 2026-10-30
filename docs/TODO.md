@@ -46,7 +46,9 @@ Status vocabulary: TODO, IN_PROGRESS, BLOCKED, DONE, DEFERRED. Do not mark DONE 
 - [ ] TODO Reconnect, snapshot recovery, freshness and rate-limit handling.
 - [ ] TODO Review Polymarket read-only integration and jurisdiction gate.
 - [ ] TODO Review permitted Pump.fun read-only data only.
-- [ ] TODO Deterministic paper engine with explicit fee/slippage/funding assumptions.
+- [x] DONE Deterministic limit-order paper engine with explicit fee assumption and freshness guard.
+- [x] DONE API trade-intent vertical slice: scoped credential → idempotency → risk decision → paper order/fill → audit record (PR pending).
+- [ ] TODO Add configurable slippage/funding assumptions and position/portfolio accounting.
 - [ ] TODO P&L, drawdown, fees and missing-data tests.
 
 ## 5. Governance / execution
