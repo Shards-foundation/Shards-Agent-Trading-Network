@@ -8,7 +8,10 @@ The queue uses the existing PostgreSQL database rather than adding a broker. It 
 
 - `WorkerQueue`: enqueue, atomic claim using `FOR UPDATE SKIP LOCKED`, lease heartbeat, completion, retry/dead-letter transitions and cancellation.
 - `WorkerRunner`: registered handler dispatch, lease heartbeat while handlers run, fail-closed behaviour for unknown kinds, idle backoff and abortable polling.
-- `WorkerJob`: durable state, JSON payload, priority, availability, attempts, lease metadata, idempotency key, bounded error summary and completion timestamp.\n- `WorkerHeartbeat`: per-process status and last-seen timestamp; API readiness requires at least one fresh RUNNING heartbeat.\n- `apps/api/src/worker-main.ts`: dedicated worker process with unique process identity, periodic heartbeat, signal-aware loop shutdown and structured lifecycle logs.\n- The only built-in handler is `system.healthcheck`, a payload-validated no-side-effect handler. All other job kinds fail closed until explicitly registered.
+- `WorkerJob`: durable state, JSON payload, priority, availability, attempts, lease metadata, idempotency key, bounded error summary and completion timestamp.
+- `WorkerHeartbeat`: per-process status and last-seen timestamp; API readiness requires at least one fresh RUNNING heartbeat.
+- `apps/api/src/worker-main.ts`: dedicated worker process with unique process identity, periodic heartbeat, signal-aware loop shutdown and structured lifecycle logs.
+- The only built-in handler is `system.healthcheck`, a payload-validated no-side-effect handler. All other job kinds fail closed until explicitly registered.
 
 ## Local runbook
 
@@ -37,8 +40,8 @@ Enqueue idempotency is scoped to `(queue, idempotencyKey)`. Reusing a key with a
 
 ## Remaining work
 
-1. Wire `WorkerRunner` into a separately supervised process with controlled handler registration.
-2. Add production worker health/readiness, heartbeat and queue metrics.
-3. Add PostgreSQL integration tests for competing claimers, actual migration behaviour, lease expiry/reclaim, idempotency conflicts and retry exhaustion.
-4. Run the complete CI suite and resolve all failures before merging.
+1. Deploy the worker as a separately supervised service and configure restart policy, resource limits and log shipping.
+2. Add queue-depth/oldest-job metrics and alerts; a fresh heartbeat alone does not prove useful jobs are completing.
+3. Add deployment-level restart, stale-heartbeat and lease-expiry/reclaim tests.
+4. Add a transactional outbox or document and test transaction-bound enqueue for domain writes that must atomically schedule work.
 5. Keep live trading disabled until the isolated execution/risk/permit path has passed end-to-end review.
