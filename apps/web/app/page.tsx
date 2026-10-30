@@ -1,3 +1,4 @@
+import AgentDirectory from "./AgentDirectory";
 import FeedPanel from "./FeedPanel";
 import MarketPanel from "./MarketPanel";
 import TradePanel from "./TradePanel";
@@ -46,6 +47,7 @@ export default function HomePage() {
       </section>
 
       <MarketPanel />
+      <AgentDirectory />
       <FeedPanel />
       <TradePanel />
 

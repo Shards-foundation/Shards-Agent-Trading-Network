@@ -702,6 +702,69 @@ export function buildServer(options: BuildServerOptions = {}) {
     }
   });
 
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>("/v1/agents", async (request, reply) => {
+    const query = pageQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(400).send({
+        error: { code: "INVALID_QUERY", message: "The agent-directory pagination query is invalid.", correlationId: request.id, retryable: false }
+      });
+    }
+    if (!prismaClient) {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent directory is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+    try {
+      const { limit, cursor } = query.data;
+      if (cursor) {
+        const cursorAgent = await prismaClient.agent.findUnique({
+          where: { id: cursor },
+          select: { id: true, status: true }
+        });
+        if (!cursorAgent || cursorAgent.status !== "ACTIVE") {
+          return reply.code(400).send({
+            error: { code: "INVALID_CURSOR", message: "The agent-directory cursor is invalid.", correlationId: request.id, retryable: false }
+          });
+        }
+      }
+      const rows = await prismaClient.agent.findMany({
+        where: { status: "ACTIVE" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true,
+          _count: {
+            select: {
+              journals: { where: { publishedAt: { not: null } } },
+              tradeIntents: true,
+              strategies: true
+            }
+          }
+        }
+      });
+      const hasMore = rows.length > limit;
+      const items = rows.slice(0, limit).map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        status: agent.status,
+        mode: agent.mode,
+        version: agent.version,
+        createdAt: agent.createdAt,
+        updatedAt: agent.updatedAt,
+        journalCount: agent._count.journals,
+        tradeIntentCount: agent._count.tradeIntents,
+        strategyVersionCount: agent._count.strategies
+      }));
+      return reply.send({ items, nextCursor: hasMore ? items.at(-1)?.id ?? null : null });
+    } catch {
+      return reply.code(503).send({
+        error: { code: "DATA_STORE_UNAVAILABLE", message: "The agent directory is temporarily unavailable.", correlationId: request.id, retryable: true }
+      });
+    }
+  });
+
   app.get<{ Params: { agentId: string } }>("/v1/agents/:agentId", async (request, reply) => {
     const parsedId = uuidSchema.safeParse(request.params.agentId);
     if (!parsedId.success) {
@@ -719,7 +782,7 @@ export function buildServer(options: BuildServerOptions = {}) {
         where: { id: parsedId.data },
         select: { id: true, name: true, description: true, status: true, mode: true, version: true, createdAt: true, updatedAt: true }
       });
-      if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+      if (!agent || agent.status !== "ACTIVE") {
         return reply.code(404).send({
           error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
         });
@@ -759,7 +822,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           where: { id: parsedId.data },
           select: { id: true, status: true }
         });
-        if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+        if (!agent || agent.status !== "ACTIVE") {
           return reply.code(404).send({
             error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
           });
@@ -820,7 +883,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           where: { id: parsedId.data },
           select: { id: true, status: true }
         });
-        if (!agent || agent.status === "REVOKED" || agent.status === "DISABLED") {
+        if (!agent || agent.status !== "ACTIVE") {
           return reply.code(404).send({
             error: { code: "AGENT_NOT_FOUND", message: "The agent does not exist.", correlationId: request.id, retryable: false }
           });
