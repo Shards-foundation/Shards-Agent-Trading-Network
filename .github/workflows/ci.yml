@@ -11,6 +11,29 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: satn
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: satn
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U satn -d satn"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,21 +45,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
       - name: Install
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Generate Prisma client
         env:
           DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
         run: pnpm db:generate
       - name: Validate database schema
         env:
-          # Prisma validates configuration without connecting to a database.
-          # This CI-only URL must never be used for application traffic.
           DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
         run: pnpm db:validate
+      - name: Apply migrations to ephemeral PostgreSQL
+        env:
+          DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
+        run: pnpm db:migrate:deploy
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
+          REDIS_URL: redis://127.0.0.1:6379
         run: pnpm test
       - name: Build
         run: pnpm build
