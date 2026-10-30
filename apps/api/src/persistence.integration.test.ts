@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "redis";
 import { buildServer } from "./index.js";
+import type { MarketSnapshot } from "@satn/venue-adapters";
 
 const integrationEnabled = Boolean(process.env.DATABASE_URL && process.env.REDIS_URL);
 
