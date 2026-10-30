@@ -30,6 +30,7 @@ export interface BuildServerOptions {
   marketCacheTtlMs?: number;
   databaseProbe?: DatabaseHealthProbe | null;
   queueProbe?: DatabaseHealthProbe | null;
+  workerProbe?: DatabaseHealthProbe | null;
   now?: () => number;
 }
 
@@ -38,7 +39,15 @@ function createDefaultDatabaseProbe(): DatabaseHealthProbe | null {
   const prisma = new PrismaClient();
   return {
     async check() {
-      await prisma.$queryRaw`SELECT 1`;
+      const migrations = await prisma.$queryRaw<Array<{ migration_name: string }>>`
+        SELECT migration_name
+        FROM "_prisma_migrations"
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+        LIMIT 1
+      `;
+      if (migrations.length === 0) {
+        throw new Error("No successfully applied Prisma migrations were found.");
+      }
     },
     async close() {
       await prisma.$disconnect();
@@ -83,6 +92,8 @@ export function buildServer(options: BuildServerOptions = {}) {
   const queueProbe = options.queueProbe === undefined
     ? createDefaultQueueProbe()
     : options.queueProbe;
+  // No worker is registered in this release, so readiness remains closed by default.
+  const workerProbe = options.workerProbe ?? null;
   const cacheTtlMs = options.marketCacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
   const marketCache = new Map<string, { snapshot: MarketSnapshot; expiresAt: number }>();
@@ -94,7 +105,7 @@ export function buildServer(options: BuildServerOptions = {}) {
 
   app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
   app.addHook("onClose", async () => {
-    await Promise.all([databaseProbe?.close(), queueProbe?.close()]);
+    await Promise.all([databaseProbe?.close(), queueProbe?.close(), workerProbe?.close()]);
   });
 
   app.get("/health/live", async () => ({
@@ -124,11 +135,22 @@ export function buildServer(options: BuildServerOptions = {}) {
       }
     }
 
-    const ready = databaseState === "connected" && redisState === "connected";
+    let workerState: "connected" | "unavailable" | "not-configured" = "not-configured";
+    if (workerProbe) {
+      try {
+        await workerProbe.check();
+        workerState = "connected";
+      } catch {
+        workerState = "unavailable";
+      }
+    }
+
+    const ready = databaseState === "connected" &&
+      redisState === "connected" && workerState === "connected";
     return reply.code(ready ? 200 : 503).send({
       status: ready ? "ok" : "degraded",
       ready,
-      dependencies: { database: databaseState, redis: redisState },
+      dependencies: { database: databaseState, redis: redisState, worker: workerState },
       execution: {
         mode: env.EXECUTION_MODE,
         liveEnabled: false
