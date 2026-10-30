@@ -129,3 +129,35 @@ jobs:
           LIVE_EXECUTION_ENABLED: "false"
         timeout-minutes: 4
         run: node scripts/fullstack-e2e.mjs
+
+  staging-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout reviewed commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build staging backend image
+        run: |
+          docker build --file deploy/Dockerfile --tag "satn-backend:ci-${GITHUB_SHA}" .
+      - name: Check executable API and worker files inside image
+        run: |
+          docker run --rm --entrypoint node "satn-backend:ci-${GITHUB_SHA}" --check apps/api/dist/index.js
+          docker run --rm --entrypoint node "satn-backend:ci-${GITHUB_SHA}" --check apps/api/dist/worker-main.js
+      - name: Validate PAPER-only Compose topology
+        env:
+          SATN_BACKEND_IMAGE: satn-backend:ci-${{ github.sha }}
+          DATABASE_URL: postgresql://ci:fixture@db.example.com/satn?sslmode=require
+          REDIS_URL: rediss://ci:fixture@redis.example.com:6380
+          WEB_ORIGIN: https://staging.example.com
+          OIDC_ISSUER: https://id.example.com/
+          OIDC_AUDIENCE: satn-api
+          OIDC_JWKS_URL: https://id.example.com/.well-known/jwks.json
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose.staging.yml config --format json | node scripts/verify-staging-compose.mjs
+          if env -u OIDC_ISSUER docker compose -f deploy/compose.staging.yml config --quiet >/dev/null 2>&1; then
+            echo "Expected missing OIDC configuration to fail closed."
+            exit 1
+          fi
