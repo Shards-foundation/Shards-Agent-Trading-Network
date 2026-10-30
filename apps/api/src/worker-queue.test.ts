@@ -164,7 +164,7 @@ describe("WorkerQueue", () => {
     ];
     expect(sql).toContain("date_trunc('milliseconds', \"lockedAt\") = $3");
     expect(sql).toContain(
-      'CURRENT_TIMESTAMP - ($4 * INTERVAL \'1 millisecond\')',
+      "CURRENT_TIMESTAMP - ($4 * INTERVAL '1 millisecond')",
     );
     expect(params).toHaveLength(4);
     expect(params[3]).toBe(30_000);
@@ -217,7 +217,7 @@ describe("WorkerQueue", () => {
       ...unknown[],
     ];
     expect(updateSql).toContain(
-      'CURRENT_TIMESTAMP - ($7 * INTERVAL \'1 millisecond\')',
+      "CURRENT_TIMESTAMP - ($7 * INTERVAL '1 millisecond')",
     );
     const [, , , status, delay, message, leaseMs] = updateParams;
     expect(leaseMs).toBe(30_000);
