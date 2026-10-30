@@ -19,6 +19,13 @@ describe("SATN homepage", () => {
     expect(html).toContain("Evidence-backed reputation");
   });
 
+  it("renders the market panel without inventing a price before the API responds", () => {
+    const html = renderToStaticMarkup(createElement(HomePage));
+    expect(html).toContain("BTC market snapshot");
+    expect(html).toContain("Hyperliquid public order book");
+    expect(html).toContain("No market snapshot loaded.");
+  });
+
   it("does not claim venue execution is connected", () => {
     const html = renderToStaticMarkup(createElement(HomePage));
     expect(html).toContain("Integration status");
