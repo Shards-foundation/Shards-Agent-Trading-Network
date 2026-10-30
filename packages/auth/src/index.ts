@@ -122,10 +122,10 @@ export async function verifyOidcAccessToken(
   const fetcher = options.fetcher ?? ((url, init) => fetch(url, init));
   const ttlMs = config.jwksCacheTtlMs ?? 300_000;
   let keys = await loadJwks(config.jwksUrl, fetcher, nowMs, ttlMs);
-  let jwk = keys.find((key) => key.kid === header.kid && key.alg !== "HS256" && (!key.use || key.use === "sig") && (!key.key_ops || key.key_ops.includes("verify")));
+  let jwk = keys.find((key) => key.kid === header.kid && (!key.alg || key.alg === "RS256") && (!key.use || key.use === "sig") && (!key.key_ops || key.key_ops.includes("verify")));
   if (!jwk) {
     keys = await loadJwks(config.jwksUrl, fetcher, nowMs, ttlMs, true);
-    jwk = keys.find((key) => key.kid === header.kid && key.alg !== "HS256" && (!key.use || key.use === "sig") && (!key.key_ops || key.key_ops.includes("verify")));
+    jwk = keys.find((key) => key.kid === header.kid && (!key.alg || key.alg === "RS256") && (!key.use || key.use === "sig") && (!key.key_ops || key.key_ops.includes("verify")));
   }
   if (!jwk || !jwk.n || Buffer.from(jwk.n, "base64url").length < 256) {
     throw new Error("No acceptable RSA signing key matched the token.");
