@@ -47,6 +47,13 @@ jobs:
           node-version: 22
       - name: Install
         run: pnpm install --no-frozen-lockfile
+      - name: Upload generated lockfile for reproducibility
+        uses: actions/upload-artifact@v4
+        with:
+          name: satn-pnpm-lockfile
+          path: pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 1
       - name: Generate Prisma client
         env:
           DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
