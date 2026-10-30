@@ -17,7 +17,7 @@ The queue uses the existing PostgreSQL database rather than adding a broker. It 
 ## Local runbook
 
 1. Apply the database migrations with `pnpm db:migrate:deploy` after setting `DATABASE_URL`.
-2. Set `WORKER_QUEUE=default`, `WORKER_HEARTBEAT_MS=5000`, `WORKER_LEASE_MS=30000`, `WORKER_STALE_AFTER_MS=30000` and `WORKER_SHUTDOWN_GRACE_MS=10000`. The shutdown grace must be less than half the lease duration so an uncooperative handler cannot keep the process alive until another worker may reclaim its job.
+2. Set `WORKER_QUEUE=default`, `WORKER_HEARTBEAT_MS=5000`, `WORKER_LEASE_MS=30000`, `WORKER_STALE_AFTER_MS=30000` and `WORKER_SHUTDOWN_GRACE_MS=10000`. The shutdown grace must be less than half the lease duration to reduce the overlap window under normal heartbeat timing. If a lease has already expired because heartbeats or database access failed, another worker may still reclaim the job; fencing and external idempotency remain mandatory.
 3. Build the workspace with `pnpm build`.
 4. Start the API and the worker as separate processes. Start the worker with `pnpm --filter @satn/api worker`.
 5. Verify `GET /health/ready` reports `dependencies.worker: "connected"`. Stop the worker and verify readiness becomes degraded after its heartbeat is no longer fresh.
