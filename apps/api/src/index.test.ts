@@ -59,6 +59,39 @@ describe("SATN API", () => {
     }
   });
 
+  it("reports ready only when both database and Redis probes pass", async () => {
+    const probe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const testApp = buildServer({ databaseProbe: probe, queueProbe: probe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: "ok",
+        ready: true,
+        dependencies: { database: "connected", redis: "connected" }
+      });
+    } finally {
+      await testApp.close();
+    }
+  });
+
+  it("reports an unavailable Redis dependency without leaking connection details", async () => {
+    const databaseProbe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const queueProbe: DatabaseHealthProbe = {
+      check: async () => { throw new Error("private Redis connection details"); },
+      close: async () => undefined
+    };
+    const testApp = buildServer({ databaseProbe, queueProbe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().dependencies.redis).toBe("unavailable");
+      expect(response.body).not.toContain("private Redis connection details");
+    } finally {
+      await testApp.close();
+    }
+  });
+
   it("reports a database probe failure without leaking connection details", async () => {
     const probe: DatabaseHealthProbe = {
       check: async () => { throw new Error("private database connection string"); },
