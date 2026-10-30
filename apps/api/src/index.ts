@@ -219,7 +219,7 @@ export function buildServer(options: BuildServerOptions = {}) {
           data: {
             ownerId: owner.id,
             name: parsed.data.name,
-            description: parsed.data.description,
+            ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
             mode: "PAPER",
             credentials: {
               create: { secretHash, scopes: ["journal:write"] }
