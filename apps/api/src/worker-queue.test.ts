@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { WorkerQueue, type WorkerQueueDatabase, type WorkerJob } from "../../../packages/database/src/worker-queue.js";
+import { WorkerQueue, type WorkerQueueDatabase, type WorkerJob } from "./worker-queue.js";
 
 function fakeDb(): WorkerQueueDatabase & {
   query: ReturnType<typeof vi.fn>;
