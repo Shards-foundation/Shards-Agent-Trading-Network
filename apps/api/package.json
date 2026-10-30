@@ -20,7 +20,8 @@
     "redis": "^5.8.2",
     "@satn/risk": "workspace:*",
     "@satn/paper-engine": "workspace:*",
-    "@satn/accounting": "workspace:*"
+    "@satn/accounting": "workspace:*",
+    "@satn/auth": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.18.10",
