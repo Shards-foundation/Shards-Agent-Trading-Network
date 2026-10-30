@@ -42,6 +42,39 @@ describe("SATN API", () => {
     expect(response.json().execution.liveEnabled).toBe(false);
   });
 
+
+  it("reports the database as connected but keeps readiness closed without Redis", async () => {
+    const probe: DatabaseHealthProbe = { check: async () => undefined, close: async () => undefined };
+    const testApp = buildServer({ databaseProbe: probe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({
+        status: "degraded",
+        ready: false,
+        dependencies: { database: "connected", redis: "not-configured" }
+      });
+    } finally {
+      await testApp.close();
+    }
+  });
+
+  it("reports a database probe failure without leaking connection details", async () => {
+    const probe: DatabaseHealthProbe = {
+      check: async () => { throw new Error("private database connection string"); },
+      close: async () => undefined
+    };
+    const testApp = buildServer({ databaseProbe: probe });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().dependencies.database).toBe("unavailable");
+      expect(response.body).not.toContain("private database connection string");
+    } finally {
+      await testApp.close();
+    }
+  });
+
   it("declares actual adapter capability without implying live execution", async () => {
     const response = await app.inject({ method: "GET", url: "/v1/venues" });
     expect(response.statusCode).toBe(200);
