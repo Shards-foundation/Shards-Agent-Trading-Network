@@ -11,18 +11,18 @@ The queue uses the existing PostgreSQL database rather than adding a broker. It 
 - `WorkerJob`: durable state, JSON payload, priority, availability, attempts, lease metadata, idempotency key, bounded error summary and completion timestamp.
 - `WorkerHeartbeat`: per-process status and last-seen timestamp; API readiness requires at least one fresh RUNNING heartbeat.
 - `WorkerQueue.stats()`: per-queue counts by terminal/active state, queue depth, oldest pending age and expired lease count; the worker emits periodic structured `worker.queue.stats` logs. Sampling errors are logged without exposing database details.
-- `apps/api/src/worker-main.ts`: dedicated worker process with unique process identity, periodic heartbeat, signal-aware loop shutdown and structured lifecycle logs.
+- `apps/api/src/worker-main.ts`: dedicated worker process with unique process identity, periodic heartbeat, bounded shutdown grace and structured lifecycle logs.
 - The only built-in handler is `system.healthcheck`, a payload-validated no-side-effect handler. All other job kinds fail closed until explicitly registered.
 
 ## Local runbook
 
 1. Apply the database migrations with `pnpm db:migrate:deploy` after setting `DATABASE_URL`.
-2. Set `WORKER_QUEUE=default`, `WORKER_HEARTBEAT_MS=5000`, `WORKER_LEASE_MS=30000` and `WORKER_STALE_AFTER_MS=30000`.
+2. Set `WORKER_QUEUE=default`, `WORKER_HEARTBEAT_MS=5000`, `WORKER_LEASE_MS=30000`, `WORKER_STALE_AFTER_MS=30000` and `WORKER_SHUTDOWN_GRACE_MS=10000`. The shutdown grace must be less than half the lease duration so an uncooperative handler cannot keep the process alive until another worker may reclaim its job.
 3. Build the workspace with `pnpm build`.
 4. Start the API and the worker as separate processes. Start the worker with `pnpm --filter @satn/api worker`.
 5. Verify `GET /health/ready` reports `dependencies.worker: "connected"`. Stop the worker and verify readiness becomes degraded after its heartbeat is no longer fresh.
 
-The process manager (container orchestrator, systemd or equivalent) must restart non-zero exits. Do not run the worker inside the API process: they have independent lifecycles and resource limits.
+The process manager (container orchestrator, systemd or equivalent) must restart non-zero exits. On SIGTERM/SIGINT or heartbeat failure, the worker requests cooperative cancellation; if a handler ignores its AbortSignal, the process is forcibly terminated after `WORKER_SHUTDOWN_GRACE_MS` and the job is left for lease-based recovery. This is process-crash behaviour, not exactly-once execution: side-effecting handlers still require external idempotency and must tolerate retries. Do not run the worker inside the API process: they have independent lifecycles and resource limits.
 
 ## Delivery semantics
 
