@@ -1,6 +1,6 @@
 # Durable Worker Queue
 
-**Status:** IMPLEMENTED LIBRARY FOUNDATION; NOT YET WIRED INTO A DEPLOYED WORKER PROCESS. The API source now contains PostgreSQL queue operations and a handler runner. Deployment health/readiness integration and live trading handlers remain out of scope.
+**Status:** WORKER PROCESS FOUNDATION IMPLEMENTED; deployment and production handler coverage remain operator tasks. The API source contains PostgreSQL queue operations, a runner, a dedicated process entrypoint, persisted process heartbeats and API readiness checks. No live-trading handler is registered.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ The queue uses the existing PostgreSQL database rather than adding a broker. It 
 
 - `WorkerQueue`: enqueue, atomic claim using `FOR UPDATE SKIP LOCKED`, lease heartbeat, completion, retry/dead-letter transitions and cancellation.
 - `WorkerRunner`: registered handler dispatch, lease heartbeat while handlers run, fail-closed behaviour for unknown kinds, idle backoff and abortable polling.
-- `WorkerJob`: durable state, JSON payload, priority, availability, attempts, lease metadata, idempotency key, bounded error summary and completion timestamp.
+- `WorkerJob`: durable state, JSON payload, priority, availability, attempts, lease metadata, idempotency key, bounded error summary and completion timestamp.\n- `WorkerHeartbeat`: per-process status and last-seen timestamp; API readiness requires at least one fresh RUNNING heartbeat.\n- `apps/api/src/worker-main.ts`: dedicated worker process with unique process identity, periodic heartbeat, signal-aware loop shutdown and structured lifecycle logs.\n- The only built-in handler is `system.healthcheck`, a payload-validated no-side-effect handler. All other job kinds fail closed until explicitly registered.
 
 ## Delivery semantics
 
@@ -23,7 +23,7 @@ Enqueue idempotency is scoped to `(queue, idempotencyKey)`. Reusing a key with a
 - Unknown handler kinds fail rather than being silently acknowledged.
 - Never put private keys, API secrets or raw authentication tokens in queue payloads.
 - Generic worker jobs must not submit live trades. Trading execution requires a separately reviewed execution gateway with risk evaluation, permit enforcement, reconciliation and kill-switch controls.
-- A queue library is not proof that a worker is deployed or healthy. Production readiness requires a supervised worker process, heartbeat monitoring, queue-depth/age metrics, graceful shutdown, and integration tests against PostgreSQL.
+- A queue library is not proof that a worker is deployed or healthy. Production readiness additionally requires a process supervisor, queue-depth/age metrics, alerting, and deployment-level restart tests. The worker writes its own heartbeat; the API marks readiness degraded if no heartbeat is fresh.
 
 ## Remaining work
 
