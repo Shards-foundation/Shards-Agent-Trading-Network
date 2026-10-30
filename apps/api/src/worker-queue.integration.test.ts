@@ -115,7 +115,9 @@ describe("WorkerQueue PostgreSQL integration", () => {
         `;
 
         // The next claim reaps a crashed final attempt before selecting work.
-        await expect(queue.claim(queueName, "worker-three")).resolves.toBeNull();
+        await expect(
+          queue.claim(queueName, "worker-three"),
+        ).resolves.toBeNull();
         const persisted = await prisma.$queryRaw<
           Array<{ status: string; attempts: number }>
         >`
