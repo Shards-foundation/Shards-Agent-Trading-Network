@@ -118,6 +118,21 @@ describe("SATN API", () => {
       .toBe("read-only-review");
   });
 
+  it("exposes read-only Polymarket discovery with bounded pagination", async () => {
+    const provider = { listMarkets: vi.fn().mockResolvedValue({
+      venue: "polymarket", source: "https://gamma-api.polymarket.com/markets", retrievedAt: "2026-10-30T12:00:00.000Z",
+      limit: 10, offset: 0, nextOffset: null, executionEnabled: false, items: []
+    }) };
+    const testApp = buildServer({ polymarketMarketProvider: provider });
+    try {
+      const response = await testApp.inject({ method: "GET", url: "/v1/markets?venue=polymarket&limit=10&offset=0" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ venue: "polymarket", executionEnabled: false, items: [] });
+      expect(provider.listMarkets).toHaveBeenCalledWith({ limit: 10, offset: 0 });
+      expect((await testApp.inject({ method: "GET", url: "/v1/markets?venue=uniswap" })).statusCode).toBe(422);
+    } finally { await testApp.close(); }
+  });
+
   it("returns read-only market data and identifies cache misses", async () => {
     const provider: MarketDataProvider = { getMarketSnapshot: vi.fn().mockResolvedValue(snapshot) };
     const testApp = buildServer({ marketDataProvider: provider });
