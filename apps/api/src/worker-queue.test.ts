@@ -69,6 +69,15 @@ describe("WorkerQueue", () => {
     expect(params).toContain(JSON.stringify({ safe: true }));
   });
 
+  it("fails closed when an idempotency key is reused with a different payload", async () => {
+    const db = fakeDb();
+    fakeDbRef = db;
+    db.query.mockResolvedValue([]);
+    const queue = new WorkerQueue(db);
+    await expect(queue.enqueue({ queue: "default", kind: "sample", payload: { value: "different" }, idempotencyKey: "same-key" }))
+      .rejects.toThrow("enqueue returned no persisted job");
+  });
+
   it("claims work with SKIP LOCKED and recovers expired running leases", async () => {
     const db = fakeDb();
     fakeDbRef = db;
@@ -80,6 +89,16 @@ describe("WorkerQueue", () => {
     const [sql] = db.query.mock.calls[0][0] as [string];
     expect(sql).toContain("FOR UPDATE SKIP LOCKED");
     expect(sql).toContain('"status" = \'RUNNING\' AND "lockedAt" <');
+  });
+
+  it("returns the renewed timestamp so a worker can complete with the current lease", async () => {
+    const db = fakeDb();
+    fakeDbRef = db;
+    const renewed = new Date("2026-10-30T12:00:30.000Z");
+    db.query.mockResolvedValue([{ lockedAt: renewed }]);
+    const queue = new WorkerQueue(db);
+    await expect(queue.heartbeat("e0a4c9d0-3c5e-4df9-8e15-6ad8bcbde111", "worker-a:claim-token", new Date()))
+      .resolves.toEqual(renewed);
   });
 
   it("does not allow a stale lease to complete a job", async () => {
