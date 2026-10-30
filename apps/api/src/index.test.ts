@@ -18,7 +18,7 @@ describe("SATN API", () => {
   let app: ReturnType<typeof buildServer>;
 
   beforeEach(() => {
-    app = buildServer();
+    app = buildServer({ databaseProbe: null, queueProbe: null });
   });
 
   afterEach(async () => {
