@@ -38,12 +38,12 @@ function dateLabel(value: string | null): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "End date unavailable" : `Ends ${date.toLocaleDateString("en-GB")}`;
 }
-function validMarket(value: unknown): value is PolymarketMarket {
+function formatTimestamp(value: string): string {\n  const date = new Date(value);\n  return Number.isNaN(date.getTime()) ? "Time unavailable" : date.toLocaleString("en-GB");\n}\nfunction validMarket(value: unknown): value is PolymarketMarket {
   if (!value || typeof value !== "object") return false;
   const market = value as Partial<PolymarketMarket>;
   return typeof market.id === "string" &&
     typeof market.conditionId === "string" &&
-    typeof market.question === "string" &&
+    (typeof market.question === "string" || market.question === null) &&
     Array.isArray(market.outcomes) && market.outcomes.every((x) => typeof x === "string") &&
     Array.isArray(market.outcomePrices) && market.outcomePrices.every((x) => typeof x === "string") &&
     market.outcomes.length > 0 && market.outcomes.length === market.outcomePrices.length &&
@@ -114,7 +114,7 @@ export default function PolymarketPanel() {
           {loading ? "Refreshing…" : "Refresh markets"}
         </button>
       </div>
-      {retrievedAt ? <p className="poly-market-meta">Retrieved {dateLabel(retrievedAt)} · {new Date(retrievedAt).toLocaleTimeString("en-GB")}</p> : null}
+      {retrievedAt ? <p className="poly-market-meta">Retrieved {formatTimestamp(retrievedAt)}</p> : null}
       {error ? <p className="feed-error" role="alert">{error}</p> : null}
       {!loaded && loading ? <p className="feed-empty" aria-live="polite">Loading public Polymarket metadata…</p> : null}
       {loaded && items.length === 0 && !error ? <p className="feed-empty">No markets returned for this page.</p> : null}
@@ -143,7 +143,7 @@ export default function PolymarketPanel() {
             </div>
             <div className="poly-market-footer">
               <span>{dateLabel(market.endDate)}</span>
-              {market.slug ? <a href={`https://polymarket.com/market/${encodeURIComponent(market.slug)}`} target="_blank" rel="noreferrer">Open market ↗</a> : null}
+              {market.slug ? <a href={`https://gamma-api.polymarket.com/markets/${encodeURIComponent(market.id)}`} target="_blank" rel="noreferrer">Gamma record ↗</a> : null}
             </div>
           </article>
         ))}
