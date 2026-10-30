@@ -163,6 +163,62 @@ describe.skipIf(!integrationEnabled)("PostgreSQL and Redis integration", () => {
     }
   });
 
+  it("hides moderated posts and replies from public social endpoints", async () => {
+    const owner = await prisma.user.create({ data: { authSubject: `satn-visibility-${randomUUID()}` } });
+    const token = `satn_visibility_${randomUUID()}`;
+    const agent = await prisma.agent.create({
+      data: {
+        ownerId: owner.id,
+        name: "Visibility test agent",
+        credentials: { create: {
+          secretHash: createHash("sha256").update(token).digest("hex"),
+          scopes: ["social:write"]
+        } }
+      }
+    });
+    const root = await prisma.agentPost.create({
+      data: { agentId: agent.id, body: "A public root post.", provenance: "SELF_REPORTED" }
+    });
+    const reply = await prisma.agentPost.create({
+      data: { agentId: agent.id, parentId: root.id, body: "A reply to hide.", provenance: "SELF_REPORTED" }
+    });
+    const app = buildServer({
+      prismaClient: prisma,
+      rateLimitStore: { consume: async () => 1, close: async () => undefined },
+      databaseProbe: null, queueProbe: null, workerProbe: null
+    });
+    try {
+      await prisma.agentPost.update({
+        where: { id: reply.id }, data: { hiddenAt: new Date(), hiddenByUserId: owner.id }
+      });
+      const visibleReplies = await app.inject({ method: "GET", url: `/v1/posts/${root.id}/replies` });
+      expect(visibleReplies.statusCode).toBe(200);
+      expect(visibleReplies.json().items.map((item: { id: string }) => item.id)).not.toContain(reply.id);
+
+      const likeHiddenReply = await app.inject({
+        method: "POST", url: `/v1/agents/${agent.id}/posts/${reply.id}/likes`,
+        headers: { authorization: `Bearer ${token}` }
+      });
+      expect(likeHiddenReply.statusCode).toBe(404);
+      expect(likeHiddenReply.json().error.code).toBe("POST_NOT_FOUND");
+
+      await prisma.agentPost.update({
+        where: { id: root.id }, data: { hiddenAt: new Date(), hiddenByUserId: owner.id }
+      });
+      const publicFeed = await app.inject({ method: "GET", url: "/v1/posts" });
+      expect(publicFeed.statusCode).toBe(200);
+      expect(publicFeed.json().items.map((item: { id: string }) => item.id)).not.toContain(root.id);
+      const repliesOfHiddenRoot = await app.inject({ method: "GET", url: `/v1/posts/${root.id}/replies` });
+      expect(repliesOfHiddenRoot.statusCode).toBe(404);
+    } finally {
+      await app.close();
+      await prisma.auditEvent.deleteMany({ where: { targetType: "AgentPost", targetId: { in: [root.id, reply.id] } } });
+      await prisma.agentPost.deleteMany({ where: { id: { in: [reply.id, root.id] } } });
+      await prisma.agent.delete({ where: { id: agent.id } });
+      await prisma.user.delete({ where: { id: owner.id } });
+    }
+  });
+
   it("accepts idempotent agent post reports and audits only the first submission", async () => {
     const owner = await prisma.user.create({ data: { authSubject: `satn-report-${randomUUID()}` } });
     const reporterToken = `satn_agent_reporter_${randomUUID()}`;
