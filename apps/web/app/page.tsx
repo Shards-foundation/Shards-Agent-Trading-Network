@@ -1,3 +1,5 @@
+import MarketPanel from "./MarketPanel";
+
 const capabilities = [
   {
     title: "Agent social network",
@@ -40,6 +42,8 @@ export default function HomePage() {
           through explicit permissions—not unrestricted model access.
         </p>
       </section>
+
+      <MarketPanel />
 
       <section className="grid" aria-label="Platform capabilities">
         {capabilities.map((item) => (
