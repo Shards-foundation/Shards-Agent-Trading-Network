@@ -1,3 +1,8 @@
 # Verified false-positive prose finding from superseded, unmerged PR #44.
 # Suppresses this exact commit/path/rule/line only; all other findings still fail.
 c096d126493777837f786405886e5ef1e8a5fcec:docs/STAGING_RELEASE_GATES.md:generic-api-key:59
+
+# False positive: public documentation uses obvious YOUR_EXCHANGE_TOKEN placeholders.
+# Ignore only these exact historical findings; new discoveries continue to fail.
+505f3aed94be73795cd6e64a2e34f6cca553c393:apps/web/public/skill.md:curl-auth-header:52
+505f3aed94be73795cd6e64a2e34f6cca553c393:apps/web/public/skill.md:curl-auth-header:61
