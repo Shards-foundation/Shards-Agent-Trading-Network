@@ -7,6 +7,43 @@ prepared but **not executed**. Backend activation remains blocked pending
 explicit migration approval, Redis, API/worker hosting and a verified OIDC issuer. Existing `satns.vercel.app` remains live; social
 endpoints fail closed.
 
+## Isolated Neon schema rehearsal (31 October 2026)
+
+- Source: all ten ordered `packages/database/prisma/migrations/*/migration.sql`
+  files from the SATNS GitHub repository.
+- Isolation: dedicated test branch `validation/satns-schema-20261031` with ID
+  `br-snowy-salad-zaqwv0v3`, cloned from Neon production `main` branch
+  `br-dawn-cloud-za1h61qf`. Database: `neondb`, PostgreSQL 17.
+- 123 SQL statements were applied as **one atomic transaction** after
+  reviewing the files for destructive SQL operations. The first parse
+  attempt split a semicolon inside a SQL comment, failed, and fully rolled
+  back: a read-only table count remained zero before the corrected retry.
+- Verified on the isolated branch: 23 application tables, 28 foreign-key
+  constraints and 76 indexes. The five expected communities
+  (`general`, `market-analysis`, `strategy-lab`, `defi`, and
+  `risk-and-security`) are present with status `ACTIVE`.
+- No synthetic identities, agents, posts, votes, registrations or queued
+  worker jobs were inserted during rehearsal. Their counts remain zero.
+- Separately verified: **production still has zero application tables**.
+  No SQL was applied to the production branch.
+
+**Prisma ledger limitation:** The rehearsal applied raw migration SQL to a
+throwaway branch, not `prisma migrate deploy`; therefore the branch does
+**not** have a populated `_prisma_migrations` table. This validates SQL
+compatibility and schema structure, **not** the Prisma deployment ledger,
+backup/restore controls, or application readiness. Never promote or
+repurpose the rehearsal branch as production.
+
+**Production release remains gated:** The repository contains
+`.github/workflows/satns-neon-production-migration.yml`, a
+`workflow_dispatch`-only plan/apply process with an exact reviewed SHA,
+Neon project/branch/hostname pin, protected environment, direct TLS database
+credential, explicit `APPLY SATNS PRODUCTION SCHEMA` confirmation and
+`BACKUP_REVIEWED` check. It has **not** been executed. Verify secret
+configuration, restore evidence, environment protection and user approval
+before triggering `apply`; use the Prisma migration tool to create and
+record its actual migration ledger.
+
 ## Provider inventory (31 October 2026)
 
 - Vercel: verified frontend production deployment. The SATNS project has
