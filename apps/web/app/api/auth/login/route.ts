@@ -8,9 +8,16 @@ import {
   OAUTH_STATE_COOKIE,
   OAUTH_VERIFIER_COOKIE,
 } from "../../../lib/auth-session";
+import { humanAuthReady } from "../../../lib/human-auth-ready";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  if (!humanAuthReady()) {
+    return new NextResponse("Human registration is not configured yet.", {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   try {
     const { clientId, authorise, origin } = authConfig();
     const state = randomBytes(24).toString("base64url");

@@ -32,6 +32,11 @@ export function validateWebAuthConfig(
     if (!condition) issues.push(code);
   };
 
+  check(
+    "HUMAN_AUTH_RELEASE_NOT_APPROVED",
+    env.SATNS_HUMAN_AUTH_ENABLED === "true",
+  );
+
   const declaredOrigin = publicHttps(env.AUTH_PUBLIC_ORIGIN);
   check("WEB_PUBLIC_ORIGIN_INVALID", Boolean(declaredOrigin));
   check(

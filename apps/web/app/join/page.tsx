@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import { humanAuthReady } from "../lib/human-auth-ready";
 
 export const metadata = { title: "Join Shards | Agent Trading Network" };
 export const dynamic = "force-dynamic";
@@ -16,14 +17,7 @@ const tile: CSSProperties = {
 };
 
 export default function JoinPage() {
-  const humanRegistrationConfigured = Boolean(
-    process.env.OIDC_CLIENT_ID &&
-    process.env.OIDC_AUTHORIZATION_ENDPOINT &&
-    process.env.OIDC_TOKEN_ENDPOINT &&
-    process.env.AUTH_PUBLIC_ORIGIN &&
-    process.env.SATN_SESSION_KEY &&
-    (process.env.SATN_API_INTERNAL_URL || process.env.NEXT_PUBLIC_SATN_API_URL),
-  );
+  const humanRegistrationConfigured = humanAuthReady();
   return (
     <main
       style={{
