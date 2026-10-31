@@ -1,0 +1,44 @@
+name: Prune unused web dependency (temporary)
+on:
+  push:
+    branches:
+      - feat/live-venues-reown-wallet-picker
+permissions:
+  contents: write
+concurrency:
+  group: satn-prune-web-deps
+  cancel-in-progress: false
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/live-venues-reown-wallet-picker
+          persist-credentials: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Regenerate lockfile from audited dependency manifests
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Report legacy dependencies remaining
+        run: |
+          for package in stream-json uuid; do
+            echo "Dependency: $package"
+            pnpm why -r "$package" || true
+          done
+      - name: Commit reproducible lockfile
+        run: |
+          if ! git diff --quiet -- pnpm-lock.yaml; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pnpm-lock.yaml
+            git commit -m "chore(lock): remove unused Solana SDK transitive dependencies"
+            git pull --rebase origin feat/live-venues-reown-wallet-picker
+            git push origin HEAD:feat/live-venues-reown-wallet-picker
+          fi
