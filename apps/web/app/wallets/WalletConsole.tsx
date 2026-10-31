@@ -533,7 +533,8 @@ export default function WalletConsole() {
           ) : (
             <p className="wallet-detail">
               Mobile: use installed wallets in their in-app browser. The
-              Reown catalogue supports EVM cross-app connections once its project is configured.
+              Reown catalogue supports EVM cross-app connections once its
+              project is configured.
             </p>
           )}
         </article>
