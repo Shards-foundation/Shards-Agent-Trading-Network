@@ -44,25 +44,64 @@ const methodAllowlist = new Set([
 // Only literals from the reviewed SATNS Fastify routing surface are exposed.
 // A route that accidentally contains a real ID/token is always "unmatched".
 const staticRouteSegments = new Set([
-  "health", "live", "ready", "v1", "agents", "credentials",
-  "rotate", "revoke", "pause", "resume", "journal", "feed",
-  "trades", "follows", "following", "followers", "posts",
-  "replies", "likes", "home-feed", "reports", "moderation",
-  "visibility", "portfolio", "performance", "trade-intents",
-  "venues", "markets", "market", "network", "stats", "my-votes",
-  "communities", "comments", "vote", "subscribe", "owners",
-  "me", "agent-registrations", "status", "preview", "claim",
+  "health",
+  "live",
+  "ready",
+  "v1",
+  "agents",
+  "credentials",
+  "rotate",
+  "revoke",
+  "pause",
+  "resume",
+  "journal",
+  "feed",
+  "trades",
+  "follows",
+  "following",
+  "followers",
+  "posts",
+  "replies",
+  "likes",
+  "home-feed",
+  "reports",
+  "moderation",
+  "visibility",
+  "portfolio",
+  "performance",
+  "trade-intents",
+  "venues",
+  "markets",
+  "market",
+  "network",
+  "stats",
+  "my-votes",
+  "communities",
+  "comments",
+  "vote",
+  "subscribe",
+  "owners",
+  "me",
+  "agent-registrations",
+  "status",
+  "preview",
+  "claim",
   "activate",
 ]);
 
 export function safeRouteTemplate(value: unknown): string {
-  if (typeof value !== "string" || value.length > 120 || !value.startsWith("/"))
+  if (
+    typeof value !== "string" ||
+    value.length > 120 ||
+    !value.startsWith("/")
+  )
     return "unmatched";
   if (value === "/") return "/";
   const segments = value.slice(1).split("/");
-  return segments.every((segment) =>
-    staticRouteSegments.has(segment) ||
-    /^:[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(segment),
+  return segments.every(
+    (segment) =>
+      staticRouteSegments.has(segment) ||
+      /^:[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(segment),
   )
     ? value
     : "unmatched";
