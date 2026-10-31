@@ -7,11 +7,17 @@ import {
   verifySolanaWalletProof,
 } from "./wallet-crypto.js";
 import type { OwnerIdentityResult } from "./onboarding.js";
+import { canonicalEvmAddress, newEvmWalletChallenge, verifyEvmWalletProof, SUPPORTED_EVM_CHAINS } from "./wallet-evm.js";
 
 const uuid = z.string().uuid();
-const challengeInput = z
-  .object({ chain: z.literal("SOLANA"), address: z.string().min(32).max(44) })
-  .strict();
+const challengeInput = z.discriminatedUnion("chain", [
+  z.object({ chain: z.literal("SOLANA"), address: z.string().min(32).max(44) }).strict(),
+  z.object({
+    chain: z.literal("EVM"),
+    address: z.string().length(42),
+    chainId: z.number().int().refine((id) => SUPPORTED_EVM_CHAINS.some((allowed) => allowed === id)),
+  }).strict(),
+]);
 const proofInput = z
   .object({ challengeId: uuid, signature: z.string().min(80).max(100) })
   .strict();
@@ -99,8 +105,12 @@ export function registerWalletRoutes({
     const subject = await owner(request, reply);
     if (!subject) return;
     const input = challengeInput.safeParse(request.body);
-    if (!input.success || !decodeSolanaAddress(input.data.address))
-      return reply.code(400).send(fail("INVALID_SOLANA_ADDRESS", request.id));
+    if (!input.success)
+      return reply.code(400).send(fail("INVALID_WALLET_CHALLENGE", request.id));
+    const address = input.data.chain === "EVM"
+      ? canonicalEvmAddress(input.data.address)
+      : decodeSolanaAddress(input.data.address) ? input.data.address : null;
+    if (!address) return reply.code(400).send(fail("INVALID_WALLET_ADDRESS", request.id));
     try {
       const identity = await prisma!.user.upsert({
         where: { authSubject: subject },
@@ -120,16 +130,14 @@ export function registerWalletRoutes({
       if (recent >= 5)
         return reply.code(429).send(fail("CHALLENGE_RATE_LIMITED", request.id));
       const expiresAt = new Date(current.getTime() + ttlMs);
-      const message = newWalletChallenge(
-        input.data.address,
-        webOrigin,
-        expiresAt,
-      );
+      const message = input.data.chain === "EVM"
+        ? newEvmWalletChallenge(address, input.data.chainId, webOrigin, current, expiresAt)
+        : newWalletChallenge(address, webOrigin, expiresAt);
       const challenge = await prisma!.walletChallenge.create({
         data: {
           ownerId: identity.id,
-          chain: "SOLANA",
-          address: input.data.address,
+          chain: input.data.chain,
+          address,
           message,
           expiresAt,
         },
@@ -169,21 +177,16 @@ export function registerWalletRoutes({
           expiresAt: { gt: now() },
         },
       });
-      if (
-        !challenge ||
-        challenge.chain !== "SOLANA" ||
-        !verifySolanaWalletProof(
-          challenge.address,
-          challenge.message,
-          input.data.signature,
-        )
-      )
-        return reply
-          .code(400)
-          .send(fail("PROOF_INVALID_OR_EXPIRED", request.id));
+      const validProof = challenge?.chain === "SOLANA"
+        ? verifySolanaWalletProof(challenge.address, challenge.message, input.data.signature)
+        : challenge?.chain === "EVM"
+          ? await verifyEvmWalletProof(challenge.address, challenge.message, input.data.signature)
+          : false;
+      if (!challenge || !validProof)
+        return reply.code(400).send(fail("PROOF_INVALID_OR_EXPIRED", request.id));
       const existing = await prisma!.verifiedWallet.findUnique({
         where: {
-          chain_address: { chain: "SOLANA", address: challenge.address },
+          chain_address: { chain: challenge.chain, address: challenge.address },
         },
         select: { ownerId: true },
       });
@@ -206,7 +209,7 @@ export function registerWalletRoutes({
           },
           create: {
             ownerId: identity.id,
-            chain: "SOLANA",
+            chain: challenge.chain,
             address: challenge.address,
           },
           update: { status: "ACTIVE", lastVerifiedAt: now() },
