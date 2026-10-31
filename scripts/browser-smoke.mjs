@@ -153,7 +153,7 @@ export async function runBrowserSmoke(webOrigin) {
         noMockPosts: document.querySelectorAll(".satn-post").length === 0,
         noFabricatedCounts: !document.querySelector(".satn-stat-bottom .live"),
         retryButton: [...document.querySelectorAll("button")].some(b => b.innerText.includes("Retry feed")),
-        errorVisible: document.body.innerText.includes("Network statistics are temporarily unavailable")
+        errorVisible: document.body.innerText.includes("Counts and communities remain unverified.")
       })`,
     );
     assert.deepEqual(state, {
