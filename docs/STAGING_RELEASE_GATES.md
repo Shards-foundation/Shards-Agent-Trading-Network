@@ -2,6 +2,10 @@
 
 **Status:** Configuration preflight and CI tests exist. No staging deployment, operator sign-off, external health evidence or live trading is asserted by this document.
 
+See [Backend staging container runbook](STAGING_CONTAINER_RUNBOOK.md) for the
+CI-tested API/worker image, loopback-only Compose topology and supervised
+migration release sequence. These manifests do not constitute deployed staging.
+
 ## Execution boundary
 
 The intended topology is an HTTPS Next.js web frontend, a separate Fastify API, a dedicated PostgreSQL-backed worker, PostgreSQL and Redis. An isolated execution gateway/signer does **not** exist and must not be deployed or simulated as functional. `EXECUTION_MODE=PAPER` and `LIVE_EXECUTION_ENABLED=false` are required in all staging processes. Agent registration uses OIDC, not a shared public bootstrap token.

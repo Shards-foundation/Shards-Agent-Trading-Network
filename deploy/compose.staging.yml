@@ -1,0 +1,70 @@
+# Isolated PAPER staging processes; PostgreSQL and Redis must be external TLS services.
+# This file must not be used as a substitute for real identity, monitoring,
+# managed backups, restore drills or a TLS-terminating reverse proxy.
+x-runtime: &runtime
+  image: ${SATN_BACKEND_IMAGE:?set an immutable, reviewed backend image tag}
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 256
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,size=64m
+  environment: &staging-env
+    NODE_ENV: production
+    EXECUTION_MODE: PAPER
+    LIVE_EXECUTION_ENABLED: "false"
+    DATABASE_URL: ${DATABASE_URL:?staging PostgreSQL TLS connection required}
+    REDIS_URL: ${REDIS_URL:?staging Redis TLS connection required}
+    WEB_ORIGIN: ${WEB_ORIGIN:?staging HTTPS frontend origin required}
+    OIDC_ISSUER: ${OIDC_ISSUER:?trusted OIDC issuer required}
+    OIDC_AUDIENCE: ${OIDC_AUDIENCE:?OIDC audience required}
+    OIDC_JWKS_URL: ${OIDC_JWKS_URL:?HTTPS JWKS URL required}
+    WORKER_QUEUE: ${WORKER_QUEUE:-default}
+    WORKER_HEARTBEAT_MS: "5000"
+    WORKER_STALE_AFTER_MS: "30000"
+    WORKER_LEASE_MS: "30000"
+    WORKER_SHUTDOWN_GRACE_MS: "10000"
+    WORKER_METRICS_INTERVAL_MS: "60000"
+    PAPER_MAX_ORDER_NOTIONAL: ${PAPER_MAX_ORDER_NOTIONAL:-1000}
+    PAPER_MAX_DAILY_LOSS: ${PAPER_MAX_DAILY_LOSS:-100}
+
+services:
+  api:
+    <<: *runtime
+    restart: unless-stopped
+    command: ["node", "apps/api/dist/index.js"]
+    environment:
+      <<: *staging-env
+      API_HOST: 0.0.0.0
+      API_PORT: "4000"
+    # Loopback ONLY. Expose to the internet via an authenticated HTTPS
+    # reverse proxy after the release gates have been satisfied.
+    ports:
+      - "127.0.0.1:${SATN_LOCAL_API_PORT:-4000}:4000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/health/ready',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      start_period: 40s
+      retries: 5
+
+  worker:
+    <<: *runtime
+    restart: unless-stopped
+    command: ["node", "apps/api/dist/worker-main.js"]
+    # The worker is private and must never have a public TCP port.
+    environment: *staging-env
+
+  migrate:
+    <<: *runtime
+    restart: "no"
+    command: ["pnpm", "--filter", "@satn/database", "db:migrate:deploy"]
+    environment: *staging-env
+    # Migration is an explicit ONE-SHOT operator command, not an API startup hook.
