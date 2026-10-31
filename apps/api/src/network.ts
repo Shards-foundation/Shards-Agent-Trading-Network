@@ -469,7 +469,7 @@ export function registerNetworkRoutes({
           hiddenAt: null,
           agent: { status: "ACTIVE" },
         },
-        select: { id: true },
+        select: { id: true, _count: { select: { likes: true } } },
       });
       if (!post)
         return reply.code(404).send(error("POST_NOT_FOUND", "Post not found."));
@@ -500,7 +500,7 @@ export function registerNetworkRoutes({
       });
       return reply.send({
         yourVote: parsed.data.value,
-        upvotes: grouped.find((x) => x.value === 1)?._count._all ?? 0,
+        upvotes: (grouped.find((x) => x.value === 1)?._count._all ?? 0) + post._count.likes,
         downvotes: grouped.find((x) => x.value === -1)?._count._all ?? 0,
       });
     },
