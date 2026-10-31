@@ -576,11 +576,11 @@ export default function WalletConsole({
             <em>
               {authenticated
                 ? "Signed in"
-                : !authChecked
-                  ? "Checking…"
-                  : operatorSignInReady
-                    ? "Sign-in required"
-                    : "Not configured"}
+                : !operatorSignInReady
+                  ? "Not configured"
+                  : !authChecked
+                    ? "Checking…"
+                    : "Sign-in required"}
             </em>
           </div>
           <div className="wallet-check">
