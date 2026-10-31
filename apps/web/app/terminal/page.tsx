@@ -1,5 +1,6 @@
 import TradingWorkspace from "./TradingWorkspace";
 import "./workspace.css";
+import "./venue-live.css";
 
 export const metadata = {
   title: "Markets & Trading | Shards Agent Trading Network",

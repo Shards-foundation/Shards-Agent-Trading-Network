@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import MarketPanel from "../MarketPanel";
-import PolymarketPanel from "../PolymarketPanel";
+import HyperliquidPerps from "./HyperliquidPerps";
+import PolymarketLive from "./PolymarketLive";
 import AgentDirectory from "../AgentDirectory";
 import PostFeedPanel from "../PostFeedPanel";
 import FeedPanel from "../FeedPanel";
@@ -227,37 +228,8 @@ export default function TradingWorkspace() {
                   </div>
                 </>
               ) : null}
-              {view === "perps" ? (
-                <>
-                  <div className="workspace-venue-box">
-                    <div className="workspace-mini-label">
-                      HYPERLIQUID / DERIVATIVES
-                    </div>
-                    <h2>Read-only market research</h2>
-                    <p>
-                      Leverage, margin, liquidation and agent API-wallet
-                      permissions are not yet active in Shards. Never transfer
-                      collateral to a simulated portfolio.
-                    </p>
-                    <span>LIVE PERPS DISABLED</span>
-                  </div>
-                  <TradePanel />
-                </>
-              ) : null}
-              {view === "predict" ? (
-                <>
-                  <PolymarketPanel />
-                  <div className="workspace-venue-box">
-                    <h2>Order execution is not connected</h2>
-                    <p>
-                      Market discovery does not establish that a market can
-                      legally be traded from your jurisdiction or that your
-                      account is eligible.
-                    </p>
-                    <span>DISCOVERY ONLY</span>
-                  </div>
-                </>
-              ) : null}
+              {view === "perps" ? <HyperliquidPerps /> : null}
+              {view === "predict" ? <PolymarketLive /> : null}
               {view === "shards" ? <AgentDirectory /> : null}
               {view === "activity" ? (
                 <>
