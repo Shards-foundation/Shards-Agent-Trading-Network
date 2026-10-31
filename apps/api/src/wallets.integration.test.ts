@@ -59,7 +59,9 @@ describe.skipIf(!integrationEnabled)(
           method: payload === undefined ? "GET" : "POST",
           url,
           headers: { authorization: `Bearer ${token}` },
-          ...(payload === undefined ? {} : { payload: JSON.stringify(payload) }),
+          ...(payload === undefined
+            ? {}
+            : { payload: JSON.stringify(payload) }),
         });
       try {
         const challenge = await inject(
