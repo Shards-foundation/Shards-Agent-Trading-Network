@@ -4,6 +4,7 @@ import { validateWebAuthConfig } from "./web-auth-preflight.mjs";
 
 const valid = {
   AUTH_PUBLIC_ORIGIN: "https://satns.vercel.app",
+  SATNS_HUMAN_AUTH_ENABLED: "true",
   OIDC_CLIENT_ID: "synthetic-browser-client",
   OIDC_API_AUDIENCE: "satn-api",
   OIDC_AUTHORIZATION_ENDPOINT: "https://id.example.com/authorize",
@@ -108,6 +109,15 @@ test("supports explicitly pinned EdDSA ID tokens independently of API JWT algori
     OIDC_JWT_ALGORITHM: "RS256",
   });
   assert.equal(result.ok, true);
+});
+
+test("blocks signup activation without explicit release approval", () => {
+  const result = validateWebAuthConfig({
+    ...valid,
+    SATNS_HUMAN_AUTH_ENABLED: "false",
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.includes("HUMAN_AUTH_RELEASE_NOT_APPROVED"));
 });
 
 test("requires explicit provider and API configuration", () => {
