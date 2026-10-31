@@ -1,0 +1,38 @@
+name: SATNS public prelaunch audit (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+
+jobs:
+  public-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Test public audit fail-closed contract
+        run: node --test scripts/launch-public-audit.test.mjs
+      - name: Probe GitHub governance and public prelaunch endpoints
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/launch-public-audit.mjs | tee satns-public-launch-audit.json
+      - name: Preserve redacted evidence even if release remains blocked
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: satns-public-launch-audit
+          path: satns-public-launch-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
