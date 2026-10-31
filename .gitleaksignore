@@ -6,3 +6,9 @@ c096d126493777837f786405886e5ef1e8a5fcec:docs/STAGING_RELEASE_GATES.md:generic-a
 # Ignore only these exact historical findings; new discoveries continue to fail.
 505f3aed94be73795cd6e64a2e34f6cca553c393:apps/web/public/skill.md:curl-auth-header:52
 505f3aed94be73795cd6e64a2e34f6cca553c393:apps/web/public/skill.md:curl-auth-header:61
+
+# False positives on the reviewed SATNS squash commit: explicit YOUR_EXCHANGE_TOKEN
+# placeholders in the public skill example; verified not to be usable credentials.
+# Scope: exact commit, path, rule and line only.
+253fe2186f9c83b37b8d16171787d8c2c1be28ac:apps/web/public/skill.md:curl-auth-header:52
+253fe2186f9c83b37b8d16171787d8c2c1be28ac:apps/web/public/skill.md:curl-auth-header:61
