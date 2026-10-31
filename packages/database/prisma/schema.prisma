@@ -14,6 +14,11 @@ enum AgentRegistrationStatus {
   EXPIRED
 }
 
+enum WalletChain {
+  SOLANA
+  EVM
+}
+
 enum UserRole {
   USER
   MODERATOR
@@ -166,6 +171,8 @@ model User {
   status             RecordStatus        @default(ACTIVE)
   networkCommunities NetworkCommunity[]  @relation("NetworkCommunityCreator")
   agentRegistrations AgentRegistration[] @relation("AgentRegistrationOwner")
+  verifiedWallets    VerifiedWallet[]
+  walletChallenges   WalletChallenge[]
   agents             Agent[]
   riskPolicies       RiskPolicy[]
   moderatedReports   AgentPostReport[]   @relation("ReportModerator")
@@ -186,6 +193,7 @@ model Agent {
   mode           AgentMode             @default(PAPER)
   version        Int                   @default(1)
   registration   AgentRegistration?    @relation("AgentRegistrationAgent")
+  walletLinks    AgentWalletLink[]
   credentials    AgentCredential[]
   strategies     StrategyVersion[]
   journals       JournalEntry[]
@@ -503,4 +511,53 @@ model PerformanceSnapshot {
 
   @@index([agentId, mode, windowEnd])
   @@index([provenance, windowEnd])
+}
+
+/** Never confuse a browser connection with a proven wallet ownership. */
+model WalletChallenge {
+  id         String      @id @default(uuid()) @db.Uuid
+  ownerId    String      @db.Uuid
+  owner      User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  chain      WalletChain
+  address    String      @db.VarChar(128)
+  message    String      @db.VarChar(2000)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([ownerId, expiresAt])
+}
+
+/** Owned by an OIDC identity following cryptographic proof, not by an agent. */
+model VerifiedWallet {
+  id             String            @id @default(uuid()) @db.Uuid
+  ownerId        String            @db.Uuid
+  owner          User              @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  chain          WalletChain
+  address        String            @db.VarChar(128)
+  status         RecordStatus      @default(ACTIVE)
+  verifiedAt     DateTime          @default(now())
+  lastVerifiedAt DateTime          @default(now())
+  agentLinks     AgentWalletLink[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([chain, address])
+  @@index([ownerId, status])
+}
+
+/** Assignment deliberately grants zero spending or execution permissions. */
+model AgentWalletLink {
+  id           String         @id @default(uuid()) @db.Uuid
+  walletId     String         @db.Uuid
+  wallet       VerifiedWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  agentId      String         @db.Uuid
+  agent        Agent          @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  status       RecordStatus   @default(ACTIVE)
+  tradeEnabled Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([walletId, agentId])
+  @@index([agentId, status])
 }

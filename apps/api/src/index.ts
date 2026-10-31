@@ -3,6 +3,7 @@ import { captureBackendException } from "./sentry.js";
 import { registerHttpTelemetry } from "./telemetry.js";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { registerOnboardingRoutes } from "./onboarding.js";
+import { registerWalletRoutes } from "./wallets.js";
 import { registerNetworkRoutes } from "./network.js";
 import {
   calculatePaperDailyLoss,
@@ -692,6 +693,13 @@ export function buildServer(options: BuildServerOptions = {}) {
     prisma: prismaClient,
     resolveOwnerIdentity,
     enforceSocialWriteLimit,
+  });
+  registerWalletRoutes({
+    app,
+    prisma: prismaClient,
+    resolveOwnerIdentity,
+    webOrigin: env.WEB_ORIGIN,
+    now: () => new Date(now()),
   });
   app.post("/v1/agents", async (request, reply) => {
     const ownerAuth = await resolveOwnerIdentity(
