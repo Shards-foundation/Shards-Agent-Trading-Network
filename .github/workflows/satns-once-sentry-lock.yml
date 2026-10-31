@@ -1,0 +1,59 @@
+name: SATNS one-time Sentry dependency lock and format
+on:
+  push:
+    branches:
+      - feat/satns-sentry-observability
+permissions:
+  contents: write
+jobs:
+  regenerate-lock:
+    if: github.repository == 'Shards-foundation/Shards-Agent-Trading-Network'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/satns-sentry-observability
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Recreate frozen-install-compatible lockfile
+        run: pnpm install --no-frozen-lockfile
+      - name: Format Sentry implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec prettier --write \
+            apps/api/src/index.ts \
+            apps/api/src/worker-main.ts \
+            apps/api/src/sentry.ts \
+            apps/api/src/sentry-privacy.ts \
+            apps/api/src/sentry-privacy.test.ts \
+            apps/api/package.json \
+            apps/web/package.json \
+            apps/web/next.config.ts \
+            apps/web/sentry-privacy.ts \
+            apps/web/tests/sentry-privacy.test.ts \
+            apps/web/instrumentation-client.ts \
+            apps/web/instrumentation.ts \
+            apps/web/sentry.server.config.ts \
+            apps/web/sentry.edge.config.ts \
+            apps/web/app/global-error.tsx \
+            docs/SATNS_SENTRY_OBSERVABILITY.md
+          pnpm exec prettier --check \
+            apps/api/src/sentry.ts \
+            apps/web/instrumentation.ts \
+            apps/web/app/global-error.tsx
+      - name: Commit reproducible dependency metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add pnpm-lock.yaml apps/api apps/web docs/SATNS_SENTRY_OBSERVABILITY.md
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore(observability): lock Sentry SDK and apply repository formatting'
+            git push origin HEAD:refs/heads/feat/satns-sentry-observability
+          fi
