@@ -62,7 +62,11 @@ describe("human OIDC signup release gate", () => {
     ["missing API", "SATN_API_INTERNAL_URL", ""],
     ["unsafe API", "SATN_API_INTERNAL_URL", "http://api.example.test/"],
     ["self-referential API", "SATN_API_INTERNAL_URL", origin],
-    ["API URL with path", "SATN_API_INTERNAL_URL", "https://api.example.test/v1"],
+    [
+      "API URL with path",
+      "SATN_API_INTERNAL_URL",
+      "https://api.example.test/v1",
+    ],
     ["public origin with path", "AUTH_PUBLIC_ORIGIN", `${origin}/somewhere`],
   ])("blocks %s before redirect", async (_reason, variable, value) => {
     vi.stubEnv(variable, value);
