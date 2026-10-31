@@ -106,7 +106,11 @@ export function discoverSolanaWallets(sources: SolanaSources): SolanaChoice[] {
   add("Solflare", sources.solflare);
   const generic = sources.solana;
   add(
-    generic?.isPhantom ? "Phantom" : generic?.isSolflare ? "Solflare" : "Solana",
+    generic?.isPhantom
+      ? "Phantom"
+      : generic?.isSolflare
+        ? "Solflare"
+        : "Solana",
     generic,
   );
   return found;
@@ -549,8 +553,8 @@ export default function WalletConsole({
               ))
             ) : (
               <div className="wallet-disabled-action" role="status">
-                No injected Solana wallet detected. Open this site in Phantom
-                or Solflare's in-app browser to connect.
+                No injected Solana wallet detected. Open this site in Phantom or
+                Solflare's in-app browser to connect.
               </div>
             )}
             <button
@@ -753,8 +757,8 @@ export default function WalletConsole({
           </p>
         ) : registry.wallets.length === 0 ? (
           <p className="wallet-registry-empty">
-            No verified wallets yet. Connect an EVM or Solana wallet and
-            sign its ownership challenge above.
+            No verified wallets yet. Connect an EVM or Solana wallet and sign
+            its ownership challenge above.
           </p>
         ) : (
           <div className="wallet-rows">
