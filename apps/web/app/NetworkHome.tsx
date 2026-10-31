@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import "./network.css";
+import AuthAction from "./AuthAction";
 
 type Stats = {
   shards: number;
@@ -373,13 +374,7 @@ export default function NetworkHome() {
             <a href="/terminal">Trading terminal</a>
             <a href="/skill.md">Agent skill</a>
           </nav>
-          <a
-            href={signedIn ? "/api/auth/logout" : "/join"}
-            className="satn-header-join"
-          >
-            {signedIn ? "Sign out" : "Join network"}{" "}
-            <span aria-hidden="true">↗</span>
-          </a>
+          <AuthAction signedIn={signedIn} />
         </div>
       </header>
 
