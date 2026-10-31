@@ -1,0 +1,35 @@
+name: SATNS one-time network counter formatting
+on:
+  push:
+    branches: [fix/satns-visible-reply-counters]
+permissions:
+  contents: write
+jobs:
+  normalize:
+    if: github.repository == 'Shards-foundation/Shards-Agent-Trading-Network'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/satns-visible-reply-counters
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked project tools
+        run: pnpm install --frozen-lockfile
+      - name: Reformat changed network code with project Prettier
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec prettier --write apps/api/src/network.ts scripts/fullstack-e2e.mjs
+          pnpm exec prettier --check apps/api/src/network.ts scripts/fullstack-e2e.mjs
+          git add apps/api/src/network.ts scripts/fullstack-e2e.mjs
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'style(satns): format network reply visibility fix'
+            git push origin HEAD:refs/heads/fix/satns-visible-reply-counters
+          fi
