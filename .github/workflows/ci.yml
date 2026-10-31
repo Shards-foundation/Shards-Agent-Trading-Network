@@ -76,6 +76,12 @@ jobs:
           pnpm --filter @satn/api exec node scripts/schema-attestation.mjs
       - name: Typecheck
         run: pnpm typecheck
+      - name: Print exact Prettier changes for signup gate (temporary)
+        if: github.head_ref == 'fix/satns-signup-release-gate'
+        run: |
+          pnpm exec prettier --write apps/web/app/lib/human-auth-ready.ts apps/web/tests/human-auth-release-gate.test.tsx
+          git diff -- apps/web/app/lib/human-auth-ready.ts apps/web/tests/human-auth-release-gate.test.tsx
+          exit 1
       - name: Check formatting on changed files
         env:
           BEFORE_SHA: ${{ github.event.before }}
