@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+const WalletKit = dynamic(() => import("./WalletKit"), { ssr: false });
 
 interface EvmProvider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -321,6 +323,8 @@ export default function WalletConsole() {
             Your keys remain in your wallet. Shards never asks for seed phrases,
             private keys or unrestricted signatures.
           </p>
+          {process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ? <WalletKit onVerified={refresh} /> :
+            <div className="wallet-multi"><strong>Full wallet catalogue</strong><p>Reown AppKit requires a Shards Reown project ID. Until configured, use an injected wallet below.</p></div>}
           <div className="wallet-choices">
             <button
               onClick={() => void connectSolana()}
