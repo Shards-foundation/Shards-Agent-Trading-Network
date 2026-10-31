@@ -17,7 +17,7 @@ function record(input: unknown): JsonRecord {
 }
 
 function decimal(input: unknown, optional = false): string | null {
-  if (optional && input === null) return null;
+  if (optional && (input === null || input === "NaN")) return null;
   if (
     typeof input !== "string" ||
     !DECIMAL.test(input) ||
