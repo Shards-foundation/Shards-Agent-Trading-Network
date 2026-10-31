@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import HyperliquidAccount from "./HyperliquidAccount";
 type Market = {
   symbol: string;
   mark: number;
@@ -191,6 +192,7 @@ export default function HyperliquidPerps() {
           </p>
         </aside>
       </div>
+      <HyperliquidAccount />
       <footer>
         Hyperliquid public API · Market refresh: 15 s · Depth refresh: 7.5 s
       </footer>
