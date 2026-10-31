@@ -120,6 +120,8 @@ jobs:
         run: pnpm --filter @satn/api exec node scripts/worker-lifecycle-smoke.mjs
       - name: Test fail-closed staging configuration preflight
         run: node --test scripts/staging-preflight.test.mjs
+      - name: Test SATNS frontend OIDC deployment preflight
+        run: node --test scripts/web-auth-preflight.test.mjs
       - name: Validate full-stack test script syntax
         run: node --check scripts/fullstack-e2e.mjs
       - name: Full-stack API to Next.js SSR end-to-end
