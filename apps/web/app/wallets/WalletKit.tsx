@@ -7,7 +7,8 @@ import {
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { WagmiProvider } from "wagmi";
+import { WagmiProvider, useAccount, useSignMessage } from "wagmi";
+import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
@@ -41,9 +42,48 @@ if (wagmi) {
     features: { analytics: false, swaps: false, onramp: false },
   });
 }
-function Controls() {
+type Props = { authenticated: boolean; onVerified: () => Promise<void> };
+function Controls({ authenticated, onVerified }: Props) {
   const { open } = useAppKit();
   const { address, isConnected } = useAppKitAccount();
+  const account = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  async function prove() {
+    const signingAddress = account.address;
+    if (!authenticated || !isConnected || !signingAddress) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      if (account.chainId === undefined || ![1, 42161, 8453].includes(account.chainId))
+        throw new Error("Connect Ethereum, Arbitrum or Base before verification.");
+      const first = await fetch("/api/wallets/challenge", {
+        method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chain: "EVM", chainId: account.chainId, address: signingAddress }),
+      });
+      const challenge = await first.json();
+      if (!first.ok) throw new Error(challenge.error?.code ?? "Challenge unavailable");
+      const signature = await signMessageAsync({ message: challenge.message });
+      const last = await fetch("/api/wallets/verify", {
+        method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ challengeId: challenge.challengeId, signature }),
+      });
+      const proof = await last.json();
+      if (!last.ok || proof.verified !== true || proof.tradingEnabled !== false)
+        throw new Error(proof.error?.code ?? "Signature rejected");
+      await onVerified();
+      setNotice("Wallet ownership verified. Assign to a Shard below; live execution is disabled.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Wallet verification failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="wallet-multi">
       <div className="wallet-step">REOWN APPKIT / EVM WALLETCONNECT</div>
@@ -70,18 +110,21 @@ function Controls() {
           </button>
         </div>
       )}
-      {isConnected && (
-        <p className="wallet-detail">
-          EVM wallet transport is connected. Ownership verification via SIWE is
-          pending; this wallet cannot yet be assigned to a Shard or trade.
-          Solana owners can use the independently verified Solana connection
-          below.
-        </p>
+      {isConnected && !authenticated && (
+        <p className="wallet-detail">Sign in as a human operator before signing an EVM ownership proof.</p>
       )}
+      {isConnected && authenticated && (
+        <button type="button" className="wallet-button" disabled={busy} onClick={() => void prove()}>
+          {busy ? "Verifying…" : "Verify wallet ownership"}
+        </button>
+      )}
+      {error && <p role="alert" className="wallet-notice error">{error}</p>}
+      {notice && <p role="status" className="wallet-notice">{notice}</p>}
+      <p className="wallet-detail">Verification never enables withdrawals or live trading. ERC-1271 contract-wallet signatures are not yet supported.</p>
     </div>
   );
 }
-export default function WalletKit() {
+export default function WalletKit(props: Props) {
   if (!wagmi)
     return (
       <p role="status">
@@ -92,7 +135,7 @@ export default function WalletKit() {
   return (
     <WagmiProvider config={wagmi.wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <Controls />
+        <Controls {...props} />
       </QueryClientProvider>
     </WagmiProvider>
   );

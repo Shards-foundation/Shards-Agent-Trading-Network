@@ -19,7 +19,7 @@ const challengeInput = z.discriminatedUnion("chain", [
   }).strict(),
 ]);
 const proofInput = z
-  .object({ challengeId: uuid, signature: z.string().min(80).max(100) })
+  .object({ challengeId: uuid, signature: z.string().min(80).max(140) })
   .strict();
 const assignInput = z.object({ agentId: uuid }).strict();
 const fail = (code: string, correlationId: string) => ({

@@ -210,7 +210,7 @@ export default function WalletConsole() {
         chainId: typeof chainId === "string" ? chainId : undefined,
       });
       setMessage(
-        "EVM transport connected. Cryptographic ownership proof is not available yet; no wallet has been registered.",
+        "EVM transport connected. Sign a separate ownership challenge to register it; trading remains disabled.",
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Wallet connection declined.");
@@ -285,6 +285,45 @@ export default function WalletConsole() {
           ? e.message
           : "Wallet ownership verification failed.",
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function verifyEvm() {
+    if (!active || active.chain !== "EVM" || !evmProvider || !authenticated) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const originalAddress = active.address;
+      const currentAccounts = await evmProvider.request({ method: "eth_accounts" });
+      if (!Array.isArray(currentAccounts) ||
+          !currentAccounts.some(value => typeof value === "string" &&
+            value.toLowerCase() === originalAddress.toLowerCase()))
+        throw new Error("Wallet account changed. Reconnect before verifying.");
+      const rawChain = await evmProvider.request({ method: "eth_chainId" });
+      if (typeof rawChain !== "string" || !/^0x[0-9a-fA-F]+$/.test(rawChain))
+        throw new Error("The wallet returned an invalid chain.");
+      const chainId = Number.parseInt(rawChain, 16);
+      if (![1, 42161, 8453].includes(chainId))
+        throw new Error("Select Ethereum, Arbitrum or Base before verifying ownership.");
+      const { challengeId, message: text } = await post("challenge", {
+        chain: "EVM", address: originalAddress, chainId,
+      });
+      const encoded = `0x${Array.from(new TextEncoder().encode(text), byte =>
+        byte.toString(16).padStart(2, "0")).join("")}`;
+      const signature = await evmProvider.request({
+        method: "personal_sign", params: [encoded, originalAddress],
+      });
+      if (typeof signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(signature))
+        throw new Error("Wallet did not provide a valid EOA signature.");
+      const proof = await post("verify", { challengeId, signature });
+      if (proof.verified !== true || proof.tradingEnabled !== false)
+        throw new Error("Wallet verification was not confirmed.");
+      await refresh();
+      setMessage("EVM wallet ownership verified and linked to your operator identity. Trading remains disabled.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "EVM proof rejected.");
     } finally {
       setBusy(false);
     }
@@ -372,7 +411,7 @@ export default function WalletConsole() {
             private keys or unrestricted signatures.
           </p>
           {process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ? (
-            <WalletKit />
+            <WalletKit authenticated={authenticated} onVerified={refresh} />
           ) : (
             <div className="wallet-multi">
               <strong>Full wallet catalogue</strong>
@@ -501,11 +540,18 @@ export default function WalletConsole() {
                   ? "Processing…"
                   : "Sign verification message"}
             </button>
+          ) : active?.chain === "EVM" ? (
+            <button
+              className="wallet-button"
+              type="button"
+              disabled={busy || verifiedActive}
+              onClick={() => void verifyEvm()}
+            >
+              {verifiedActive ? "Ownership verified" : busy ? "Processing…" : "Sign EVM ownership message"}
+            </button>
           ) : (
             <div className="wallet-disabled-action">
-              {active?.chain === "EVM"
-                ? "EVM signature verification not enabled yet."
-                : "Connect a Solana wallet to verify."}
+              Connect a Solana or EVM wallet to verify ownership.
             </div>
           )}
           <p className="wallet-detail">
