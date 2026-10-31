@@ -448,3 +448,39 @@
 .wallet-multi .wallet-detail {
   margin: 8px 0 !important;
 }
+
+.wallet-discovered {
+  margin: 10px 0 20px;
+  padding: 16px;
+  border: 1px solid #404a59;
+  border-radius: 13px;
+  background: #171d25;
+}
+.wallet-discovered > p {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #a1adbc;
+}
+.wallet-discovered-choice {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  background: #232b36;
+  color: #f0eee7;
+  border: 1px solid #414b57;
+  border-radius: 9px;
+  padding: 12px;
+  margin-top: 8px;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+.wallet-discovered-choice:hover {
+  border-color: #d5b776;
+}
+.wallet-discovered-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

@@ -8,6 +8,34 @@ interface EvmProvider {
   on?(event: string, callback: (...args: any[]) => void): void;
   removeListener?(event: string, callback: (...args: any[]) => void): void;
 }
+interface AnnouncedEvmWallet {
+  id: string;
+  name: string;
+  provider: EvmProvider;
+}
+function parseEip6963Provider(detail: unknown): AnnouncedEvmWallet | null {
+  if (!detail || typeof detail !== "object") return null;
+  const supplied = detail as { info?: unknown; provider?: unknown };
+  if (!supplied.info || typeof supplied.info !== "object") return null;
+  const info = supplied.info as Record<string, unknown>;
+  const provider = supplied.provider;
+  if (
+    typeof info.uuid !== "string" ||
+    !/^[0-9a-fA-F-]{36}$/.test(info.uuid) ||
+    typeof info.name !== "string" ||
+    info.name.trim().length < 1 ||
+    info.name.length > 64 ||
+    !provider ||
+    typeof provider !== "object" ||
+    typeof (provider as { request?: unknown }).request !== "function"
+  )
+    return null;
+  return {
+    id: info.uuid.toLowerCase(),
+    name: info.name.trim(),
+    provider: provider as EvmProvider,
+  };
+}
 interface SolanaProvider {
   isPhantom?: boolean;
   isSolflare?: boolean;
@@ -66,6 +94,7 @@ async function post(path: string, data: unknown) {
 
 export default function WalletConsole() {
   const [active, setActive] = useState<Active | null>(null);
+  const [installedEvmWallets, setInstalledEvmWallets] = useState<AnnouncedEvmWallet[]>([]);
   const [solProvider, setSolProvider] = useState<SolanaProvider | null>(null);
   const [evmProvider, setEvmProvider] = useState<EvmProvider | null>(null);
   const [connected, setConnected] = useState<{ evm: boolean; sol: boolean }>({
@@ -91,7 +120,26 @@ export default function WalletConsole() {
   }, []);
 
   useEffect(() => {
-    setConnected({ evm: Boolean(window.ethereum), sol: Boolean(getSolana()) });
+    const announce = (event: Event) => {
+      const detail = (event as Event & { detail?: unknown }).detail;
+      const discovered = parseEip6963Provider(detail);
+      if (!discovered) return;
+      setInstalledEvmWallets((existing) => {
+        if (existing.some((wallet) => wallet.id === discovered.id) || existing.length >= 24) return existing;
+        return [...existing, discovered];
+      });
+      setConnected((existing) => ({ ...existing, evm: true }));
+    };
+    window.addEventListener("eip6963:announceProvider", announce);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    return () => window.removeEventListener("eip6963:announceProvider", announce);
+  }, []);
+
+  useEffect(() => {
+    setConnected((previous) => ({
+      evm: previous.evm || Boolean(window.ethereum),
+      sol: Boolean(getSolana()),
+    }));
     void fetch("/api/auth/me", { cache: "no-store" })
       .then(async (r) => {
         const data = await r.json();
@@ -137,12 +185,12 @@ export default function WalletConsole() {
     };
   }, [evmProvider]);
 
-  async function connectEvm() {
+  async function connectEvm(wallet?: AnnouncedEvmWallet) {
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const provider = window.ethereum as EvmProvider | undefined;
+      const provider = wallet?.provider ?? (window.ethereum as EvmProvider | undefined);
       if (!provider)
         throw new Error(
           "No EVM wallet was detected. Open this site in your wallet browser.",
@@ -158,7 +206,7 @@ export default function WalletConsole() {
       setActive({
         chain: "EVM",
         address: accounts[0],
-        label: "Ethereum / EVM",
+        label: wallet?.name ?? "Ethereum / EVM",
         chainId: typeof chainId === "string" ? chainId : undefined,
       });
       setMessage(
@@ -332,6 +380,24 @@ export default function WalletConsole() {
                 Reown AppKit requires a Shards Reown project ID. Until
                 configured, use an injected wallet below.
               </p>
+            </div>
+          )}
+          {installedEvmWallets.length > 0 && (
+            <div className="wallet-discovered" role="group" aria-label="Installed EVM wallets">
+              <div className="wallet-step">INSTALLED EVM WALLETS</div>
+              <p>Choose a detected wallet. Names are provider-reported; connections are not ownership proof.</p>
+              {installedEvmWallets.map((wallet) => (
+                <button
+                  key={wallet.id}
+                  className="wallet-discovered-choice"
+                  type="button"
+                  onClick={() => void connectEvm(wallet)}
+                  disabled={busy}
+                >
+                  <span>{wallet.name}</span>
+                  <span aria-hidden="true">Connect ↗</span>
+                </button>
+              ))}
             </div>
           )}
           <div className="wallet-choices">

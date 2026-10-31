@@ -48,3 +48,7 @@ The Reown Solana adapter has been removed because CI found a high-severity unpat
 ## Hyperliquid account inspector boundaries
 
 The Perpetuals view includes a manual public-address lookup for real Hyperliquid margin balances, open positions and orders. This is a public info API query, **not** wallet ownership verification or account authorisation. Never imply the account is the signed-in user's account merely because its address was entered. It does not display other users' balances without a deliberate address lookup; production should add edge rate limits/abuse controls for arbitrary public-address queries. Results are retrieved only when the user submits an address and never carry signing keys or live order permissions.
+
+## EIP-6963 installed wallet fallback
+
+Without a configured Reown project ID, the wallet page also discovers installed EVM providers using the EIP-6963 `announceProvider` / `requestProvider` events. It allows choosing among distinct installed wallets rather than using only `window.ethereum`. Provider-supplied wallet display names are **untrusted metadata**. Selecting a provider grants neither ownership verification nor trading authority. The full wallet catalogue, including uninstalled wallets and QR/mobile pairing, still requires Shards' Reown project ID and a tested approved-domain configuration.
