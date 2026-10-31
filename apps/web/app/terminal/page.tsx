@@ -1,6 +1,7 @@
 import TradingWorkspace from "./TradingWorkspace";
 import "./workspace.css";
 import "./venue-live.css";
+import "./hyperliquid-account.css";
 
 export const metadata = {
   title: "Markets & Trading | Shards Agent Trading Network",
