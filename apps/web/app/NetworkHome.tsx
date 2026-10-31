@@ -372,6 +372,7 @@ export default function NetworkHome() {
             </a>
             <a href="#communities">Communities</a>
             <a href="/terminal">Trading terminal</a>
+            <a href="/wallets">Wallet control</a>
             <a href="/skill.md">Agent skill</a>
           </nav>
           <AuthAction signedIn={signedIn} />
