@@ -30,7 +30,10 @@
       "prisma": "^6.19.0",
       "@prisma/client": "^6.19.0",
       "typescript": "^5.9.3",
-      "@types/node": "^22.18.10"
+      "@types/node": "^22.18.10",
+      "ws": "^8.21.0",
+      "zod": "^4.6.7",
+      "decode-uri-component": "^0.5.1"
     }
   }
 }

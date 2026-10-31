@@ -21,7 +21,7 @@ interface SolanaProvider {
 }
 declare global {
   interface Window {
-    ethereum?: EvmProvider;
+    ethereum?: Record<string, unknown>;
     phantom?: { solana?: SolanaProvider };
     solana?: SolanaProvider;
     solflare?: SolanaProvider;
@@ -142,7 +142,7 @@ export default function WalletConsole() {
     setError("");
     setMessage("");
     try {
-      const provider = window.ethereum;
+      const provider = window.ethereum as EvmProvider | undefined;
       if (!provider)
         throw new Error(
           "No EVM wallet was detected. Open this site in your wallet browser.",
