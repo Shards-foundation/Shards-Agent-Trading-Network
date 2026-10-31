@@ -31,6 +31,18 @@ describe("Hyperliquid public account inspector", () => {
     const result = parseHyperliquidAccount(state);
     expect(result.equity).toBe("350.52");
     expect(result.marginUsed).toBe("48.25");
+    const optional = parseHyperliquidAccount({
+      ...state,
+      assetPositions: [
+        {
+          position: {
+            ...state.assetPositions[0]!.position,
+            liquidationPx: "NaN",
+          },
+        },
+      ],
+    });
+    expect(optional.positions[0]?.liquidationPrice).toBeNull();
     expect(result.positions[0]).toMatchObject({
       coin: "BTC",
       size: "-0.005",
