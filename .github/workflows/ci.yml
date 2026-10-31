@@ -122,6 +122,8 @@ jobs:
         run: node --test scripts/staging-preflight.test.mjs
       - name: Test SATNS frontend OIDC deployment preflight
         run: node --test scripts/web-auth-preflight.test.mjs
+      - name: Test guarded SATNS Neon production migration preflight
+        run: node --test scripts/neon-release-preflight.test.mjs
       - name: Validate full-stack test script syntax
         run: node --check scripts/fullstack-e2e.mjs
       - name: Full-stack API to Next.js SSR end-to-end
