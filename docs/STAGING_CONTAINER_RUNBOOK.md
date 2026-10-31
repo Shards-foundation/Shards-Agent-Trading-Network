@@ -35,9 +35,22 @@ docker run --rm --entrypoint node "$SATN_BACKEND_IMAGE" --check apps/api/dist/wo
 
 Provision an **isolated** managed PostgreSQL database, Redis and OIDC tenant.
 Inject the required `DATABASE_URL`, `REDIS_URL`, `WEB_ORIGIN`,
-`OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE` and image tag through the
-host's protected secret manager. The Postgres URL must include
+`NEXT_PUBLIC_SATN_API_URL`, `OIDC_ISSUER`, `OIDC_JWKS_URL`,
+`OIDC_AUDIENCE` and image tag through the host's protected secret manager. The Postgres URL must include
 `sslmode=require` or stronger. Do not share or commit the values.
+
+The standalone configuration preflight also reads operator-process settings
+which Docker Compose normally injects into its services. Set these explicitly,
+including the final intended HTTPS API URL, before running the checks:
+
+```bash
+export NODE_ENV=production API_HOST=0.0.0.0 API_PORT=4000
+export EXECUTION_MODE=PAPER LIVE_EXECUTION_ENABLED=false
+export WORKER_QUEUE=default WORKER_HEARTBEAT_MS=5000
+export WORKER_STALE_AFTER_MS=30000 WORKER_LEASE_MS=30000
+export WORKER_SHUTDOWN_GRACE_MS=10000
+# NEXT_PUBLIC_SATN_API_URL must already be set to the intended HTTPS API URL.
+```
 
 With those variables present in the process environment, run:
 
