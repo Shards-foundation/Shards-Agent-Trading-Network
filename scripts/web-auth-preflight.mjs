@@ -43,8 +43,20 @@ export function validateWebAuthConfig(
 
   const auth = publicHttps(env.OIDC_AUTHORIZATION_ENDPOINT);
   const token = publicHttps(env.OIDC_TOKEN_ENDPOINT);
+  const issuer = publicHttps(env.OIDC_ISSUER);
+  const jwks = publicHttps(env.OIDC_JWKS_URL);
   check("OIDC_AUTHORIZE_URL_INVALID", Boolean(auth));
   check("OIDC_TOKEN_URL_INVALID", Boolean(token));
+  check(
+    "OIDC_ISSUER_INVALID",
+    Boolean(issuer) && !issuer.username && !issuer.password,
+  );
+  check("OIDC_JWKS_URL_INVALID", Boolean(jwks));
+  check(
+    "OIDC_ID_TOKEN_ALGORITHM_INVALID",
+    env.OIDC_ID_TOKEN_ALGORITHM === undefined ||
+      ["RS256", "EdDSA"].includes(env.OIDC_ID_TOKEN_ALGORITHM),
+  );
   check(
     "OIDC_CLIENT_ID_MISSING",
     typeof env.OIDC_CLIENT_ID === "string" &&
