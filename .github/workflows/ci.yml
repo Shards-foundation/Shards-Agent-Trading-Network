@@ -125,6 +125,8 @@ jobs:
           EXECUTION_MODE: PAPER
           LIVE_EXECUTION_ENABLED: "false"
         run: pnpm --filter @satn/api exec node scripts/worker-lifecycle-smoke.mjs
+      - name: Test read-only public launch audit fail-closed contract
+        run: node --test scripts/launch-public-audit.test.mjs
       - name: Test fail-closed staging configuration preflight
         run: node --test scripts/staging-preflight.test.mjs
       - name: Test SATNS frontend OIDC deployment preflight
