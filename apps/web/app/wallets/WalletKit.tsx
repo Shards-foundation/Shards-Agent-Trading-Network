@@ -45,7 +45,9 @@ if (wagmi) {
 type Props = {
   authenticated: boolean;
   onVerified: () => Promise<void>;
-  onConnectionChange: (connection: { address: string; chainId: number } | null) => void;
+  onConnectionChange: (
+    connection: { address: string; chainId: number } | null,
+  ) => void;
 };
 function Controls({ authenticated, onVerified, onConnectionChange }: Props) {
   const { open } = useAppKit();
@@ -57,7 +59,10 @@ function Controls({ authenticated, onVerified, onConnectionChange }: Props) {
   const [notice, setNotice] = useState("");
   useEffect(() => {
     if (isConnected && account.address && account.chainId !== undefined) {
-      onConnectionChange({ address: account.address, chainId: account.chainId });
+      onConnectionChange({
+        address: account.address,
+        chainId: account.chainId,
+      });
     } else {
       onConnectionChange(null);
     }
