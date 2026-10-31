@@ -13,7 +13,7 @@ interface AnnouncedEvmWallet {
   name: string;
   provider: EvmProvider;
 }
-function parseEip6963Provider(detail: unknown): AnnouncedEvmWallet | null {
+export function parseEip6963Provider(detail: unknown): AnnouncedEvmWallet | null {
   if (!detail || typeof detail !== "object") return null;
   const supplied = detail as { info?: unknown; provider?: unknown };
   if (!supplied.info || typeof supplied.info !== "object") return null;
