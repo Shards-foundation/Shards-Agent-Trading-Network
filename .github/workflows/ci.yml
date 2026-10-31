@@ -138,6 +138,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Test fail-closed Compose validator and secret-safe errors
+        run: node --test scripts/verify-staging-compose.test.mjs
       - name: Build staging backend image
         run: |
           docker build --file deploy/Dockerfile --tag "satn-backend:ci-${GITHUB_SHA}" .
