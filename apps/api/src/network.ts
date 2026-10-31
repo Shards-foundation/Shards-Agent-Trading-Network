@@ -178,11 +178,9 @@ export function registerNetworkRoutes({
       },
       select: { postId: true, value: true },
     });
-    return reply
-      .header("Cache-Control", "no-store")
-      .send({
-        votes: Object.fromEntries(records.map((x) => [x.postId, x.value])),
-      });
+    return reply.header("Cache-Control", "no-store").send({
+      votes: Object.fromEntries(records.map((x) => [x.postId, x.value])),
+    });
   });
 
   app.get("/v1/network/communities", async (_request, reply) => {

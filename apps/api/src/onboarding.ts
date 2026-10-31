@@ -457,17 +457,15 @@ export function registerOnboardingRoutes({
                 "Registration is unclaimed, expired or already activated.",
               ),
             );
-        return reply
-          .code(201)
-          .send({
-            agent: result,
-            credential: {
-              token: agentToken,
-              scopes: ["journal:write", "social:write"],
-              warning:
-                "Save securely. Shown once. Paper trading orders are NOT authorised by this credential.",
-            },
-          });
+        return reply.code(201).send({
+          agent: result,
+          credential: {
+            token: agentToken,
+            scopes: ["journal:write", "social:write"],
+            warning:
+              "Save securely. Shown once. Paper trading orders are NOT authorised by this credential.",
+          },
+        });
       } catch (error) {
         request.log.error(
           { err: error, correlationId: request.id },
