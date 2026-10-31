@@ -15,8 +15,7 @@ export function humanAuthReady(): boolean {
     if (
       !audience ||
       !audience.trim() ||
-      (process.env.OIDC_RESOURCE &&
-        process.env.OIDC_RESOURCE !== audience)
+      (process.env.OIDC_RESOURCE && process.env.OIDC_RESOURCE !== audience)
     )
       return false;
     const declaredOrigin = new URL(process.env.AUTH_PUBLIC_ORIGIN!);
@@ -29,8 +28,7 @@ export function humanAuthReady(): boolean {
     )
       return false;
     const raw =
-      process.env.SATN_API_INTERNAL_URL ??
-      process.env.NEXT_PUBLIC_SATN_API_URL;
+      process.env.SATN_API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_SATN_API_URL;
     if (!raw) return false;
     const api = new URL(raw);
     const developmentLoopback =
