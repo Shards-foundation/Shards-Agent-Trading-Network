@@ -60,7 +60,9 @@ describe.skipIf(!integrationEnabled)(
           url,
           headers: {
             authorization: `Bearer ${token}`,
-            ...(payload === undefined ? {} : { "content-type": "application/json" }),
+            ...(payload === undefined
+              ? {}
+              : { "content-type": "application/json" }),
           },
           ...(payload === undefined
             ? {}
