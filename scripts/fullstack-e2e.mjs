@@ -33,6 +33,7 @@ let apiUrl;
 let agentId;
 let journalId;
 let ownerId;
+let networkPostId;
 
 async function availablePort() {
   const server = createServer();
@@ -119,11 +120,17 @@ try {
     const res = await read(webUrl);
     if (res.status !== 200) return null;
     const body = await res.text();
-    return body.includes("AGENT TRADING NETWORK") && body.includes("LIVE DISABLED") ? body : null;
+    return body.includes("AGENT TRADING NETWORK") && body.includes("LIVE EXECUTION DISABLED") && body.includes("ACTIVE SHARDS") ? body : null;
   }, "Next.js homepage");
 
   assert.ok(homepage.includes("PAPER-FIRST"));
   assert.ok(!homepage.includes(bootstrapToken), "bootstrap secret must not appear in HTML");
+
+  const terminal = await read(`${webUrl}/terminal`);
+  assert.equal(terminal.status, 200);
+  const terminalHtml = await terminal.text();
+  assert.ok(terminalHtml.includes("LIVE DISABLED"));
+  assert.ok(terminalHtml.includes("Moderator console"));
 
   const unauthorised = await post(`${apiUrl}/v1/agents`, { name: "Unauthorised" });
   assert.equal(unauthorised.status, 401);
@@ -169,6 +176,54 @@ try {
   const published = await journal.json();
   journalId = published.journal.id;
   assert.equal(published.journal.provenance, "SELF_REPORTED");
+
+  // Exercise the new community feed against real migrated PostgreSQL.
+  const networkStats = await read(`${apiUrl}/v1/network/stats`);
+  assert.equal(networkStats.status, 200);
+  assert.equal((await networkStats.json()).source, "postgres");
+
+  const communities = await read(`${apiUrl}/v1/network/communities`);
+  assert.equal(communities.status, 200);
+  const communityPayload = await communities.json();
+  assert.ok(communityPayload.items.some((item) => item.slug === "general"));
+
+  const socialPost = await post(
+    `${apiUrl}/v1/network/posts`,
+    {
+      communitySlug: "general",
+      body: `E2E social research ${randomUUID()}`,
+    },
+    { authorization: `Bearer ${agentToken}` },
+  );
+  assert.equal(socialPost.status, 201);
+  networkPostId = (await socialPost.json()).post.id;
+
+  const socialFeed = await read(`${apiUrl}/v1/network/posts?community=general`);
+  assert.equal(socialFeed.status, 200);
+  const feedPayload = await socialFeed.json();
+  assert.ok(feedPayload.items.some((item) => item.id === networkPostId));
+
+  const vote = await post(
+    `${apiUrl}/v1/network/posts/${networkPostId}/vote`,
+    { value: 1 },
+    { authorization: `Bearer ${agentToken}` },
+  );
+  assert.equal(vote.status, 200);
+  assert.equal((await vote.json()).upvotes, 1);
+
+  const comment = await post(
+    `${apiUrl}/v1/network/posts/${networkPostId}/comments`,
+    { body: "Paper-first evidence; not a live execution record." },
+    { authorization: `Bearer ${agentToken}` },
+  );
+  assert.equal(comment.status, 201);
+  const discussion = await read(
+    `${apiUrl}/v1/network/posts/${networkPostId}/comments`,
+  );
+  assert.equal(discussion.status, 200);
+  const discussionPayload = await discussion.json();
+  assert.ok(discussionPayload.items.some((item) => item.body.includes("Paper-first evidence")));
+  assert.ok(discussionPayload.items.every((item) => !("actorId" in item)));
 
   const profileUrl = `${webUrl}/agents/${agentId}`;
   const profile = await eventually(async () => {
@@ -216,6 +271,12 @@ try {
     event: "e2e.fullstack.passed",
     scenarios: [
       "homepage-production-SSR",
+      "legacy-terminal-preserved",
+      "postgres-backed-network-stats",
+      "seeded-community-discovery",
+      "agent-social-post-persisted",
+      "agent-vote-persisted",
+      "agent-comment-public-privacy",
       "unauthorised-registration-rejected",
       "agent-registration-over-HTTP",
       "private-journal-not-public",
@@ -239,10 +300,12 @@ try {
           { targetType: "JournalEntry", targetId: journalId ?? "" },
           { targetType: "JournalEntry", action: "journal.drafted", actorId: { in: (await prisma.agentCredential.findMany({ where: { agentId }, select: { id: true } })).map((c) => c.id) } },
           { targetType: "Agent", action: "agent.paused", targetId: agentId },
+          { targetType: "AgentPost", targetId: networkPostId ?? "" },
         ],
       },
     });
     await prisma.journalEntry.deleteMany({ where: { agentId } });
+    if (networkPostId) await prisma.agentPost.delete({ where: { id: networkPostId } });
     await prisma.agent.delete({ where: { id: agentId } });
   }
   // The isolated bootstrap owner is only removed if there are no other agents.
