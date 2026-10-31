@@ -38,15 +38,15 @@ Browser state is untrusted. Agent text is untrusted. Ownership proofs never serv
 
 ## Current implementation capabilities
 
-| Chain                | Browser transport                               | Cryptographic owner proof                     | Stored assignment               | Execution |
-| -------------------- | ----------------------------------------------- | --------------------------------------------- | ------------------------------- | --------- |
-| Solana               | Injected Phantom / Solflare-compatible provider | Ed25519 signature of server-generated message | OIDC owner to Shard, paper-only | DISABLED  |
-| EVM                  | Injected EIP-1193 provider                      | NOT IMPLEMENTED (needs SIWE / ERC-1271)       | BLOCKED                         | DISABLED  |
-| Hyperliquid          | Read-only public adapter                        | NOT IMPLEMENTED                               | BLOCKED                         | DISABLED  |
-| Polymarket           | Public market discovery                         | NOT IMPLEMENTED                               | BLOCKED                         | DISABLED  |
-| Jupiter / other DEXs | No trading adapter                              | NOT IMPLEMENTED                               | BLOCKED                         | DISABLED  |
+| Chain                | Browser transport           | Cryptographic owner proof                       | Stored assignment               | Execution |
+| -------------------- | --------------------------- | ----------------------------------------------- | ------------------------------- | --------- |
+| Solana               | Injected Phantom / Solflare | Server-verified Ed25519                         | OIDC owner to Shard, paper-only | DISABLED  |
+| EVM                  | Reown / EIP-1193            | Server-verified EIP-4361 EOAs; ERC-1271 pending | OIDC owner to Shard, paper-only | DISABLED  |
+| Hyperliquid          | Public market/account data  | No signing/execution delegate                   | BLOCKED                         | DISABLED  |
+| Polymarket           | Public Gamma / CLOB data    | No signing/execution delegate                   | BLOCKED                         | DISABLED  |
+| Jupiter / other DEXs | No execution adapter        | NOT IMPLEMENTED                                 | BLOCKED                         | DISABLED  |
 
-**Mobile:** Injected wallets work in supported wallet in-app browsers, not arbitrary Samsung/Chrome browsers. WalletConnect/Reown or equivalent cross-app support is a separately scoped change, requires configuration, supported SDKs and a mobile-device verification matrix. Never present transport connection as a completed server wallet link.
+**Mobile:** Reown EVM catalogue and cross-app deep links are implemented but require a Shards-owned `NEXT_PUBLIC_REOWN_PROJECT_ID`; installed Solana wallets still use an in-app browser. Physical-device signing and account-change acceptance tests are pending. A wallet transport connection never constitutes a verified server wallet link.
 
 ## Human and Shard onboarding invariants
 
@@ -80,7 +80,7 @@ Mobile: 5-item bottom navigation; wallet connect and risk disclosure remain reac
 
 - Separate operator wallet registry, challenge proofs and assignment from browser transport.
 - Solana signature verification with Node/OpenSSL Ed25519, strict base58 canonical validation.
-- EVM connect only (NOT verified, not eligible for assignment).
+- EVM EOA wallet connection and EIP-4361 ownership verification with one-use nonce are now implemented. Live execution remains off.
 - Owner-only BFF API with same-origin mutation checks, no arbitrary upstream paths, and no secrets in logs.
 - PAPER execution still hard-blocked.
 
@@ -88,7 +88,7 @@ Mobile: 5-item bottom navigation; wallet connect and risk disclosure remain reac
 
 - Adopt Solana Wallet Standard / Kit, including mobile, connect/disconnect, account change and optional SIWS.
 - Add Reown AppKit / WalletConnect with production project ID and allowed origins for EVM and wallet-to-wallet deep links.
-- EVM SIWE ERC-4361 with backend nonce/domain/audience/chain validation, EIP-1271 support for smart-contract wallets, and replay tests.
+- EVM EIP-4361 EOA verification and nonce/replay tests implemented. Complete EIP-1271 smart-contract wallet verification with trusted chain RPC and audited tests.
 - Device matrix: Android Chrome, Samsung Internet, Phantom app, Solflare app, MetaMask app, desktop Chrome, WalletConnect QR/deeplink.
 - Treat provider account/network change as invalidation and require revalidation where security state changed.
 
