@@ -28,6 +28,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@opentelemetry/api':
+        specifier: 1.10.0
+        version: 1.10.0
       '@fastify/cors':
         specifier: ^11.1.0
         version: 11.3.1
