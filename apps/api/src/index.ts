@@ -1,3 +1,5 @@
+import "./sentry.js";
+import { captureBackendException } from "./sentry.js";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { registerOnboardingRoutes } from "./onboarding.js";
 import { registerNetworkRoutes } from "./network.js";
@@ -4674,6 +4676,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   });
 
   app.setErrorHandler(async (error, request, reply) => {
+    captureBackendException(error);
     request.log.error(
       { err: error, correlationId: request.id },
       "request failed",
@@ -4710,6 +4713,7 @@ export function buildServer(options: BuildServerOptions = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const app = buildServer();
   app.listen({ host: env.API_HOST, port: env.API_PORT }).catch((error) => {
+    captureBackendException(error);
     app.log.error(error);
     process.exit(1);
   });
