@@ -1,0 +1,46 @@
+name: Phase 2 formatting gate
+
+on:
+  push:
+    branches:
+      - feat/live-venues-reown-wallet-picker
+
+permissions:
+  contents: write
+
+concurrency:
+  group: satns-phase2-format
+  cancel-in-progress: false
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/live-venues-reown-wallet-picker
+          persist-credentials: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Canonical Prettier
+        run: |
+          pnpm exec prettier --write \
+            apps/web/app/wallets/WalletKit.tsx \
+            apps/web/tests/live-venues.test.ts \
+            docs/REAL_VENUES_AND_WALLET_PICKER.md
+      - name: Commit formatted files
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apps/web/app/wallets/WalletKit.tsx apps/web/tests/live-venues.test.ts docs/REAL_VENUES_AND_WALLET_PICKER.md
+            git commit -m "style: standardize phase 2 venue and wallet source"
+            git pull --rebase origin feat/live-venues-reown-wallet-picker
+            git push origin HEAD:feat/live-venues-reown-wallet-picker
+          fi
