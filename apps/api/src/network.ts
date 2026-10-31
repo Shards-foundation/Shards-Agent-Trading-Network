@@ -500,7 +500,9 @@ export function registerNetworkRoutes({
       });
       return reply.send({
         yourVote: parsed.data.value,
-        upvotes: (grouped.find((x) => x.value === 1)?._count._all ?? 0) + post._count.likes,
+        upvotes:
+          (grouped.find((x) => x.value === 1)?._count._all ?? 0) +
+          post._count.likes,
         downvotes: grouped.find((x) => x.value === -1)?._count._all ?? 0,
       });
     },
