@@ -5,14 +5,14 @@ Feature branch: `feat/live-venues-reown-wallet-picker`.
 
 ## Provider integration matrix
 
-| Surface                      | Official provider                           | Route                                     | Reality                                                                                                     |
-| ---------------------------- | ------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Hyperliquid Perpetuals       | `https://api.hyperliquid.xyz/info`          | `/api/venues/hyperliquid`                 | Real `metaAndAssetCtxs` mark, 24h, funding, leverage; 15s refresh                                           |
-| Hyperliquid L2 book          | Same                                        | `/api/venues/hyperliquid/book?symbol=BTC` | Real venue book timestamp; stale >30s rejected                                                              |
-| Hyperliquid public accounts | `https://api.hyperliquid.xyz/info` | `/api/venues/hyperliquid/account?address=0x...` | Actual `clearinghouseState` and `openOrders`, manually requested, no signing |
-| Polymarket predictions       | `https://gamma-api.polymarket.com/markets`  | `/api/venues/polymarket`                  | Real Gamma markets, outcomes, token IDs, 30s refresh                                                        |
-| Polymarket CLOB depth        | `https://clob.polymarket.com/book`          | `/api/venues/polymarket/book?tokenId=...` | Actual outcome-token book. Not a trade quotation guarantee                                                  |
-| Multi-chain wallet selection | **Reown AppKit** via Wagmi + Solana adapter | `/wallets`                                | WalletConnect catalogue, installed EVM wallets and deep links; Solana injected wallets supported separately |
+| Surface                      | Official provider                           | Route                                           | Reality                                                                                                     |
+| ---------------------------- | ------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Hyperliquid Perpetuals       | `https://api.hyperliquid.xyz/info`          | `/api/venues/hyperliquid`                       | Real `metaAndAssetCtxs` mark, 24h, funding, leverage; 15s refresh                                           |
+| Hyperliquid L2 book          | Same                                        | `/api/venues/hyperliquid/book?symbol=BTC`       | Real venue book timestamp; stale >30s rejected                                                              |
+| Hyperliquid public accounts  | `https://api.hyperliquid.xyz/info`          | `/api/venues/hyperliquid/account?address=0x...` | Actual `clearinghouseState` and `openOrders`, manually requested, no signing                                |
+| Polymarket predictions       | `https://gamma-api.polymarket.com/markets`  | `/api/venues/polymarket`                        | Real Gamma markets, outcomes, token IDs, 30s refresh                                                        |
+| Polymarket CLOB depth        | `https://clob.polymarket.com/book`          | `/api/venues/polymarket/book?tokenId=...`       | Actual outcome-token book. Not a trade quotation guarantee                                                  |
+| Multi-chain wallet selection | **Reown AppKit** via Wagmi + Solana adapter | `/wallets`                                      | WalletConnect catalogue, installed EVM wallets and deep links; Solana injected wallets supported separately |
 
 Both venues remain **non-signing and execution-disabled**. Public display does not imply custody or instrument/trader eligibility. Browser and backend always gate live trading independently.
 

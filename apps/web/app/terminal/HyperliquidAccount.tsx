@@ -61,13 +61,16 @@ export default function HyperliquidAccount() {
     try {
       const wallet = address.trim();
       if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-        throw new Error("Enter a valid EVM wallet address (0x followed by 40 hex characters).");
+        throw new Error(
+          "Enter a valid EVM wallet address (0x followed by 40 hex characters).",
+        );
       }
       const response = await fetch(
         `/api/venues/hyperliquid/account?address=${encodeURIComponent(wallet)}`,
         { cache: "no-store", signal: AbortSignal.timeout(10_000) },
       );
-      if (!response.ok) throw new Error("Hyperliquid account data is unavailable.");
+      if (!response.ok)
+        throw new Error("Hyperliquid account data is unavailable.");
       const data = (await response.json()) as AccountResponse;
       if (
         data.venue !== "hyperliquid" ||
@@ -81,19 +84,27 @@ export default function HyperliquidAccount() {
       }
       setAccount(data);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Account lookup failed.");
+      setError(
+        cause instanceof Error ? cause.message : "Account lookup failed.",
+      );
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="venue-account" aria-labelledby="hyperliquid-account-heading">
+    <section
+      className="venue-account"
+      aria-labelledby="hyperliquid-account-heading"
+    >
       <div className="venue-account-header">
         <div>
           <small>HYPERLIQUID / ON-CHAIN ACCOUNT INSPECTOR</small>
           <h3 id="hyperliquid-account-heading">Inspect live positions</h3>
-          <p>Look up public Hyperliquid positions and open orders by EVM address. No wallet connection or signing required.</p>
+          <p>
+            Look up public Hyperliquid positions and open orders by EVM address.
+            No wallet connection or signing required.
+          </p>
         </div>
         <span>PUBLIC · READ ONLY</span>
       </div>
@@ -104,7 +115,9 @@ export default function HyperliquidAccount() {
           void inspect();
         }}
       >
-        <label htmlFor="hyperliquid-account-address">Account wallet address</label>
+        <label htmlFor="hyperliquid-account-address">
+          Account wallet address
+        </label>
         <div>
           <input
             id="hyperliquid-account-address"
@@ -121,58 +134,113 @@ export default function HyperliquidAccount() {
           </button>
         </div>
       </form>
-      {error && <p className="venue-error" role="alert">{error}</p>}
+      {error && (
+        <p className="venue-error" role="alert">
+          {error}
+        </p>
+      )}
       {account && (
         <div className="venue-account-results">
           <div className="venue-account-metrics">
-            <div><small>Account equity</small><strong>{usd(account.account.equity)}</strong></div>
-            <div><small>Margin in use</small><strong>{usd(account.account.marginUsed)}</strong></div>
-            <div><small>Position notional</small><strong>{usd(account.account.positionNotional)}</strong></div>
-            <div><small>Open orders</small><strong>{account.openOrders.length}</strong></div>
+            <div>
+              <small>Account equity</small>
+              <strong>{usd(account.account.equity)}</strong>
+            </div>
+            <div>
+              <small>Margin in use</small>
+              <strong>{usd(account.account.marginUsed)}</strong>
+            </div>
+            <div>
+              <small>Position notional</small>
+              <strong>{usd(account.account.positionNotional)}</strong>
+            </div>
+            <div>
+              <small>Open orders</small>
+              <strong>{account.openOrders.length}</strong>
+            </div>
           </div>
           <h4>Current perpetual positions</h4>
           {account.account.positions.length === 0 ? (
-            <p className="venue-account-empty">No current positions reported for this account.</p>
+            <p className="venue-account-empty">
+              No current positions reported for this account.
+            </p>
           ) : (
             <div className="venue-table-wrap">
               <table className="venue-table">
                 <thead>
-                  <tr><th>Market</th><th>Size</th><th>Entry price</th><th>Position value</th><th>Unrealised PnL</th><th>Leverage</th></tr>
-                </thead>
-                <tbody>{account.account.positions.map((position) => (
-                  <tr key={position.coin}>
-                    <td>{position.coin}</td>
-                    <td>{position.size}</td>
-                    <td>{usd(position.entryPrice)}</td>
-                    <td>{usd(position.positionValue)}</td>
-                    <td className={Number(position.unrealizedPnl) >= 0 ? "positive" : "negative"}>{usd(position.unrealizedPnl)}</td>
-                    <td>{position.leverage}× {position.leverageType}</td>
+                  <tr>
+                    <th>Market</th>
+                    <th>Size</th>
+                    <th>Entry price</th>
+                    <th>Position value</th>
+                    <th>Unrealised PnL</th>
+                    <th>Leverage</th>
                   </tr>
-                ))}</tbody>
+                </thead>
+                <tbody>
+                  {account.account.positions.map((position) => (
+                    <tr key={position.coin}>
+                      <td>{position.coin}</td>
+                      <td>{position.size}</td>
+                      <td>{usd(position.entryPrice)}</td>
+                      <td>{usd(position.positionValue)}</td>
+                      <td
+                        className={
+                          Number(position.unrealizedPnl) >= 0
+                            ? "positive"
+                            : "negative"
+                        }
+                      >
+                        {usd(position.unrealizedPnl)}
+                      </td>
+                      <td>
+                        {position.leverage}× {position.leverageType}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           )}
           <h4>Open orders</h4>
           {account.openOrders.length === 0 ? (
-            <p className="venue-account-empty">No current open orders reported for this account.</p>
+            <p className="venue-account-empty">
+              No current open orders reported for this account.
+            </p>
           ) : (
             <div className="venue-table-wrap">
               <table className="venue-table">
-                <thead><tr><th>Market</th><th>Direction</th><th>Limit price</th><th>Remaining size</th></tr></thead>
-                <tbody>{account.openOrders.map((order) => (
-                  <tr key={order.orderId}>
-                    <td>{order.coin}</td><td>{order.direction}</td>
-                    <td>{usd(order.limitPrice)}</td><td>{order.size}</td>
+                <thead>
+                  <tr>
+                    <th>Market</th>
+                    <th>Direction</th>
+                    <th>Limit price</th>
+                    <th>Remaining size</th>
                   </tr>
-                ))}</tbody>
+                </thead>
+                <tbody>
+                  {account.openOrders.map((order) => (
+                    <tr key={order.orderId}>
+                      <td>{order.coin}</td>
+                      <td>{order.direction}</td>
+                      <td>{usd(order.limitPrice)}</td>
+                      <td>{order.size}</td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           )}
-          <p className="venue-account-asof">Source: Hyperliquid public info API · Retrieved {new Date(account.retrievedAt).toLocaleString("en-GB")}</p>
+          <p className="venue-account-asof">
+            Source: Hyperliquid public info API · Retrieved{" "}
+            {new Date(account.retrievedAt).toLocaleString("en-GB")}
+          </p>
         </div>
       )}
       <p className="venue-account-disclaimer">
-        Lookup is public and does not verify ownership. Agent wallet assignment, trading authority and withdrawal permissions remain separate, server-governed controls.
+        Lookup is public and does not verify ownership. Agent wallet assignment,
+        trading authority and withdrawal permissions remain separate,
+        server-governed controls.
       </p>
     </section>
   );

@@ -18,7 +18,11 @@ function record(input: unknown): JsonRecord {
 
 function decimal(input: unknown, optional = false): string | null {
   if (optional && input === null) return null;
-  if (typeof input !== "string" || !DECIMAL.test(input) || !Number.isFinite(Number(input))) {
+  if (
+    typeof input !== "string" ||
+    !DECIMAL.test(input) ||
+    !Number.isFinite(Number(input))
+  ) {
     throw new Error("Invalid exchange decimal");
   }
   return input;
@@ -30,17 +34,26 @@ export function parseHyperliquidAccount(raw: unknown) {
   const equity = decimal(margin.accountValue);
   const marginUsed = decimal(margin.totalMarginUsed);
   const positionNotional = decimal(margin.totalNtlPos);
-  if (!Array.isArray(state.assetPositions)) throw new Error("Invalid positions");
+  if (!Array.isArray(state.assetPositions))
+    throw new Error("Invalid positions");
 
   const positions = state.assetPositions.map((rawPosition) => {
     const container = record(rawPosition);
     const p = record(container.position);
-    if (typeof p.coin !== "string" || !/^[A-Za-z0-9:_./-]{1,64}$/.test(p.coin)) {
+    if (
+      typeof p.coin !== "string" ||
+      !/^[A-Za-z0-9:_./-]{1,64}$/.test(p.coin)
+    ) {
       throw new Error("Invalid position instrument");
     }
     const lev = record(p.leverage);
-    if (typeof lev.value !== "number" || !Number.isFinite(lev.value) ||
-        lev.value < 1 || lev.value > 100) throw new Error("Invalid leverage");
+    if (
+      typeof lev.value !== "number" ||
+      !Number.isFinite(lev.value) ||
+      lev.value < 1 ||
+      lev.value > 100
+    )
+      throw new Error("Invalid leverage");
     return {
       coin: p.coin,
       size: decimal(p.szi),
@@ -59,9 +72,13 @@ export function parseHyperliquidOpenOrders(raw: unknown) {
   if (!Array.isArray(raw)) throw new Error("Invalid open orders");
   return raw.slice(0, 200).map((item) => {
     const order = record(item);
-    if (typeof order.coin !== "string" || !/^[A-Za-z0-9:_./-]{1,64}$/.test(order.coin) ||
-        (order.side !== "B" && order.side !== "A") ||
-        typeof order.oid !== "number" || !Number.isSafeInteger(order.oid)) {
+    if (
+      typeof order.coin !== "string" ||
+      !/^[A-Za-z0-9:_./-]{1,64}$/.test(order.coin) ||
+      (order.side !== "B" && order.side !== "A") ||
+      typeof order.oid !== "number" ||
+      !Number.isSafeInteger(order.oid)
+    ) {
       throw new Error("Invalid order details");
     }
     return {
@@ -116,7 +133,10 @@ export async function GET(request: NextRequest) {
     );
   } catch {
     return NextResponse.json(
-      { error: { code: "HYPERLIQUID_ACCOUNT_UNAVAILABLE" }, executionEnabled: false },
+      {
+        error: { code: "HYPERLIQUID_ACCOUNT_UNAVAILABLE" },
+        executionEnabled: false,
+      },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }

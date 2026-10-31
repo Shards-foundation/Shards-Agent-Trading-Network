@@ -42,14 +42,22 @@ describe("Hyperliquid public account inspector", () => {
 
   it("rejects incomplete, malformed or nonfinite balances and positions", () => {
     expect(() => parseHyperliquidAccount({})).toThrow();
-    expect(() => parseHyperliquidAccount({
-      ...state,
-      marginSummary: { ...state.marginSummary, accountValue: "Infinity" },
-    })).toThrow();
-    expect(() => parseHyperliquidAccount({
-      ...state,
-      assetPositions: [{ position: { ...state.assetPositions[0]!.position, leverage: null } }],
-    })).toThrow();
+    expect(() =>
+      parseHyperliquidAccount({
+        ...state,
+        marginSummary: { ...state.marginSummary, accountValue: "Infinity" },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseHyperliquidAccount({
+        ...state,
+        assetPositions: [
+          {
+            position: { ...state.assetPositions[0]!.position, leverage: null },
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it("normalises open orders while preserving explicit exchange direction", () => {
@@ -64,6 +72,10 @@ describe("Hyperliquid public account inspector", () => {
       size: "1.25",
     });
     expect(open[1]?.direction).toBe("SELL");
-    expect(() => parseHyperliquidOpenOrders([{ coin: "BTC", side: "X", oid: 9, limitPx: "1", sz: "1" }])).toThrow();
+    expect(() =>
+      parseHyperliquidOpenOrders([
+        { coin: "BTC", side: "X", oid: 9, limitPx: "1", sz: "1" },
+      ]),
+    ).toThrow();
   });
 });
