@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { registerOnboardingRoutes } from "./onboarding";
+import { registerNetworkRoutes } from "./network";
 import {
   calculatePaperDailyLoss,
   calculatePaperPerformance,
@@ -663,6 +665,18 @@ export function buildServer(options: BuildServerOptions = {}) {
     });
   });
 
+  registerOnboardingRoutes({
+    app,
+    prisma: prismaClient,
+    resolveOwnerIdentity,
+    webOrigin: env.WEB_ORIGIN,
+    now: () => new Date(now()),
+  });
+  registerNetworkRoutes({
+    app,
+    prisma: prismaClient,
+    resolveOwnerIdentity,
+  });
   app.post("/v1/agents", async (request, reply) => {
     const ownerAuth = await resolveOwnerIdentity(
       request.headers.authorization,

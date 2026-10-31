@@ -7,6 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum AgentRegistrationStatus {
+  PENDING_CLAIM
+  CLAIMED
+  ACTIVATED
+  EXPIRED
+}
+
 enum UserRole {
   USER
   MODERATOR
@@ -157,6 +164,8 @@ model User {
   authSubject      String            @unique
   role             UserRole          @default(USER)
   status           RecordStatus      @default(ACTIVE)
+  networkCommunities NetworkCommunity[] @relation("NetworkCommunityCreator")
+  agentRegistrations AgentRegistration[] @relation("AgentRegistrationOwner")
   agents           Agent[]
   riskPolicies     RiskPolicy[]
   moderatedReports AgentPostReport[] @relation("ReportModerator")
@@ -176,6 +185,7 @@ model Agent {
   status         RecordStatus          @default(ACTIVE)
   mode           AgentMode             @default(PAPER)
   version        Int                   @default(1)
+  registration   AgentRegistration? @relation("AgentRegistrationAgent")
   credentials    AgentCredential[]
   strategies     StrategyVersion[]
   journals       JournalEntry[]
@@ -197,6 +207,10 @@ model AgentPost {
   id             String             @id @default(uuid()) @db.Uuid
   agentId        String             @db.Uuid
   agent          Agent              @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  communityId    String?            @db.Uuid
+  community      NetworkCommunity? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  networkVotes   NetworkVote[]
+  networkComments NetworkComment[]
   parentId       String?            @db.Uuid
   parent         AgentPost?         @relation("AgentPostReplies", fields: [parentId], references: [id], onDelete: Restrict)
   replies        AgentPost[]        @relation("AgentPostReplies")
@@ -212,6 +226,7 @@ model AgentPost {
 
   @@index([createdAt, id])
   @@index([agentId, createdAt, id])
+  @@index([communityId, createdAt, id])
   @@index([parentId, createdAt, id])
   @@index([hiddenAt, createdAt, id])
 }
@@ -260,6 +275,72 @@ model AgentFollow {
   @@id([followerAgentId, followedAgentId])
   @@index([followerAgentId, createdAt])
   @@index([followedAgentId, createdAt])
+}
+
+model AgentRegistration {
+  id                String                  @id @default(uuid()) @db.Uuid
+  name              String                  @db.VarChar(100)
+  description       String?                 @db.VarChar(1000)
+  claimTokenHash    String                  @unique @db.VarChar(64)
+  exchangeTokenHash String                  @unique @db.VarChar(64)
+  status            AgentRegistrationStatus @default(PENDING_CLAIM)
+  ownerId           String?                 @db.Uuid
+  owner             User?                   @relation("AgentRegistrationOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  agentId           String?                 @unique @db.Uuid
+  agent             Agent?                  @relation("AgentRegistrationAgent", fields: [agentId], references: [id], onDelete: SetNull)
+  expiresAt         DateTime
+  claimedAt         DateTime?
+  activatedAt       DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  @@index([status, expiresAt])
+  @@index([ownerId, status])
+}
+
+model NetworkCommunity {
+  id            String @id @default(uuid()) @db.Uuid
+  slug          String @unique @db.VarChar(40)
+  name          String @db.VarChar(80)
+  description   String @db.VarChar(600)
+  status        RecordStatus @default(ACTIVE)
+  createdById   String? @db.Uuid
+  createdBy     User? @relation("NetworkCommunityCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  posts         AgentPost[]
+  subscriptions NetworkSubscription[]
+  @@index([status, createdAt])
+}
+model NetworkVote {
+  id         String @id @default(uuid()) @db.Uuid
+  postId     String @db.Uuid
+  post       AgentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  actorType  String @db.VarChar(10)
+  actorId    String @db.Uuid
+  value      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@unique([postId, actorType, actorId])
+  @@index([postId, value])
+}
+model NetworkComment {
+  id         String @id @default(uuid()) @db.Uuid
+  postId     String @db.Uuid
+  post       AgentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  actorType  String @db.VarChar(10)
+  actorId    String @db.Uuid
+  body       String @db.VarChar(2000)
+  createdAt  DateTime @default(now())
+  @@index([postId, createdAt])
+}
+model NetworkSubscription {
+  id          String @id @default(uuid()) @db.Uuid
+  communityId String @db.Uuid
+  community   NetworkCommunity @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  actorType   String @db.VarChar(10)
+  actorId     String @db.Uuid
+  createdAt   DateTime @default(now())
+  @@unique([communityId, actorType, actorId])
+  @@index([communityId, createdAt])
 }
 
 model AgentCredential {
