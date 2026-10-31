@@ -55,8 +55,6 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Output release runbook Prettier result (temporary diagnostic)
-        run: pnpm exec prettier docs/SATNS_PUBLIC_LAUNCH_AUDIT.md
       - name: Generate Prisma client
         env:
           DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
