@@ -2,41 +2,25 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        ".next/**",
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "dist/**"],
+      "env": ["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "lint": {
-      "dependsOn": [
-        "^lint"
-      ]
+      "dependsOn": ["^lint"]
     },
     "typecheck": {
-      "dependsOn": [
-        "^typecheck"
-      ]
+      "dependsOn": ["^typecheck"]
     },
     "test": {
-      "dependsOn": [
-        "^test"
-      ],
-      "outputs": [
-        "coverage/**"
-      ],
+      "dependsOn": ["^test"],
+      "outputs": ["coverage/**"],
       "cache": false,
-      "env": [
-        "DATABASE_URL",
-        "REDIS_URL",
-        "NODE_ENV"
-      ]
+      "env": ["DATABASE_URL", "REDIS_URL", "NODE_ENV"]
     }
   }
 }
