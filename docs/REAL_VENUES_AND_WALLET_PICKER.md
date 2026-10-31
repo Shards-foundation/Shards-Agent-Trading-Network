@@ -52,3 +52,12 @@ The Perpetuals view includes a manual public-address lookup for real Hyperliquid
 ## EIP-6963 installed wallet fallback
 
 Without a configured Reown project ID, the wallet page also discovers installed EVM providers using the EIP-6963 `announceProvider` / `requestProvider` events. It allows choosing among distinct installed wallets rather than using only `window.ethereum`. Provider-supplied wallet display names are **untrusted metadata**. Selecting a provider grants neither ownership verification nor trading authority. The full wallet catalogue, including uninstalled wallets and QR/mobile pairing, still requires Shards' Reown project ID and a tested approved-domain configuration.
+
+## EVM operator proof (added)
+
+- EIP-4361-style structured message is issued **only** by the authenticated backend, using the configured trusted `WEB_ORIGIN`, EIP-55 address, supported EIP-155 chain ID (1, 42161, 8453), random nonce and five-minute expiration.
+- EIP-191 `personal_sign` EOA proof is recovered by `viem`, bound to the same verified OIDC operator, and consumed exactly once inside a PostgreSQL transaction.
+- Reown AppKit / Wagmi uses `useSignMessage` for wallet-native signing; installed EIP-1193 wallets use `personal_sign` with UTF-8 message converted to hex. Both are subject to the same backend proof verification.
+- **Unsupported:** EIP-1271 contract and Safe wallets (separate RPC-aware verification and threat model required), unsupported networks, smart-account delegated/session keys, automated order execution.
+- Never use a wallet signature as consent to trade. Assignment keeps `tradeEnabled = false`.
+- The configured `WEB_ORIGIN` must match the actual page origin where a user signs. Vercel preview origin requires matching environment and a real OIDC session; otherwise fail closed.
