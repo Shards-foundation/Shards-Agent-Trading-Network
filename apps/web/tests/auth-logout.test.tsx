@@ -46,19 +46,22 @@ describe("human sign-out", () => {
   it.each([
     { name: "cross-origin", otherOrigin: "https://untrusted.example" },
     { name: "missing Origin", otherOrigin: null },
-  ])("blocks $name requests before changing cookies", async ({ otherOrigin }) => {
-    const headers = otherOrigin ? { origin: otherOrigin } : {};
-    const result = await POST(
-      new NextRequest(`${origin}/api/auth/logout`, {
-        method: "POST",
-        headers,
-      }),
-    );
-    expect(result.status).toBe(403);
-    expect(await result.json()).toEqual({
-      error: { code: "ORIGIN_DENIED" },
-    });
-    expect(result.headers.get("set-cookie")).toBeNull();
-    expect(result.headers.get("cache-control")).toBe("no-store");
-  });
+  ])(
+    "blocks $name requests before changing cookies",
+    async ({ otherOrigin }) => {
+      const headers = otherOrigin ? { origin: otherOrigin } : {};
+      const result = await POST(
+        new NextRequest(`${origin}/api/auth/logout`, {
+          method: "POST",
+          headers,
+        }),
+      );
+      expect(result.status).toBe(403);
+      expect(await result.json()).toEqual({
+        error: { code: "ORIGIN_DENIED" },
+      });
+      expect(result.headers.get("set-cookie")).toBeNull();
+      expect(result.headers.get("cache-control")).toBe("no-store");
+    },
+  );
 });
