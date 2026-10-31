@@ -163,7 +163,7 @@ try {
   assert.equal(wallets.status, 200);
   const walletHtml = await wallets.text();
   assert.ok(walletHtml.includes("Prove ownership"));
-  assert.ok(walletHtml.includes("Sign in to verify"));
+  assert.ok(walletHtml.includes("Operator sign-in is not configured"));
   assert.ok(walletHtml.includes("PAPER ONLY"));
   const unauthedWalletRegistry = await read(`${webUrl}/api/wallets/registered`);
   assert.equal(unauthedWalletRegistry.status, 401);
