@@ -67,6 +67,13 @@ jobs:
         env:
           DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
         run: pnpm db:migrate:deploy
+      - name: Verify exact migrated schema and Prisma ledger
+        env:
+          DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
+          SATNS_EXPECTED_DATABASE: satn
+        run: |
+          node --test apps/api/scripts/schema-attestation.checks.mjs
+          pnpm --filter @satn/api exec node scripts/schema-attestation.mjs
       - name: Typecheck
         run: pnpm typecheck
       - name: Check formatting on changed files
