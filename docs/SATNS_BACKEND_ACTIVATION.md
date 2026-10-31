@@ -1,17 +1,18 @@
 # SATNS frontend identity and API release gate
 
-**Status:** The dedicated Neon PostgreSQL project now exists and its default
-database passes a read-only SQL connectivity check. Backend activation remains
-blocked pending reviewed schema migrations, Redis, worker/API hosting and
-verified OIDC issuer. Existing `satns.vercel.app` remains live; social
+**Status:** The dedicated Neon PostgreSQL project exists. The ordered SATNS
+schema has passed isolated Neon rehearsal; production still has zero SATNS
+tables. A guarded, manual Prisma production migration workflow has been
+prepared but **not executed**. Backend activation remains blocked pending
+explicit migration approval, Redis, API/worker hosting and a verified OIDC issuer. Existing `satns.vercel.app` remains live; social
 endpoints fail closed.
 
 ## Provider inventory (31 October 2026)
 
 - Vercel: verified frontend production deployment. The SATNS project has
-  **no project-level Neon connector or Neon marketplace installation**
-  in its accessible Vercel team, despite separate provider-level account
-  integrations. A database is not automatically wired into the frontend,
+  **an active Neon marketplace integration** and encrypted `DATABASE_URL`
+  and `DATABASE_URL_UNPOOLED` entries are now present for production and
+  development targets. A database is not automatically wired into the frontend,
   and no database URL should be exposed as a `NEXT_PUBLIC_*` variable.
 - Neon: **dedicated SATNS project created and verified** on the existing
   Free-plan organisation. Project `satns-network-production`, ID

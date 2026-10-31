@@ -1,0 +1,85 @@
+name: SATNS Neon production migration (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Plan shows Prisma migration status; apply executes only after required operator confirmation.
+        type: choice
+        options: [plan, apply]
+        default: plan
+        required: true
+      expected_sha:
+        description: Full 40-character SHA of the reviewed main commit.
+        type: string
+        required: true
+      confirmation:
+        description: For apply only, enter APPLY SATNS PRODUCTION SCHEMA
+        type: string
+        required: false
+      backup_review:
+        description: For apply only, enter BACKUP_REVIEWED after confirming Neon recovery.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: satns-neon-production-migration
+  cancel-in-progress: false
+
+jobs:
+  production-schema:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: satns-production-db
+    env:
+      DATABASE_URL: ${{ secrets.SATNS_NEON_PRODUCTION_DIRECT_URL }}
+      GITHUB_SHA: ${{ github.sha }}
+      GITHUB_REF: ${{ github.ref }}
+      GITHUB_EVENT_NAME: ${{ github.event_name }}
+      SATNS_DB_ACTION: ${{ inputs.action }}
+      SATNS_EXPECTED_SHA: ${{ inputs.expected_sha }}
+      SATNS_DB_CONFIRMATION: ${{ inputs.confirmation }}
+      SATNS_BACKUP_REVIEW: ${{ inputs.backup_review }}
+      SATNS_TARGET_PROJECT_ID: rough-mud-39112486
+      SATNS_TARGET_BRANCH_ID: br-dawn-cloud-za1h61qf
+      SATNS_TARGET_DATABASE: neondb
+      EXECUTION_MODE: PAPER
+      LIVE_EXECUTION_ENABLED: "false"
+
+    steps:
+      - name: Checkout exact reviewed GitHub commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate target and operator release authorization
+        run: node scripts/neon-release-preflight.mjs
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install reviewed dependency lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Validate Prisma schema
+        run: pnpm db:validate
+      - name: Inspect existing migration state
+        if: inputs.action == 'plan'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @satn/database exec prisma migrate status --schema prisma/schema.prisma
+      - name: Apply ordered Prisma migrations
+        if: inputs.action == 'apply'
+        run: pnpm db:migrate:deploy
+      - name: Verify migration ledger after apply
+        if: inputs.action == 'apply'
+        run: pnpm --filter @satn/database exec prisma migrate status --schema prisma/schema.prisma
