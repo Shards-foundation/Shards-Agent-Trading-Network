@@ -8,6 +8,8 @@ const valid = {
   OIDC_API_AUDIENCE: "satn-api",
   OIDC_AUTHORIZATION_ENDPOINT: "https://id.example.com/authorize",
   OIDC_TOKEN_ENDPOINT: "https://id.example.com/oauth/token",
+  OIDC_ISSUER: "https://id.example.com/",
+  OIDC_JWKS_URL: "https://id.example.com/.well-known/jwks.json",
   SATN_SESSION_KEY: Buffer.alloc(32, 7).toString("base64url"),
   SATN_API_INTERNAL_URL: "https://api.example.com",
   NEXT_PUBLIC_SATN_API_URL: "https://api.example.com",
@@ -79,6 +81,33 @@ test("rejects a provider signing algorithm downgrade or mismatched OAuth resourc
     OIDC_RESOURCE: valid.OIDC_API_AUDIENCE,
   });
   assert.equal(neonSafe.ok, true);
+});
+
+test("requires HTTPS issuer and signing keys and rejects algorithm confusion", () => {
+  const result = validateWebAuthConfig({
+    ...valid,
+    OIDC_ISSUER: "http://127.0.0.1/issuer",
+    OIDC_JWKS_URL: "https://user:secret@id.example.com/jwks",
+    OIDC_ID_TOKEN_ALGORITHM: "none",
+  });
+  assert.equal(result.ok, false);
+  for (const code of [
+    "OIDC_ISSUER_INVALID",
+    "OIDC_JWKS_URL_INVALID",
+    "OIDC_ID_TOKEN_ALGORITHM_INVALID",
+  ]) {
+    assert.ok(result.issues.includes(code), code);
+  }
+  assert.ok(!JSON.stringify(result).includes("secret"));
+});
+
+test("supports explicitly pinned EdDSA ID tokens independently of API JWT algorithm", () => {
+  const result = validateWebAuthConfig({
+    ...valid,
+    OIDC_ID_TOKEN_ALGORITHM: "EdDSA",
+    OIDC_JWT_ALGORITHM: "RS256",
+  });
+  assert.equal(result.ok, true);
 });
 
 test("requires explicit provider and API configuration", () => {
