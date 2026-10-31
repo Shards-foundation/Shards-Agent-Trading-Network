@@ -1,8 +1,4 @@
-import {
-  createHash,
-  generateKeyPairSync,
-  sign,
-} from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "../app/api/auth/callback/route";
@@ -113,14 +109,30 @@ describe("OIDC browser ID token validation", () => {
   it.each([
     ["missing token", undefined, {}],
     ["wrong nonce", signedIdToken({ claims: { nonce: "attacker" } }), {}],
-    ["wrong issuer", signedIdToken({ claims: { iss: "https://evil.test/" } }), {}],
+    [
+      "wrong issuer",
+      signedIdToken({ claims: { iss: "https://evil.test/" } }),
+      {},
+    ],
     ["wrong audience", signedIdToken({ claims: { aud: "other-client" } }), {}],
     ["expired", signedIdToken({ claims: { exp: 1 } }), {}],
-    ["issued too far in future", signedIdToken({ claims: { iat: 9999999999 } }), {}],
+    [
+      "issued too far in future",
+      signedIdToken({ claims: { iat: 9999999999 } }),
+      {},
+    ],
     ["unsigned alg header", signedIdToken({ header: { alg: "none" } }), {}],
     ["embedded key injection", signedIdToken({ header: { jwk: rsaKey } }), {}],
-    ["multiple audiences missing azp", signedIdToken({ claims: { aud: [clientId, "someone-else"] } }), {}],
-    ["incorrect azp", signedIdToken({ claims: { azp: "attacker-client" } }), {}],
+    [
+      "multiple audiences missing azp",
+      signedIdToken({ claims: { aud: [clientId, "someone-else"] } }),
+      {},
+    ],
+    [
+      "incorrect azp",
+      signedIdToken({ claims: { azp: "attacker-client" } }),
+      {},
+    ],
   ])("rejects %s", async (_label, token, _options) => {
     await expect(
       verifyIdToken(token, nonce, accessToken, config, {
@@ -227,23 +239,26 @@ describe("OIDC callback fail-closed session creation", () => {
 
   function stubExchange(idToken?: string) {
     const called: string[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      called.push(url);
-      if (url.endsWith("/token"))
-        return new Response(
-          JSON.stringify({
-            access_token: accessToken,
-            expires_in: 3600,
-            ...(idToken ? { id_token: idToken } : {}),
-          }),
-          { status: 200 },
-        );
-      if (url === jwksUrl) return keyResponse();
-      if (url.endsWith("/v1/owners/me"))
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      return new Response("Unexpected request", { status: 503 });
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        called.push(url);
+        if (url.endsWith("/token"))
+          return new Response(
+            JSON.stringify({
+              access_token: accessToken,
+              expires_in: 3600,
+              ...(idToken ? { id_token: idToken } : {}),
+            }),
+            { status: 200 },
+          );
+        if (url === jwksUrl) return keyResponse();
+        if (url.endsWith("/v1/owners/me"))
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        return new Response("Unexpected request", { status: 503 });
+      }),
+    );
     return called;
   }
 
