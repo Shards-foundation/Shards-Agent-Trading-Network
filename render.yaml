@@ -1,0 +1,103 @@
+# OPERATOR-APPROVED STAGING ONLY. NOT APPLIED BY COMMIT OR CI.
+# Applying this Blueprint creates TWO PAID compute services.
+# Never apply before cost approval, verified OIDC, TLS datastore URLs,
+# managed backup/restore evidence, and an incident owner.
+previews:
+  generation: off
+
+services:
+  - type: web
+    name: satn-staging-api
+    runtime: docker
+    repo: https://github.com/Shards-foundation/Shards-Agent-Trading-Network
+    branch: main
+    region: frankfurt
+    plan: 0.5c-512mb
+    autoDeployTrigger: off
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    dockerCommand: node apps/api/dist/index.js
+    preDeployCommand: pnpm --filter @satn/database db:migrate:deploy
+    healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: "10000"
+      - key: EXECUTION_MODE
+        value: PAPER
+      - key: LIVE_EXECUTION_ENABLED
+        value: "false"
+      - key: WORKER_QUEUE
+        value: default
+      - key: WORKER_HEARTBEAT_MS
+        value: "5000"
+      - key: WORKER_STALE_AFTER_MS
+        value: "30000"
+      - key: WORKER_LEASE_MS
+        value: "30000"
+      - key: WORKER_SHUTDOWN_GRACE_MS
+        value: "10000"
+      - key: PAPER_MAX_ORDER_NOTIONAL
+        value: "1000"
+      - key: PAPER_MAX_DAILY_LOSS
+        value: "100"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: WEB_ORIGIN
+        sync: false
+      - key: OIDC_ISSUER
+        sync: false
+      - key: OIDC_AUDIENCE
+        sync: false
+      - key: OIDC_JWKS_URL
+        sync: false
+
+  - type: worker
+    name: satn-staging-worker
+    runtime: docker
+    repo: https://github.com/Shards-foundation/Shards-Agent-Trading-Network
+    branch: main
+    region: frankfurt
+    plan: 0.5c-512mb
+    autoDeployTrigger: off
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    dockerCommand: node apps/api/dist/worker-main.js
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: EXECUTION_MODE
+        value: PAPER
+      - key: LIVE_EXECUTION_ENABLED
+        value: "false"
+      - key: WORKER_QUEUE
+        value: default
+      - key: WORKER_HEARTBEAT_MS
+        value: "5000"
+      - key: WORKER_STALE_AFTER_MS
+        value: "30000"
+      - key: WORKER_LEASE_MS
+        value: "30000"
+      - key: WORKER_SHUTDOWN_GRACE_MS
+        value: "10000"
+      - key: WORKER_METRICS_INTERVAL_MS
+        value: "60000"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: WEB_ORIGIN
+        sync: false
+      - key: OIDC_ISSUER
+        sync: false
+      - key: OIDC_AUDIENCE
+        sync: false
+      - key: OIDC_JWKS_URL
+        sync: false
