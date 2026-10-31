@@ -80,7 +80,7 @@ async function dispatch(
   try {
     const result = await fetch(destination, {
       method,
-      body,
+      body: body ?? null,
       redirect: "error",
       cache: "no-store",
       headers: {
