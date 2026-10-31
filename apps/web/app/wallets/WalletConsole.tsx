@@ -96,6 +96,7 @@ export function discoverSolanaWallets(
     if (
       !provider ||
       seen.has(provider) ||
+      found.some((existing) => existing.label === label) ||
       typeof provider.connect !== "function" ||
       typeof provider.signMessage !== "function"
     ) return;
