@@ -87,9 +87,7 @@ type SolanaChoice = { label: string; provider: SolanaProvider };
  * Prefer explicit injected wallet namespaces and suppress aliases for the
  * same provider. Never silently choose Phantom when Solflare is also present.
  */
-export function discoverSolanaWallets(
-  sources: SolanaSources,
-): SolanaChoice[] {
+export function discoverSolanaWallets(sources: SolanaSources): SolanaChoice[] {
   const found: SolanaChoice[] = [];
   const seen = new Set<SolanaProvider>();
   const add = (label: string, provider: SolanaProvider | undefined) => {
@@ -99,7 +97,8 @@ export function discoverSolanaWallets(
       found.some((existing) => existing.label === label) ||
       typeof provider.connect !== "function" ||
       typeof provider.signMessage !== "function"
-    ) return;
+    )
+      return;
     seen.add(provider);
     found.push({ label, provider });
   };
