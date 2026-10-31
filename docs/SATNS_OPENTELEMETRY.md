@@ -20,6 +20,31 @@ availability. The existing Sentry exception pipeline is preserved.
   HTTP/Prisma instrumentation and production Sentry configuration are
   deliberately excluded.
 
+## API duration metric: local instrumentation only
+
+The API now creates the standard OpenTelemetry histogram
+`http.server.request.duration` with values measured in seconds from a
+monotonic timer. It records only the reviewed HTTP method, a verified
+route **template** and the numeric response status. Duration
+measurements are not sampled by the Sentry tracing setting.
+
+**No OpenTelemetry MeterProvider or metrics exporter is installed.**
+Consequently the default meter remains a no-op: these measurements do
+not yet appear in Sentry or another dashboard. A separately reviewed
+provider/exporter, quota, sampling or aggregation policy and synthetic
+payload test are required before claiming exported metrics.
+
+Route-name admission is deliberately fail-closed. Only reviewed
+static SATNS route segments and `:parameterName` placeholders appear
+as a `http.route` attribute; everything else becomes `unmatched`.
+This prevents accidental high-cardinality path variables or
+secret-bearing URLs from entering trace and metric attributes.
+New API routes need a deliberate allowlist update.
+
+Instrumentation and metrics-provider exceptions do not affect
+HTTP responses or trading halt decisions. The metric is registered
+only while the existing `SATNS_OTEL_ENABLED` guard is enabled.
+
 ## Controls
 
 | Setting                | Default                 | Behaviour                                                         |
@@ -58,7 +83,8 @@ privileged agent or worker context without a defined trust policy.
 1. Run frozen-lockfile install, typechecks, `pnpm test`, API/worker
    lifecycle smoke and browser E2E in GitHub CI on an exact reviewed SHA.
 2. Unit-test literal opt-in, disabled-by-default, template-only route
-   names, error privacy and nonblocking exporter failure.
+   names, sensitive-value omission from spans and metrics, seconds-based
+   duration, and nonblocking exporter failure.
 3. Use a **disposable**, synthetic-data staging environment and a
    separately approved Sentry DSN. Enable `SATNS_OTEL_ENABLED=true`
    there only after privacy review.

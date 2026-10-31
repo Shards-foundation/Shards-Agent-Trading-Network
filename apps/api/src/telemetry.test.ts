@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import {
   SpanKind,
   SpanStatusCode,
+  type Meter,
   type Span,
   type Tracer,
 } from "@opentelemetry/api";
@@ -94,6 +95,13 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     expect(safeRouteTemplate("/v1/posts?token=SECRET")).toBe("unmatched");
     expect(safeRouteTemplate("/".repeat(130))).toBe("unmatched");
     expect(safeRouteTemplate(null)).toBe("unmatched");
+    expect(safeRouteTemplate("/v1/agents/PRIVATE-AGENT-123")).toBe("unmatched");
+    expect(
+      safeRouteTemplate("/v1/agents/a1234567-e89b-12d3-a456-426614174000"),
+    ).toBe("unmatched");
+    expect(safeRouteTemplate("/v1/network/posts/:postId/comments")).toBe(
+      "/v1/network/posts/:postId/comments",
+    );
   });
 
   it("records only method, template and status, never request data", async () => {
@@ -150,9 +158,108 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
       );
       expect(spans).toHaveLength(1);
       expect(spans[0]?.statuses).toContain(SpanStatusCode.ERROR);
-      expect(spans[0]?.attributes["http.route"]).toBe("/fail/:id");
+      expect(spans[0]?.attributes["http.route"]).toBe("unmatched");
       expect(JSON.stringify(spans)).not.toContain("TOP-SECRET-ERROR");
       expect(JSON.stringify(spans)).not.toContain("PRIVATE-IDENTIFIER");
+      expect(spans[0]?.ended).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("records safe duration in seconds", async () => {
+    const app = Fastify();
+    const records: Array<{
+      value: number;
+      attributes: Record<string, unknown>;
+    }> = [];
+    const makeHistogram = vi.fn(() => ({
+      record(value: number, attributes: Record<string, unknown>) {
+        records.push({ value, attributes });
+      },
+    }));
+    const meter = { createHistogram: makeHistogram } as unknown as Meter;
+    const { tracer } = recorder();
+    let ticks = 100;
+    registerHttpTelemetry(app, {
+      enabled: true,
+      tracer,
+      meter,
+      now: () => {
+        ticks += 25;
+        return ticks;
+      },
+    });
+    app.get("/v1/network/posts/:postId/comments", async () => ({ ok: true }));
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/network/posts/SECRET-ID/comments?wallet=SECRET-WALLET",
+        headers: {
+          authorization: "Bearer SECRET-ACCESS",
+          cookie: "session=SECRET-COOKIE",
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(makeHistogram).toHaveBeenCalledWith(
+        "http.server.request.duration",
+        expect.objectContaining({ unit: "s" }),
+      );
+      expect(records).toEqual([
+        {
+          value: 0.025,
+          attributes: {
+            "http.request.method": "GET",
+            "http.route": "/v1/network/posts/:postId/comments",
+            "http.response.status_code": 200,
+          },
+        },
+      ]);
+      for (const sensitive of [
+        "SECRET-ID",
+        "SECRET-WALLET",
+        "SECRET-ACCESS",
+        "SECRET-COOKIE",
+      ]) {
+        expect(JSON.stringify(records)).not.toContain(sensitive);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("does not create metric instruments when disabled", async () => {
+    const app = Fastify();
+    const createHistogram = vi.fn();
+    const meter = { createHistogram } as unknown as Meter;
+    const { tracer, spans } = recorder();
+    registerHttpTelemetry(app, { enabled: false, tracer, meter });
+    app.get("/health/live", async () => ({ ok: true }));
+    try {
+      expect((await app.inject("/health/live")).statusCode).toBe(200);
+      expect(createHistogram).not.toHaveBeenCalled();
+      expect(spans).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("preserves HTTP results when a metrics provider fails", async () => {
+    const app = Fastify();
+    const meter = {
+      createHistogram: () => ({
+        record: () => {
+          throw new Error("metrics exporter unreachable");
+        },
+      }),
+    } as unknown as Meter;
+    const { tracer, spans } = recorder();
+    registerHttpTelemetry(app, { enabled: true, tracer, meter });
+    app.get("/health/live", async () => ({ healthy: true }));
+    try {
+      const response = await app.inject("/health/live");
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ healthy: true });
       expect(spans[0]?.ended).toBe(1);
     } finally {
       await app.close();
