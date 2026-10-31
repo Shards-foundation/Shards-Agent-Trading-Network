@@ -20,7 +20,7 @@ if (dsn && process.env.NODE_ENV !== "test") {
     tracesSampleRate: 0,
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
-    autoSessionTracking: false,
+    defaultIntegrations: false,
     beforeBreadcrumb: () => null,
     beforeSend: (event) => minimalSentryError(event),
   });

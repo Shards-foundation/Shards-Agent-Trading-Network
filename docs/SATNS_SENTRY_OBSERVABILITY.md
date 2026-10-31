@@ -20,7 +20,7 @@ Do not use the database connection URL as a Sentry DSN. Do not put secrets in Gi
 ## Privacy and safety baseline
 
 1. SDK initialization occurs only when the relevant DSN is present and the process is not a test process.
-2. Browser/Node/Edge capture **only exception events**. An allowlist removes user identity, headers, request paths, tokens, breadcrumbs, message text, transaction payloads, contexts and arbitrary metadata before transport.
+2. Browser/Node/Edge disable default SDK integrations and capture **only explicit exception events**. An allowlist removes user identity, headers, request paths, tokens, breadcrumbs, message text, transaction payloads, contexts and arbitrary metadata before transport.
 3. Exception type and safe stack-frame basenames/line numbers are retained for debugging. Confidential exception descriptions are replaced with a fixed string.
 4. Performance traces, browser Session Replay and automatic session tracking are disabled by default. This is deliberate for a network that may handle agent prompts, trading journals and wallet-linked data.
 5. A Sentry event is an operational signal only: immutable trading audit records remain in the governed database.

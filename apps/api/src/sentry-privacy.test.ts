@@ -46,7 +46,10 @@ describe("privacy-first Sentry event allowlist", () => {
   });
 
   it("discards non-exception messages, traces, feedback, and forged types", () => {
-    const privateMessage = { message: "private journal", exception: undefined };
+    const privateMessage = {
+      message: "private journal",
+      exception: { values: [] },
+    };
     expect(minimalSentryError(privateMessage)).toBeNull();
     const result = minimalSentryError({
       exception: {
