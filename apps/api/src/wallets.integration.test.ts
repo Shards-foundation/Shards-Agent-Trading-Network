@@ -1,8 +1,4 @@
-import {
-  generateKeyPairSync,
-  randomUUID,
-  sign,
-} from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import Fastify from "fastify";
@@ -46,7 +42,7 @@ describe.skipIf(!integrationEnabled)(
         app,
         prisma,
         webOrigin: "https://satns.vercel.app",
-        resolveOwnerIdentity: async authorization => {
+        resolveOwnerIdentity: async (authorization) => {
           if (authorization === "Bearer operator-a")
             return { subject: subjectA, actorType: "OIDC_USER" };
           if (authorization === "Bearer operator-b")
@@ -84,11 +80,10 @@ describe.skipIf(!integrationEnabled)(
           privateKey,
         ).toString("base64");
 
-        const invalid = await inject(
-          "/v1/owner/wallets/verify",
-          "operator-a",
-          { challengeId: challengeBody.challengeId, signature: "x".repeat(88) },
-        );
+        const invalid = await inject("/v1/owner/wallets/verify", "operator-a", {
+          challengeId: challengeBody.challengeId,
+          signature: "x".repeat(88),
+        });
         expect(invalid.statusCode).toBe(400);
         expect(invalid.json().error.code).toBe("PROOF_INVALID_OR_EXPIRED");
 
@@ -106,11 +101,10 @@ describe.skipIf(!integrationEnabled)(
         const walletId: string = verified.json().wallet.id;
         expect(verified.json().wallet).not.toHaveProperty("ownerId");
 
-        const replay = await inject(
-          "/v1/owner/wallets/verify",
-          "operator-a",
-          { challengeId: challengeBody.challengeId, signature },
-        );
+        const replay = await inject("/v1/owner/wallets/verify", "operator-a", {
+          challengeId: challengeBody.challengeId,
+          signature,
+        });
         expect(replay.statusCode).toBe(400);
 
         const otherChallenge = await inject(
@@ -170,10 +164,7 @@ describe.skipIf(!integrationEnabled)(
           }),
         ).toBe(1);
 
-        const registry = await inject(
-          "/v1/owner/wallets",
-          "operator-a",
-        );
+        const registry = await inject("/v1/owner/wallets", "operator-a");
         expect(registry.statusCode).toBe(200);
         expect(registry.json().wallets).toEqual(
           expect.arrayContaining([
