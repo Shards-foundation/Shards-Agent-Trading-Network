@@ -15,6 +15,7 @@ const origin = "https://satns.vercel.app";
 const validEnv = {
   SATNS_HUMAN_AUTH_ENABLED: "true",
   OIDC_CLIENT_ID: "test-browser-client",
+  OIDC_API_AUDIENCE: "satn-api",
   OIDC_AUTHORIZATION_ENDPOINT: "https://id.example.test/authorize",
   OIDC_TOKEN_ENDPOINT: "https://id.example.test/token",
   OIDC_ISSUER: "https://id.example.test/",
@@ -52,6 +53,7 @@ describe("human OIDC signup release gate", () => {
   });
 
   it.each([
+    ["API audience missing", "OIDC_API_AUDIENCE", ""],
     ["issuer missing", "OIDC_ISSUER", ""],
     ["jwks missing", "OIDC_JWKS_URL", ""],
     ["jwks downgrade", "OIDC_JWKS_URL", "http://id.example.test/jwks"],
@@ -61,6 +63,7 @@ describe("human OIDC signup release gate", () => {
     ["unsafe API", "SATN_API_INTERNAL_URL", "http://api.example.test/"],
     ["self-referential API", "SATN_API_INTERNAL_URL", origin],
     ["API URL with path", "SATN_API_INTERNAL_URL", "https://api.example.test/v1"],
+    ["public origin with path", "AUTH_PUBLIC_ORIGIN", `${origin}/somewhere`],
   ])("blocks %s before redirect", async (_reason, variable, value) => {
     vi.stubEnv(variable, value);
     if (variable === "SATN_API_INTERNAL_URL" && value === "") {
