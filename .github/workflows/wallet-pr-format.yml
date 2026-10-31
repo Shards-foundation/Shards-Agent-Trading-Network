@@ -37,6 +37,10 @@ jobs:
             apps/web/app/wallets/WalletConsole.tsx \
             apps/web/app/wallets/wallet.css \
             apps/web/app/wallets/page.tsx \
+            apps/web/app/terminal/TradingWorkspace.tsx \
+            apps/web/app/terminal/workspace.css \
+            apps/web/app/terminal/page.tsx \
+            apps/web/tests/trading-workspace.test.tsx \
             apps/web/app/NetworkHome.tsx \
             apps/web/app/join/page.tsx \
             apps/web/tests/wallet-control.test.tsx \
