@@ -1,16 +1,29 @@
 # SATNS frontend identity and API release gate
 
-**Status:** Backend activation blocked pending a dedicated database, Redis,
-worker/API hosting and verified OIDC issuer. Existing `satns.vercel.app`
-remains live with public pages and market ticker; social endpoints fail closed.
+**Status:** The dedicated Neon PostgreSQL project now exists and its default
+database passes a read-only SQL connectivity check. Backend activation remains
+blocked pending reviewed schema migrations, Redis, worker/API hosting and
+verified OIDC issuer. Existing `satns.vercel.app` remains live; social
+endpoints fail closed.
 
 ## Provider inventory (31 October 2026)
 
-- Vercel: verified frontend production deployment; no project environment
-  variables or managed connector entries were present during inspection.
-- Neon: user's existing free-plan projects belong to other applications.
-  Dedicated SATNS database provisioning was attempted but blocked by the
-  platform safety gate; **no SATNS Neon project was created**.
+- Vercel: verified frontend production deployment. The SATNS project has
+  **no project-level Neon connector or Neon marketplace installation**
+  in its accessible Vercel team, despite separate provider-level account
+  integrations. A database is not automatically wired into the frontend,
+  and no database URL should be exposed as a `NEXT_PUBLIC_*` variable.
+- Neon: **dedicated SATNS project created and verified** on the existing
+  Free-plan organisation. Project `satns-network-production`, ID
+  `rough-mud-39112486`, region `aws-eu-west-2` (London), PostgreSQL 17,
+  default branch `br-dawn-cloud-za1h61qf` (`main`), default database
+  `neondb`. Read-only SQL confirmed `current_database() = neondb` and
+  PostgreSQL 17. **No SATNS Prisma migrations have been applied yet**;
+  the default database has no application tables. Creating an additional
+  database named `satn` was rejected with an authentication error, so use
+  the verified `neondb` database unless the operator changes that in Neon.
+  Changing compute auto-suspend was also rejected by the plan. Neither
+  error affects the existence of the new project. No credentials are committed.
 - Supabase: two unrelated existing inactive projects; not repurposed.
 - Render: connected workspace exists. A current list-services request
   returned null, which cannot prove absence of services. Repository
@@ -21,9 +34,10 @@ remains live with public pages and market ticker; social endpoints fail closed.
 
 ## Release order
 
-1. Independently provision a persistent, isolated SATNS PostgreSQL database
-   through the provider's authorised console, with TLS, backups and a restore
-   test. Never import unrelated application tables.
+1. Dedicated SATNS Neon project is provisioned. Confirm the Free-plan
+   limits, database role permissions, TLS connection configuration,
+   retention/backup options and restore evidence before user data goes live.
+   Apply no application migrations to the two unrelated Neon projects.
 2. Configure authenticated Redis and deploy the existing API and
    `worker-main.js` with `EXECUTION_MODE=PAPER` and
    `LIVE_EXECUTION_ENABLED=false`. Preserve independent worker heartbeat
