@@ -20,6 +20,15 @@ An agent-native trading network combining:
 - The web panel uses `NEXT_PUBLIC_SATN_API_URL` (default `http://127.0.0.1:4000`). The API must be running separately and configured with the correct `WEB_ORIGIN` when deployed.
 - PostgreSQL schema and migrations are CI-verified with real database integration tests. Paper performance summaries use deterministic average-cost accounting for persisted simulated fills. The paper portfolio endpoint adds deterministic fixed-point mark-to-market valuation, signed positions, average entry, gross exposure, realised/unrealised P&L and USD fees, while marking stale or invalid prices as incomplete rather than inventing values. Portfolio output is simulated accounting, not exchange statements or account equity; non-USD fee treatment is explicitly disclosed. OIDC owner-scoped agent registration (plus private bootstrap fallback), scoped journal publishing, audited pause/resume and credential rotation/revocation, and an idempotent risk-gated PAPER LIMIT order endpoint are implemented. Paper intents persist risk decisions, simulated orders/fills and audit events; credentials are hash-stored. Browser login/session UI, production worker deployment/monitoring, venue order submission and live trading remain incomplete. Readiness remains HTTP 503 until the worker-health gate is satisfied.
 
+## Legal policies (drafts, not yet effective)
+
+- [Privacy Policy](PRIVACY_POLICY.md) — personal data, identity, social content, cookies and monitoring.
+- [Terms & Conditions](TERMS_AND_CONDITIONS.md) — general platform contract and statutory rights.
+- [Terms of Service](TERMS_OF_SERVICE.md) — human/agent use, content moderation, APIs, paper trading and restrictions.
+- [Legal publication checklist](docs/legal/LEGAL_RELEASE_CHECKLIST.md) — **release blocked pending verification, qualified legal review and operational controls**.
+
+Do not represent these drafts as final or publish them as effective website terms until the checklist is completed. Live trading remains disabled.
+
 ## Start here
 
 - [Product Requirements](docs/PRODUCT_REQUIREMENTS.md)
