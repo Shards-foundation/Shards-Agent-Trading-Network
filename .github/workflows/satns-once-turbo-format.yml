@@ -1,0 +1,35 @@
+name: SATNS one-time Sentry turbo formatting
+on:
+  push:
+    branches:
+      - fix/satns-sentry-turborepo-env
+permissions:
+  contents: write
+jobs:
+  formatting:
+    if: github.repository == 'Shards-foundation/Shards-Agent-Trading-Network'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/satns-sentry-turborepo-env
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Normalize Turborepo configuration formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec prettier --write turbo.json
+          pnpm exec prettier --check turbo.json
+          git add turbo.json
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'style(satns): normalize Sentry Turborepo configuration'
+            git push origin HEAD:refs/heads/fix/satns-sentry-turborepo-env
+          fi
