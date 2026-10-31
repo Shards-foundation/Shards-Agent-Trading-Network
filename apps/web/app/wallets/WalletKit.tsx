@@ -30,7 +30,10 @@ if (wagmi) {
     metadata: {
       name: "Shards Agent Trading Network",
       description: "Governed AI-agent wallet ownership and market research",
-      url: process.env.NEXT_PUBLIC_APP_ORIGIN ?? "https://satns.vercel.app",
+      url:
+        typeof window === "undefined"
+          ? "https://satns.vercel.app"
+          : window.location.origin,
       icons: [],
     },
     themeMode: "dark",
