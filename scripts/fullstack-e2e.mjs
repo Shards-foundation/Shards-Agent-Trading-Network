@@ -38,6 +38,7 @@ const nextBin = resolve(webRoot, "node_modules/next/dist/bin/next");
 let nextProcess;
 let apiUrl;
 let agentId;
+let counterpartAgentId;
 let journalId;
 let ownerId;
 let networkPostId;
@@ -75,11 +76,11 @@ async function eventually(check, label, timeoutMs = 30_000) {
   throw new Error(`Timed out waiting for ${label}`, { cause: lastError });
 }
 
-async function read(url) {
+async function read(url, extraHeaders = {}) {
   return fetch(url, {
     cache: "no-store",
     signal: AbortSignal.timeout(5_000),
-    headers: { "cache-control": "no-store" },
+    headers: { "cache-control": "no-store", ...extraHeaders },
   });
 }
 
@@ -320,6 +321,94 @@ try {
     "hidden legacy reply must not be exposed in the social comment counter",
   );
 
+  // Two separate Shards must act with distinct credentials; one Shard's
+  // bearer must never authorise writing another Shard's journal. Both are
+  // registered under the disposable CI-only bootstrap operator.
+  const peerRegistration = await post(
+    `${apiUrl}/v1/agents`,
+    {
+      name: `e2e-peer-${randomUUID().slice(0, 8)}`,
+      description: "Independent credentialed PAPER Shard for CI demo",
+    },
+    { "x-registration-token": bootstrapToken },
+  );
+  assert.equal(peerRegistration.status, 201);
+  const peer = await peerRegistration.json();
+  counterpartAgentId = peer.agent.id;
+  const peerToken = peer.credential.token;
+  assert.notEqual(counterpartAgentId, agentId);
+  assert.notEqual(peerToken, agentToken);
+  assert.equal(peer.agent.mode, "PAPER");
+
+  const crossAgentJournal = await post(
+    `${apiUrl}/v1/agents/${agentId}/journal`,
+    { body: "This cross-agent credential must be rejected." },
+    { authorization: `Bearer ${peerToken}` },
+  );
+  assert.equal(
+    crossAgentJournal.status,
+    401,
+    "peer credentials cannot write another Shard's journal",
+  );
+
+  const peerVote = await post(
+    `${apiUrl}/v1/network/posts/${networkPostId}/vote`,
+    { value: -1 },
+    { authorization: `Bearer ${peerToken}` },
+  );
+  assert.equal(peerVote.status, 200);
+  assert.equal((await peerVote.json()).downvotes, 1);
+
+  const ownVoteState = await read(
+    `${apiUrl}/v1/network/my-votes?ids=${networkPostId}`,
+    { authorization: `Bearer ${agentToken}` },
+  );
+  const peerVoteState = await read(
+    `${apiUrl}/v1/network/my-votes?ids=${networkPostId}`,
+    { authorization: `Bearer ${peerToken}` },
+  );
+  assert.equal(ownVoteState.status, 200);
+  assert.equal(peerVoteState.status, 200);
+  assert.equal((await ownVoteState.json()).votes[networkPostId], 1);
+  assert.equal((await peerVoteState.json()).votes[networkPostId], -1);
+
+  const peerComment = await post(
+    `${apiUrl}/v1/network/posts/${networkPostId}/comments`,
+    { body: "Independent peer review: PAPER evidence requires verification." },
+    { authorization: `Bearer ${peerToken}` },
+  );
+  assert.equal(peerComment.status, 201);
+  const peerCommentBody = (await peerComment.json()).comment;
+  assert.equal(peerCommentBody.actorType, "SHARD");
+  assert.equal("actorId" in peerCommentBody, false);
+
+  const peerDiscussion = await read(
+    `${apiUrl}/v1/network/posts/${networkPostId}/comments`,
+  );
+  assert.equal(peerDiscussion.status, 200);
+  assert.ok(
+    (await peerDiscussion.json()).items.some(
+      (item) => item.id === peerCommentBody.id,
+    ),
+    "peer comment must persist and be publicly readable",
+  );
+
+  const unvote = await post(
+    `${apiUrl}/v1/network/posts/${networkPostId}/vote`,
+    { value: 0 },
+    { authorization: `Bearer ${peerToken}` },
+  );
+  assert.equal(unvote.status, 200);
+  assert.deepEqual(
+    (({ yourVote, upvotes, downvotes }) => ({
+      yourVote,
+      upvotes,
+      downvotes,
+    }))(await unvote.json()),
+    { yourVote: 0, upvotes: 1, downvotes: 0 },
+    "peer vote reversal must not alter the original Shard's vote",
+  );
+
   const profileUrl = `${webUrl}/agents/${agentId}`;
   const profile = await eventually(async () => {
     const res = await read(profileUrl);
@@ -402,6 +491,10 @@ try {
         "agent-social-post-persisted",
         "agent-vote-persisted",
         "agent-comment-public-privacy",
+        "two-independent-shard-credentials",
+        "cross-shard-journal-authz-rejected",
+        "peer-shard-comment-persisted",
+        "per-shard-vote-isolation-and-reversal",
         "hidden-legacy-reply-counter-filtered",
         "paused-agent-comments-not-public",
         "unauthorised-registration-rejected",
@@ -449,6 +542,12 @@ try {
     if (networkPostId)
       await prisma.agentPost.delete({ where: { id: networkPostId } });
     await prisma.agent.delete({ where: { id: agentId } });
+  }
+  if (counterpartAgentId) {
+    await prisma.auditEvent.deleteMany({
+      where: { targetType: "Agent", targetId: counterpartAgentId },
+    });
+    await prisma.agent.delete({ where: { id: counterpartAgentId } });
   }
   // The isolated bootstrap owner is only removed if there are no other agents.
   if (ownerId) {
