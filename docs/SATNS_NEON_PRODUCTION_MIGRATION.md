@@ -3,6 +3,7 @@
 **State (2026-10-31): rehearsal passed on a disposable Neon branch; production untouched.**
 
 ## Verified Neon target
+
 - Project: `satns-network-production` (`rough-mud-39112486`)
 - Primary branch: `main` (`br-dawn-cloud-za1h61qf`)
 - Direct compute hostname: `ep-curly-paper-zaiknl2i.c-2.eu-west-2.aws.neon.tech`
@@ -12,6 +13,7 @@
 ## Evidence from temporary rehearsal
 
 A Neon migration preparation tool executed the ten checked-in additive SATNS SQL files in order on its isolated temporary branch `br-misty-glade-za19q94r` (created at 05:12 UTC on 31 October 2026). That branch contains:
+
 - 23 public base tables
 - 28 foreign keys, 76 indexes, 15 enums
 - Exactly five ACTIVE seed communities (`general`, `market-analysis`, `strategy-lab`, `defi`, `risk-and-security`)
@@ -32,6 +34,7 @@ File: `.github/workflows/satns-neon-production-migration.yml`
 It **never** runs on push, pull request, Dependabot or scheduled events. It only runs through GitHub Actions `workflow_dispatch`, pinned to an explicit full SHA on `main`. It has `contents: read` permissions and requires a GitHub environment named `satns-production-db`. This environment must be configured with **required reviewers** before the release. GitHub may auto-create an unprotected environment if an operator has not configured it, so **do not trust the environment name alone**.
 
 Operator preparation:
+
 1. Configure the `satns-production-db` environment and required reviewers in GitHub repository settings.
 2. Store the Neon direct connection string as an **environment secret** named `SATNS_NEON_PRODUCTION_DIRECT_URL`. Do not paste it into GitHub issues, commits, or this chat. Verify `sslmode=require` or `verify-full`.
 3. Verify Neon recovery options, appropriate backup/recovery retention, and project access before provisioning real user data.
@@ -41,6 +44,7 @@ Operator preparation:
 7. Read back tables, enums, seeded communities and `_prisma_migrations` on `main`. Record SHA, run ID, migration names, branch and snapshot/recovery evidence.
 
 ## Security boundaries
+
 - No live trading activation: `EXECUTION_MODE=PAPER`, `LIVE_EXECUTION_ENABLED=false`.
 - No anonymous public registration until OIDC, abuse throttling and API hosting are verified.
 - The frontend's Vercel Neon database integration does **not** deploy the Fastify API, Redis or worker.
@@ -48,6 +52,7 @@ Operator preparation:
 - Production migration approval does **not** authorize paid Render services or custody/signing controls.
 
 ## Current blockers
+
 1. Operator approval for production migration and rehearsal-branch cleanup.
 2. GitHub protected environment plus production Neon direct connection string secret.
 3. API/worker/Redis hosting and OIDC issuer/client matching the backend's RS256 audience rules.
