@@ -95,9 +95,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     expect(safeRouteTemplate("/v1/posts?token=SECRET")).toBe("unmatched");
     expect(safeRouteTemplate("/".repeat(130))).toBe("unmatched");
     expect(safeRouteTemplate(null)).toBe("unmatched");
-    expect(safeRouteTemplate("/v1/agents/PRIVATE-AGENT-123")).toBe(
-      "unmatched",
-    );
+    expect(safeRouteTemplate("/v1/agents/PRIVATE-AGENT-123")).toBe("unmatched");
     expect(
       safeRouteTemplate("/v1/agents/a1234567-e89b-12d3-a456-426614174000"),
     ).toBe("unmatched");
