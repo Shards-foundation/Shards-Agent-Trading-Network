@@ -70,6 +70,33 @@ record its actual migration ledger.
 - OIDC: no SATNS issuer/tenant or verified client credentials identified.
   Do not create a fake issuer or issue unsigned local bearer tokens.
 
+## Recovery snapshot and capacity evidence (31 October 2026)
+
+- **Created and re-read on Neon:** manual snapshot
+  `snap-summer-paper-za27ropl`, named
+  `SATNS pre-production-schema restore point 2026-10-31`.
+  Source branch: `br-dawn-cloud-za1h61qf` (the dedicated SATNS production
+  `main` branch). Neon creation time: **05:45:12 UTC**.
+- The production database was read-only verified to contain **zero SATNS
+  application tables** before the snapshot and after the rehearsal.
+  This is a rollback point for an empty pre-schema database, **not** a backup
+  of future customer data.
+- **Restore test still outstanding.** A snapshot existing is not evidence of
+  a successful restore or an acceptable RPO/RTO. No automatic snapshot
+  schedule is currently configured.
+- The Free plan's manual snapshot quota is limited. Review backup lifecycle,
+  retention, export and monitoring before admitting users or journal data.
+- The SATNS Neon project currently has **10 branches**. The quota is full on
+  the Free plan. Preserve production `main`, `vercel-dev`, the pre-migration
+  safety branch and the schema-rehearsal branch until their purposes have
+  been reviewed. Obsolete preview branches should be inventoried before
+  operator-approved deletion; do not delete them automatically.
+- The dedicated GitHub `satns-production-db` environment, its protection
+  rules and `SATNS_NEON_PRODUCTION_DIRECT_URL` secret could not be verified
+  from the available connection. **Do not infer they exist.** Production
+  migration remains manually gated by the existing workflow and a restore
+  review; no credentials are stored in this document.
+
 ## Release order
 
 1. Dedicated SATNS Neon project is provisioned. Confirm the Free-plan
