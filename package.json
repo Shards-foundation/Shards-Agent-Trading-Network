@@ -33,7 +33,8 @@
       "@types/node": "^22.18.10",
       "ws": "^8.21.0",
       "zod": "^4.6.7",
-      "decode-uri-component": "^0.5.1"
+      "decode-uri-component": "^0.5.1",
+      "@wagmi/connectors": "6.2.0"
     }
   }
 }
