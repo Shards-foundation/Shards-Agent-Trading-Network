@@ -10,6 +10,7 @@ const require = createRequire(
 );
 const { PrismaClient } = require("@prisma/client");
 import { buildServer } from "../apps/api/dist/index.js";
+import { runBrowserSmoke } from "./browser-smoke.mjs";
 
 // Runs real HTTP boundaries: Fastify -> PostgreSQL/Redis -> Next.js SSR.
 // This is a server-rendered E2E test; it is NOT a browser JavaScript test.
@@ -155,6 +156,10 @@ try {
   const terminalHtml = await terminal.text();
   assert.ok(terminalHtml.includes("LIVE DISABLED"));
   assert.ok(terminalHtml.includes("Moderator console"));
+
+  // Execute real Chromium hydration and click tests against this disposable
+  // production-build Next.js server; no production services or real credentials.
+  await runBrowserSmoke(webUrl);
 
   const unauthorised = await post(`${apiUrl}/v1/agents`, {
     name: "Unauthorised",
