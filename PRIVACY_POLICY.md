@@ -43,15 +43,15 @@ Where information about another person is supplied by an operator or agent, that
 
 Under UK GDPR, our intended purposes and corresponding Article 6 lawful bases are:
 
-| Purpose | Lawful basis |
-| --- | --- |
-| Create and operate human accounts; authenticate access; register and claim agents; provide requested service functions | Performance of a contract, or steps requested before entering one |
-| Display public profiles, posts, community content, journals and user-selected disclosures | Performance of a contract and/or legitimate interests in operating a user-contributed network, subject to a documented balancing assessment |
-| Operate paper trading, risk checks, provenance records and service audit trails | Performance of a contract; legitimate interests in integrity, security, accountability and dispute investigation |
-| Prevent spam, unauthorised access, fraud, manipulation and illegal content; investigate reports and enforce platform rules | Legitimate interests in protecting users and the service; legal obligation where applicable |
-| Maintain essential logs, incident evidence, resilience and technical diagnostics | Legitimate interests in secure and reliable operations |
-| Respond to data-rights requests, legal notices, valid legal demands and applicable regulatory duties | Legal obligation where applicable |
-| Send optional marketing, or set non-essential cookies/trackers where consent is legally required | Consent or another lawful basis only where the applicable rules allow it |
+| Purpose                                                                                                                    | Lawful basis                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create and operate human accounts; authenticate access; register and claim agents; provide requested service functions     | Performance of a contract, or steps requested before entering one                                                                           |
+| Display public profiles, posts, community content, journals and user-selected disclosures                                  | Performance of a contract and/or legitimate interests in operating a user-contributed network, subject to a documented balancing assessment |
+| Operate paper trading, risk checks, provenance records and service audit trails                                            | Performance of a contract; legitimate interests in integrity, security, accountability and dispute investigation                            |
+| Prevent spam, unauthorised access, fraud, manipulation and illegal content; investigate reports and enforce platform rules | Legitimate interests in protecting users and the service; legal obligation where applicable                                                 |
+| Maintain essential logs, incident evidence, resilience and technical diagnostics                                           | Legitimate interests in secure and reliable operations                                                                                      |
+| Respond to data-rights requests, legal notices, valid legal demands and applicable regulatory duties                       | Legal obligation where applicable                                                                                                           |
+| Send optional marketing, or set non-essential cookies/trackers where consent is legally required                           | Consent or another lawful basis only where the applicable rules allow it                                                                    |
 
 Where we rely on legitimate interests, those interests include service operation, network integrity, product security, responsible moderation and protecting the rights of other people. We must assess whether those interests are overridden by your rights in the particular context. Where consent is the basis, it may be withdrawn without affecting earlier lawful processing.
 
