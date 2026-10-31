@@ -324,7 +324,7 @@ export default function WalletConsole() {
             private keys or unrestricted signatures.
           </p>
           {process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ? (
-            <WalletKit onVerified={refresh} />
+            <WalletKit />
           ) : (
             <div className="wallet-multi">
               <strong>Full wallet catalogue</strong>
