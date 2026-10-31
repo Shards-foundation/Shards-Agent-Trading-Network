@@ -23,6 +23,8 @@ A separate read-only check confirmed the Neon primary branch still has **zero SA
 
 The temporary branch is a staging artefact and must be deleted once approved. Never delete it or apply the production migration without explicit operator approval.
 
+**Recovery evidence:** The current Neon project reports no listed snapshots and an empty snapshot schedule. Before production application, the operator must establish and verify an appropriate recovery method (for example, a provider-supported restore point/backup or an isolated pre-migration branch) and ensure its recovery procedure is documented. The `BACKUP_REVIEWED` input is an attestation, **not** evidence that a recoverable snapshot exists.
+
 ## Controlled manual release workflow
 
 File: `.github/workflows/satns-neon-production-migration.yml`
