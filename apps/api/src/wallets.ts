@@ -133,14 +133,17 @@ export function registerWalletRoutes({
           where: { chain_address: { chain: "SOLANA", address: challenge.address } },
           create: { ownerId: identity.id, chain: "SOLANA", address: challenge.address },
           update: { status: "ACTIVE", lastVerifiedAt: now() },
-          select: { id: true, chain: true, address: true, status: true },
+          select: { id: true, chain: true, address: true, status: true, ownerId: true },
         });
+        // Guard a concurrent first claim: never succeed for a wallet owned by another operator.
+        if (result.ownerId !== identity.id) throw new Error("WALLET_OWNER_CONFLICT");
         await tx.auditEvent.create({
           data: { actorType: "OIDC_USER", actorId: subject, action: "wallet.proof_verified",
             targetType: "VerifiedWallet", targetId: result.id, correlationId: request.id,
             payloadHash: (await import("node:crypto")).createHash("sha256").update(challenge.message).digest("hex") },
         });
-        return result;
+        const { ownerId: _ownerId, ...verified } = result;
+        return verified;
       });
       if (!wallet) return reply.code(409).send(fail("CHALLENGE_REPLAYED", request.id));
       return { wallet, verified: true, tradingEnabled: false };

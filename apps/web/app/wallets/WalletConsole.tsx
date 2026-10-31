@@ -175,7 +175,12 @@ export default function WalletConsole() {
     if (active?.chain === "SOLANA") await solProvider?.disconnect?.().catch(() => {});
     setActive(null); setSolProvider(null); setEvmProvider(null); setMessage("");
   }
-  const verifiedActive = registry?.wallets.some(w => w.status === "ACTIVE" && w.chain === active?.chain && w.address.toLowerCase() === active.address.toLowerCase()) ?? false;
+  const verifiedActive = active
+    ? (registry?.wallets.some(w =>
+        w.status === "ACTIVE" &&
+        w.chain === active.chain &&
+        w.address.toLowerCase() === active.address.toLowerCase()) ?? false)
+    : false;
 
   return (
     <main className="wallet-page">
