@@ -1,0 +1,56 @@
+name: Wallet PR formatting (temporary)
+
+on:
+  push:
+    branches:
+      - feat/wallet-operator-control-plane
+
+permissions:
+  contents: write
+
+jobs:
+  format-reviewed-branch:
+    if: github.repository == 'Shards-foundation/Shards-Agent-Trading-Network'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/wallet-operator-control-plane
+          persist-credentials: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format wallet implementation files only
+        run: |
+          pnpm exec prettier --write \
+            apps/api/src/wallet-crypto.ts \
+            apps/api/src/wallet-crypto.test.ts \
+            apps/api/src/wallets.ts \
+            apps/api/src/wallets.test.ts \
+            apps/api/src/index.ts \
+            apps/web/app/api/wallets/'[...path]'/route.ts \
+            apps/web/app/wallets/WalletConsole.tsx \
+            apps/web/app/wallets/wallet.css \
+            apps/web/app/wallets/page.tsx \
+            apps/web/app/NetworkHome.tsx \
+            apps/web/app/join/page.tsx \
+            apps/web/tests/wallet-control.test.tsx \
+            apps/web/public/skill.md \
+            docs/WALLET_AUTHORITY_ARCHITECTURE.md
+          pnpm --filter @satn/database exec prisma format --schema prisma/schema.prisma
+      - name: Commit formatting if changed
+        run: |
+          if git diff --quiet; then
+            echo "All files already formatted."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apps/api/src apps/web packages/database/prisma/schema.prisma docs/WALLET_AUTHORITY_ARCHITECTURE.md
+            git commit -m "style(wallets): apply repository Prettier and Prisma formatting"
+            git push origin HEAD:feat/wallet-operator-control-plane
+          fi
