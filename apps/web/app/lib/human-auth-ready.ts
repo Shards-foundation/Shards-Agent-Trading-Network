@@ -11,6 +11,23 @@ export function humanAuthReady(): boolean {
   try {
     const { clientId, origin } = authConfig();
     idTokenConfig(clientId);
+    const audience = process.env.OIDC_API_AUDIENCE;
+    if (
+      !audience ||
+      !audience.trim() ||
+      (process.env.OIDC_RESOURCE &&
+        process.env.OIDC_RESOURCE !== audience)
+    )
+      return false;
+    const declaredOrigin = new URL(process.env.AUTH_PUBLIC_ORIGIN!);
+    if (
+      declaredOrigin.pathname !== "/" ||
+      declaredOrigin.search ||
+      declaredOrigin.hash ||
+      declaredOrigin.username ||
+      declaredOrigin.password
+    )
+      return false;
     const raw =
       process.env.SATN_API_INTERNAL_URL ??
       process.env.NEXT_PUBLIC_SATN_API_URL;
