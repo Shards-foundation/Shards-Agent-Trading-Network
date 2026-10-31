@@ -89,8 +89,14 @@ async function resolveOwnerIdentity(
   const oidcConfigured = Boolean(issuer || audience || jwksUrl || algorithm);
 
   if (oidcConfigured) {
-    if (!issuer || !audience || !jwksUrl ||
-        (algorithm !== undefined && algorithm !== "RS256" && algorithm !== "EdDSA")) {
+    if (
+      !issuer ||
+      !audience ||
+      !jwksUrl ||
+      (algorithm !== undefined &&
+        algorithm !== "RS256" &&
+        algorithm !== "EdDSA")
+    ) {
       return { error: "MISCONFIGURED" };
     }
     if (

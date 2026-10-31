@@ -32,7 +32,8 @@ test("wrong domain, invalid session key, and unsafe identity URL fail closed", (
     "SESSION_KEY_INVALID",
     "OIDC_AUTHORIZE_URL_INVALID",
     "OIDC_API_AUDIENCE_MISSING",
-  ]) assert.ok(result.issues.includes(name), name);
+  ])
+    assert.ok(result.issues.includes(name), name);
 });
 
 test("never proxies the API to the public website itself", () => {
@@ -57,7 +58,8 @@ test("rejects disabled transport, bootstrap credential and live trading", () => 
     "BOOTSTRAP_TOKEN_FORBIDDEN",
     "LIVE_TRADING_MUST_BE_DISABLED",
     "OIDC_TOKEN_URL_INVALID",
-  ]) assert.ok(result.issues.includes(name), name);
+  ])
+    assert.ok(result.issues.includes(name), name);
   assert.ok(!JSON.stringify(result).includes("never-print-me"));
   assert.ok(!JSON.stringify(result).includes("password"));
 });
