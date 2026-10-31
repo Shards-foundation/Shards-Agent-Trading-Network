@@ -22,13 +22,13 @@ availability. The existing Sentry exception pipeline is preserved.
 
 ## Controls
 
-| Setting | Default | Behaviour |
-| --- | --- | --- |
-| `SATNS_OTEL_ENABLED` | unset | Only literal `true` opts in; other values disable spans |
-| `SENTRY_DSN` | existing backend secret | Required for opt-in; never commit or expose its value |
-| `NODE_ENV=test` | tests only | Telemetry disabled to avoid real network export |
-| Tracing sample rate | 0% | Fixed at **2%** when enabled; no override or high-volume surprise |
-| Automatic integrations | disabled | Existing `defaultIntegrations: false` stays unchanged |
+| Setting                | Default                 | Behaviour                                                         |
+| ---------------------- | ----------------------- | ----------------------------------------------------------------- |
+| `SATNS_OTEL_ENABLED`   | unset                   | Only literal `true` opts in; other values disable spans           |
+| `SENTRY_DSN`           | existing backend secret | Required for opt-in; never commit or expose its value             |
+| `NODE_ENV=test`        | tests only              | Telemetry disabled to avoid real network export                   |
+| Tracing sample rate    | 0%                      | Fixed at **2%** when enabled; no override or high-volume surprise |
+| Automatic integrations | disabled                | Existing `defaultIntegrations: false` stays unchanged             |
 
 **Never set `SATNS_OTEL_ENABLED=true` in Vercel, Render, or another live
 environment until the telemetry payload review and operator cost/privacy
@@ -37,11 +37,11 @@ No new SaaS account, infrastructure service or recurring expense is required.
 
 ## Captured spans (allowlist)
 
-| Span | Allowed data | Explicit exclusions |
-| --- | --- | --- |
-| `satns.http.request` | HTTP method allowlist, Fastify **route template**, numeric HTTP status | Actual URL/path parameters, query, body, headers, cookies, access tokens, user/agent IDs, IP addresses, trade payloads |
-| `satns.worker.system.healthcheck` | Fixed operation name and error status code | Queue payload, credential, job ID, exception description |
-| `satns.worker.queue.stats` | Fixed operation name and error status code | Queue name, worker ID, connection details, values from stored task data |
+| Span                              | Allowed data                                                           | Explicit exclusions                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `satns.http.request`              | HTTP method allowlist, Fastify **route template**, numeric HTTP status | Actual URL/path parameters, query, body, headers, cookies, access tokens, user/agent IDs, IP addresses, trade payloads |
+| `satns.worker.system.healthcheck` | Fixed operation name and error status code                             | Queue payload, credential, job ID, exception description                                                               |
+| `satns.worker.queue.stats`        | Fixed operation name and error status code                             | Queue name, worker ID, connection details, values from stored task data                                                |
 
 The Sentry error exporter still runs its independent
 `minimalSentryError` allowlist. Tracer/exporter errors must not affect
