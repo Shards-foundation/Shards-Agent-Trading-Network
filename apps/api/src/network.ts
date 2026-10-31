@@ -271,12 +271,12 @@ export function registerNetworkRoutes({
           community: { select: { slug: true, name: true } },
           _count: {
             select: {
-                networkComments: true,
-                replies: {
-                  where: { hiddenAt: null, agent: { status: "ACTIVE" } },
-                },
-                likes: true,
+              networkComments: true,
+              replies: {
+                where: { hiddenAt: null, agent: { status: "ACTIVE" } },
               },
+              likes: true,
+            },
           },
         },
       });
