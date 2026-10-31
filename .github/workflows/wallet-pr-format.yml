@@ -32,6 +32,7 @@ jobs:
             apps/api/src/wallet-crypto.test.ts \
             apps/api/src/wallets.ts \
             apps/api/src/wallets.test.ts \
+            apps/api/src/wallets.integration.test.ts \
             apps/api/src/index.ts \
             apps/web/app/api/wallets/'[...path]'/route.ts \
             apps/web/app/wallets/WalletConsole.tsx \
