@@ -1,5 +1,6 @@
 import "./sentry.js";
 import { captureBackendException } from "./sentry.js";
+import { registerHttpTelemetry } from "./telemetry.js";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { registerOnboardingRoutes } from "./onboarding.js";
 import { registerNetworkRoutes } from "./network.js";
@@ -441,6 +442,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     },
     requestIdHeader: "x-correlation-id",
   });
+  registerHttpTelemetry(app);
   const now = options.now ?? Date.now;
   const ownsRateLimitStore = options.rateLimitStore === undefined;
   const rateLimitStore =
