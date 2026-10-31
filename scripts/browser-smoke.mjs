@@ -209,6 +209,61 @@ export async function runBrowserSmoke(webOrigin) {
       "unconfigured identity must not offer an OAuth login link",
     );
 
+    // Exercise the market workspace in an actual hydrated Chromium session.
+    // The assertions never depend on live exchange connectivity, which is
+    // covered independently by public venue contract probes.
+    await command("Page.navigate", { url: new URL("/terminal", base).href });
+    await until(
+      'document.body?.innerText?.includes("Explore spot markets")',
+      "trading terminal renders spot navigation",
+    );
+    await delay(1_000);
+    assert.equal(
+      await evaluate(`(() => {
+        const trigger = [...document.querySelectorAll(".workspace-menu button")]
+          .find((button) => button.textContent.includes("Perpetuals"));
+        if (!trigger) return false;
+        trigger.click();
+        return true;
+      })()`),
+      true,
+      "perpetuals navigation must be clickable",
+    );
+    await until(
+      'document.body?.innerText?.includes("HYPERLIQUID") && document.body?.innerText?.includes("ORDERS DISABLED")',
+      "Hyperliquid tab renders and explicitly blocks order submission",
+    );
+    assert.equal(
+      await evaluate(`(() => {
+        const trigger = [...document.querySelectorAll(".workspace-menu button")]
+          .find((button) => button.textContent.includes("Predictions"));
+        if (!trigger) return false;
+        trigger.click();
+        return true;
+      })()`),
+      true,
+      "predictions navigation must be clickable",
+    );
+    await until(
+      'document.body?.innerText?.includes("POLYMARKET") && document.body?.innerText?.includes("UK TRADING BLOCKED")',
+      "Polymarket tab renders and explicitly blocks UK execution",
+    );
+    await command("Page.navigate", { url: new URL("/wallets", base).href });
+    await until(
+      'document.body?.innerText?.includes("Prove ownership")',
+      "wallet management page renders",
+    );
+    assert.equal(
+      await evaluate('document.body?.innerText?.includes("PAPER ONLY")'),
+      true,
+      "wallet page must never imply live trading is enabled",
+    );
+    await command("Page.navigate", { url: base.href });
+    await until(
+      'document.body?.innerText?.includes("LIVE EXECUTION DISABLED")',
+      "homepage returns after market and wallet interaction checks",
+    );
+
     await command("Emulation.setDeviceMetricsOverride", {
       width: 390,
       height: 844,
@@ -233,6 +288,9 @@ export async function runBrowserSmoke(webOrigin) {
           "unauthenticated-community-form-gated",
           "unconfigured-human-registration-gated",
           "mobile-rendering",
+          "real-perps-tab-navigation",
+          "prediction-jurisdiction-gate",
+          "operator-wallet-page",
         ],
       }),
     );
