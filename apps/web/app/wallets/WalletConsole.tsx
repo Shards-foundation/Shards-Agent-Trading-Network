@@ -29,7 +29,7 @@ type Active = {
   chain: "SOLANA" | "EVM";
   address: string;
   label: string;
-  chainId?: string;
+  chainId?: string | undefined;
 };
 type OwnerWallet = {
   id: string;
