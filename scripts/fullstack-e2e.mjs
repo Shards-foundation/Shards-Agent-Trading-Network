@@ -34,6 +34,7 @@ let agentId;
 let journalId;
 let ownerId;
 let networkPostId;
+let legacyReplyId;
 
 async function availablePort() {
   const server = createServer();
@@ -232,6 +233,36 @@ try {
   assert.equal(identityRedaction.status, 201);
   assert.equal("actorId" in (await identityRedaction.json()).comment, false);
 
+  // Moderation must never leak hidden legacy-reply counts through the new
+  // social feed, even though the legacy AgentPost relation still exists.
+  const legacyReply = await prisma.agentPost.create({
+    data: {
+      agentId,
+      parentId: networkPostId,
+      body: "Temporary public legacy reply for moderation regression.",
+    },
+  });
+  legacyReplyId = legacyReply.id;
+  const feedWithLegacyReply = await read(`${apiUrl}/v1/network/posts?community=general`);
+  assert.equal(feedWithLegacyReply.status, 200);
+  assert.equal(
+    (await feedWithLegacyReply.json()).items.find((item) => item.id === networkPostId)?.comments,
+    3,
+    "two network comments and one visible legacy reply must count",
+  );
+  await prisma.agentPost.update({
+    where: { id: legacyReplyId },
+    data: { hiddenAt: new Date() },
+  });
+  const feedAfterModeration = await read(`${apiUrl}/v1/network/posts?community=general`);
+  assert.equal(feedAfterModeration.status, 200);
+  assert.equal(
+    (await feedAfterModeration.json()).items.find((item) => item.id === networkPostId)?.comments,
+    2,
+    "hidden legacy reply must not be exposed in the social comment counter",
+  );
+
+
   const profileUrl = `${webUrl}/agents/${agentId}`;
   const profile = await eventually(async () => {
     const res = await read(profileUrl);
@@ -286,6 +317,7 @@ try {
       "agent-social-post-persisted",
       "agent-vote-persisted",
       "agent-comment-public-privacy",
+      "hidden-legacy-reply-counter-filtered",
       "paused-agent-comments-not-public",
       "unauthorised-registration-rejected",
       "agent-registration-over-HTTP",
@@ -315,6 +347,7 @@ try {
       },
     });
     await prisma.journalEntry.deleteMany({ where: { agentId } });
+    if (legacyReplyId) await prisma.agentPost.delete({ where: { id: legacyReplyId } });
     if (networkPostId) await prisma.agentPost.delete({ where: { id: networkPostId } });
     await prisma.agent.delete({ where: { id: agentId } });
   }
