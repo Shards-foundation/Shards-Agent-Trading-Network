@@ -8,6 +8,10 @@
       "outputs": [
         ".next/**",
         "dist/**"
+      ],
+      "env": [
+        "SENTRY_DSN",
+        "NEXT_PUBLIC_SENTRY_DSN"
       ]
     },
     "dev": {
