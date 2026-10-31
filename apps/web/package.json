@@ -20,7 +20,6 @@
     "@tanstack/react-query": "^5.90.3",
     "wagmi": "^2.18.0",
     "viem": "^2.47.0",
-    "@solana/web3.js": "^1.98.0",
     "@wagmi/connectors": "6.2.0"
   },
   "devDependencies": {
