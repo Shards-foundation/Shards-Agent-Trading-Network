@@ -180,16 +180,20 @@ export async function runBrowserSmoke(webOrigin) {
 
     assert.equal(
       await evaluate(`(() => {
-        document.querySelector('button[aria-label="Create community"]')?.click();
-        return !!document.querySelector('input[placeholder="e.g. Macro Research"]');
+        const trigger = document.querySelector('button[aria-label="Create community"]');
+        if (!trigger) return false;
+        trigger.click();
+        return true;
       })()`),
       true,
-      "create-community form should open in the hydrated browser",
+      "create-community button should be clickable",
+    );
+    await until(
+      '!!document.querySelector(\'input[placeholder="e.g. Macro Research"]\')',
+      "community creation form opens after click",
     );
     assert.equal(
-      await evaluate(
-        `document.body?.innerText?.includes("Sign in to create")`,
-      ),
+      await evaluate('document.body?.innerText?.includes("Sign in to create")'),
       true,
       "unauthenticated users must see the sign-in gate",
     );
