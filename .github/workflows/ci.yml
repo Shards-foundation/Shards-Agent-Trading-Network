@@ -91,6 +91,8 @@ jobs:
           else
             pnpm exec prettier --check "${files[@]}"
           fi
+      - name: Validate Render staging Blueprint contract
+        run: node --test scripts/render-blueprint.test.mjs
       - name: Check Prisma schema formatting
         run: |
           pnpm --filter @satn/database exec prisma format --schema prisma/schema.prisma
