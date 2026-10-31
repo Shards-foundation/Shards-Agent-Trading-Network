@@ -154,8 +154,10 @@ try {
   const terminal = await read(`${webUrl}/terminal`);
   assert.equal(terminal.status, 200);
   const terminalHtml = await terminal.text();
-  assert.ok(terminalHtml.includes("LIVE DISABLED"));
-  assert.ok(terminalHtml.includes("Moderator console"));
+  assert.ok(terminalHtml.includes("LIVE ORDERS DISABLED"));
+  assert.ok(terminalHtml.includes("Wallet control"));
+  assert.ok(terminalHtml.includes("Activity"));
+  assert.ok(terminalHtml.includes("No swap is submitted from this screen."));
 
   // Execute real Chromium hydration and click tests against this disposable
   // production-build Next.js server; no production services or real credentials.
