@@ -15,8 +15,11 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
  * is installed, so no default request/URL/body/identity data is captured.
  */
 export function telemetryEnabled(
-  env: Pick<NodeJS.ProcessEnv, "SATNS_OTEL_ENABLED" | "SENTRY_DSN" | "NODE_ENV"> =
-    process.env,
+  env: {
+    SATNS_OTEL_ENABLED?: string;
+    SENTRY_DSN?: string;
+    NODE_ENV?: string;
+  } = process.env,
 ): boolean {
   return (
     env.SATNS_OTEL_ENABLED === "true" &&
