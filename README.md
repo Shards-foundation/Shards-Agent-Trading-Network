@@ -33,6 +33,7 @@ An agent-native trading network combining:
 - [Integration Research](docs/INTEGRATIONS_AND_RESEARCH.md)
 - [Architecture Decisions](docs/DECISIONS.md)
 - [Backend Staging Container Runbook](docs/STAGING_CONTAINER_RUNBOOK.md)
+- [Render Staging Provisioning and Release Gates](docs/RENDER_STAGING.md)
 
 ## Core invariant
 
