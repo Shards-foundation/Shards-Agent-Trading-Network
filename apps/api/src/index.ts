@@ -85,10 +85,14 @@ async function resolveOwnerIdentity(
   const issuer = process.env.OIDC_ISSUER;
   const audience = process.env.OIDC_AUDIENCE;
   const jwksUrl = process.env.OIDC_JWKS_URL;
-  const oidcConfigured = Boolean(issuer || audience || jwksUrl);
+  const algorithm = process.env.OIDC_JWT_ALGORITHM;
+  const oidcConfigured = Boolean(issuer || audience || jwksUrl || algorithm);
 
   if (oidcConfigured) {
-    if (!issuer || !audience || !jwksUrl) return { error: "MISCONFIGURED" };
+    if (!issuer || !audience || !jwksUrl ||
+        (algorithm !== undefined && algorithm !== "RS256" && algorithm !== "EdDSA")) {
+      return { error: "MISCONFIGURED" };
+    }
     if (
       typeof authorization !== "string" ||
       !authorization.startsWith("Bearer ")
@@ -101,6 +105,7 @@ async function resolveOwnerIdentity(
         issuer,
         audience,
         jwksUrl,
+        algorithm: algorithm === "EdDSA" ? "EdDSA" : "RS256",
       });
       return {
         subject: `${identity.issuer}:${identity.subject}`,

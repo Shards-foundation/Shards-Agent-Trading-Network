@@ -8,6 +8,35 @@ const jwksUrl = "https://identity.example.test/.well-known/jwks.json";
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = { ...publicKey.export({ format: "jwk" }), kid: "satn-test-key", alg: "RS256", use: "sig" };
 const config: OidcConfig = { issuer, audience, jwksUrl };
+const edKeys = generateKeyPairSync("ed25519");
+const edPublicJwk = {
+  ...edKeys.publicKey.export({ format: "jwk" }),
+  kid: "neon-ed25519-test-key",
+  alg: "EdDSA",
+  use: "sig",
+};
+const edConfig: OidcConfig = { ...config, algorithm: "EdDSA" };
+
+function edToken(overrides: Record<string, unknown> = {}, headerOverrides: Record<string, unknown> = {}): string {
+  const header = { alg: "EdDSA", typ: "JWT", kid: "neon-ed25519-test-key", ...headerOverrides };
+  const claims = {
+    iss: issuer,
+    aud: [audience, "https://identity.example.test/userinfo"],
+    sub: "neon-user-123",
+    exp: 1_800_000_000,
+    nbf: 1_700_000_000,
+    ...overrides,
+  };
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
+  const encodedPayload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const input = `${encodedHeader}.${encodedPayload}`;
+  return `${input}.${sign(null, Buffer.from(input), edKeys.privateKey).toString("base64url")}`;
+}
+
+const edFetcher = async () => new Response(JSON.stringify({ keys: [edPublicJwk] }), {
+  status: 200,
+  headers: { "content-type": "application/json" },
+});
 
 function token(overrides: Record<string, unknown> = {}, headerOverrides: Record<string, unknown> = {}): string {
   const header = { alg: "RS256", typ: "JWT", kid: "satn-test-key", ...headerOverrides };
@@ -78,4 +107,43 @@ describe("OIDC JWT verification", () => {
       nowMs: 1_750_000_000_000
     })).rejects.toThrow("non-success");
   });
+  it("accepts an explicitly pinned Ed25519 JWT with exact issuer and API audience", async () => {
+    const value = await verifyOidcAccessToken(edToken(), edConfig, {
+      fetcher: edFetcher,
+      nowMs: 1_750_000_000_000,
+    });
+    expect(value).toMatchObject({ issuer, subject: "neon-user-123" });
+    expect(value.audience).toContain(audience);
+  });
+
+  it("never auto-selects EdDSA and never accepts RS256 under EdDSA policy", async () => {
+    await expect(verifyOidcAccessToken(edToken(), config, {
+      fetcher: edFetcher, nowMs: 1_750_000_000_000,
+    })).rejects.toThrow("RS256");
+    await expect(verifyOidcAccessToken(token(), edConfig, {
+      fetcher, nowMs: 1_750_000_000_000,
+    })).rejects.toThrow("EdDSA");
+  });
+
+  it("rejects wrong EdDSA audience, issuer, signature and key curve", async () => {
+    await expect(verifyOidcAccessToken(edToken({ aud: "unrelated-api" }), edConfig, {
+      fetcher: edFetcher, nowMs: 1_750_000_000_000,
+    })).rejects.toThrow("audience");
+    await expect(verifyOidcAccessToken(edToken({ iss: "https://other-provider.invalid/" }), edConfig, {
+      fetcher: edFetcher, nowMs: 1_750_000_000_000,
+    })).rejects.toThrow("issuer");
+    const parts = edToken().split(".");
+    const corrupted = `${parts[0]}.${parts[1]}.${"A".repeat(86)}`;
+    await expect(verifyOidcAccessToken(corrupted, edConfig, {
+      fetcher: edFetcher, nowMs: 1_750_000_000_000,
+    })).rejects.toThrow("signature");
+    clearOidcJwksCacheForTests();
+    const wrongCurve = async () => new Response(JSON.stringify({
+      keys: [{ ...edPublicJwk, crv: "Ed448" }],
+    }), { status: 200 });
+    await expect(verifyOidcAccessToken(edToken(), edConfig, {
+      fetcher: wrongCurve, nowMs: 1_750_000_000_000,
+    })).rejects.toThrow("signing");
+  });
+
 });

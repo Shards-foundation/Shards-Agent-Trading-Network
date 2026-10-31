@@ -82,8 +82,14 @@ record its actual migration ledger.
    readiness and existing migration ordering.
 3. Apply reviewed Prisma migrations once, inspect version state and confirm
    `/health/ready` is 200 **with the worker running**. No real trading keys.
-4. Configure an OIDC issuer that returns validated RS256 JWT access tokens
-   with API audience and verified-email policy. Register
+4. Configure an OIDC issuer that returns explicitly pinned RS256 or EdDSA
+   JWT access tokens with exact API audience, issuer and verified-email
+   policy. For Neon's Managed Better Auth OAuth provider, configure
+   `OIDC_JWT_ALGORITHM=EdDSA` on the API, and set
+   `OIDC_RESOURCE` equal to `OIDC_API_AUDIENCE` on the web app.
+   Do not enable provider login until its required hosted login/consent pages,
+   OAuth client, discovery metadata and verified-email controls are tested.
+   Register
    `https://satns.vercel.app/api/auth/callback` as an exact redirect.
 5. Configure Vercel server-side values `OIDC_CLIENT_ID`,
    `OIDC_AUTHORIZATION_ENDPOINT`, `OIDC_TOKEN_ENDPOINT`,

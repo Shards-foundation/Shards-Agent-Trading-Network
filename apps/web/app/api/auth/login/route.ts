@@ -29,7 +29,11 @@ export async function GET(request: NextRequest) {
       "code_challenge",
       createHash("sha256").update(verifier).digest("base64url"),
     );
-    if (process.env.OIDC_API_AUDIENCE)
+    // OAuth 2.1 resource indicators (RFC 8707) are required by providers
+    // such as Neon Auth. Preserve the existing audience parameter otherwise.
+    if (process.env.OIDC_RESOURCE)
+      url.searchParams.set("resource", process.env.OIDC_RESOURCE);
+    else if (process.env.OIDC_API_AUDIENCE)
       url.searchParams.set("audience", process.env.OIDC_API_AUDIENCE);
     if (request.nextUrl.searchParams.get("intent") === "signup")
       url.searchParams.set("screen_hint", "signup");

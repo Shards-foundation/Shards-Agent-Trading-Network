@@ -62,6 +62,23 @@ test("rejects disabled transport, bootstrap credential and live trading", () => 
   assert.ok(!JSON.stringify(result).includes("password"));
 });
 
+test("rejects a provider signing algorithm downgrade or mismatched OAuth resource", () => {
+  const result = validateWebAuthConfig({
+    ...valid,
+    OIDC_JWT_ALGORITHM: "none",
+    OIDC_RESOURCE: "another-api",
+  });
+  assert.ok(result.issues.includes("OIDC_ALGORITHM_INVALID"));
+  assert.ok(result.issues.includes("OIDC_RESOURCE_AUDIENCE_MISMATCH"));
+
+  const neonSafe = validateWebAuthConfig({
+    ...valid,
+    OIDC_JWT_ALGORITHM: "EdDSA",
+    OIDC_RESOURCE: valid.OIDC_API_AUDIENCE,
+  });
+  assert.equal(neonSafe.ok, true);
+});
+
 test("requires explicit provider and API configuration", () => {
   const result = validateWebAuthConfig({});
   assert.equal(result.ok, false);

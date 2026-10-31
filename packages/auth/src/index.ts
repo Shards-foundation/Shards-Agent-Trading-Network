@@ -4,6 +4,8 @@ export interface OidcConfig {
   issuer: string;
   audience: string;
   jwksUrl: string;
+  /** Explicitly configured signing algorithm. Default stays RS256 for existing providers. */
+  algorithm?: "RS256" | "EdDSA";
   clockToleranceSeconds?: number;
   jwksCacheTtlMs?: number;
 }
@@ -23,6 +25,8 @@ interface Jwk {
   n?: string;
   e?: string;
   kty?: string;
+  crv?: string;
+  x?: string;
 }
 interface JwkSet {
   keys: Jwk[];
@@ -80,10 +84,12 @@ async function loadJwks(
   const keys = (payload as { keys: unknown[] }).keys.filter((key): key is JwkSet["keys"][number] => {
     if (!key || typeof key !== "object" || Array.isArray(key)) return false;
     const candidate = key as Record<string, unknown>;
-    return candidate.kty === "RSA" && typeof candidate.kid === "string" &&
-      typeof candidate.n === "string" && typeof candidate.e === "string";
+    return typeof candidate.kid === "string" && (
+      (candidate.kty === "RSA" && typeof candidate.n === "string" && typeof candidate.e === "string") ||
+      (candidate.kty === "OKP" && candidate.crv === "Ed25519" && typeof candidate.x === "string")
+    );
   });
-  if (keys.length === 0) throw new Error("OIDC key service has no usable RSA signing keys.");
+  if (keys.length === 0) throw new Error("OIDC key service has no usable signing keys.");
   jwksCache.set(url, { keys, expiresAt: nowMs + ttlMs });
   return keys;
 }
@@ -108,8 +114,12 @@ export async function verifyOidcAccessToken(
   const [encodedHeader, encodedPayload, encodedSignature] = segments as [string, string, string];
   const header = decodeJsonSegment(encodedHeader);
   const claims = decodeJsonSegment(encodedPayload);
-  if (header.alg !== "RS256" || typeof header.kid !== "string" || !header.kid) {
-    throw new Error("Only kid-addressed RS256 JWTs are accepted.");
+  const algorithm = config.algorithm ?? "RS256";
+  if (algorithm !== "RS256" && algorithm !== "EdDSA") {
+    throw new Error("Unsupported configured OIDC signing algorithm.");
+  }
+  if (header.alg !== algorithm || typeof header.kid !== "string" || !header.kid) {
+    throw new Error(`Only kid-addressed ${algorithm} JWTs are accepted.`);
   }
 
   const nowMs = options.nowMs ?? Date.now();
@@ -130,22 +140,44 @@ export async function verifyOidcAccessToken(
   const fetcher = options.fetcher ?? ((url, init) => fetch(url, init));
   const ttlMs = config.jwksCacheTtlMs ?? 300_000;
   let keys = await loadJwks(config.jwksUrl, fetcher, nowMs, ttlMs);
-  let jwk = keys.find((key) => key.kid === header.kid && (!key.alg || key.alg === "RS256") && (!key.use || key.use === "sig") && (!key.key_ops || key.key_ops.includes("verify")));
+  // Pin both the algorithm and the JWK key type, preventing JWT alg confusion.
+  const acceptable = (key: Jwk): boolean => key.kid === header.kid &&
+    (!key.alg || key.alg === algorithm) &&
+    (!key.use || key.use === "sig") &&
+    (!key.key_ops || key.key_ops.includes("verify")) &&
+    (algorithm === "RS256"
+      ? key.kty === "RSA" && typeof key.n === "string" && typeof key.e === "string"
+      : key.kty === "OKP" && key.crv === "Ed25519" && typeof key.x === "string");
+  let jwk = keys.find(acceptable);
   if (!jwk) {
     keys = await loadJwks(config.jwksUrl, fetcher, nowMs, ttlMs, true);
-    jwk = keys.find((key) => key.kid === header.kid && (!key.alg || key.alg === "RS256") && (!key.use || key.use === "sig") && (!key.key_ops || key.key_ops.includes("verify")));
+    jwk = keys.find(acceptable);
   }
-  if (!jwk || !jwk.n || Buffer.from(jwk.n, "base64url").length < 256) {
-    throw new Error("No acceptable RSA signing key matched the token.");
-  }
+  if (!jwk) throw new Error("No acceptable signing key matched the token.");
 
-  const publicKey = createPublicKey({
-    key: { kty: "RSA", n: jwk.n, e: jwk.e },
-    format: "jwk"
-  } as unknown as JsonWebKeyInput);
+  const publicKey = algorithm === "RS256"
+    ? (() => {
+        if (!jwk.n || !jwk.e || Buffer.from(jwk.n, "base64url").length < 256) {
+          throw new Error("No acceptable RSA signing key matched the token.");
+        }
+        return createPublicKey({
+          key: { kty: "RSA", n: jwk.n, e: jwk.e },
+          format: "jwk"
+        } as unknown as JsonWebKeyInput);
+      })()
+    : (() => {
+        if (!jwk.x || !/^[A-Za-z0-9_-]{43}$/.test(jwk.x) ||
+            Buffer.from(jwk.x, "base64url").length !== 32) {
+          throw new Error("No acceptable Ed25519 signing key matched the token.");
+        }
+        return createPublicKey({
+          key: { kty: "OKP", crv: "Ed25519", x: jwk.x },
+          format: "jwk"
+        } as unknown as JsonWebKeyInput);
+      })();
   const signature = decodeSegment(encodedSignature);
   const signedContent = Buffer.from(`${encodedHeader}.${encodedPayload}`, "utf8");
-  if (!verifySignature("RSA-SHA256", signedContent, publicKey, signature)) {
+  if (!verifySignature(algorithm === "RS256" ? "RSA-SHA256" : null, signedContent, publicKey, signature)) {
     throw new Error("OIDC token signature verification failed.");
   }
 

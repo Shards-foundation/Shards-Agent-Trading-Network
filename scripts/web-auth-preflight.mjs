@@ -51,6 +51,15 @@ export function validateWebAuthConfig(env, publicOrigin = "https://satns.vercel.
     typeof env.OIDC_API_AUDIENCE === "string" &&
       env.OIDC_API_AUDIENCE.trim().length > 0,
   );
+  check(
+    "OIDC_ALGORITHM_INVALID",
+    env.OIDC_JWT_ALGORITHM === undefined ||
+      ["RS256", "EdDSA"].includes(env.OIDC_JWT_ALGORITHM),
+  );
+  check(
+    "OIDC_RESOURCE_AUDIENCE_MISMATCH",
+    !env.OIDC_RESOURCE || env.OIDC_RESOURCE === env.OIDC_API_AUDIENCE,
+  );
 
   let secretLength = -1;
   try {
