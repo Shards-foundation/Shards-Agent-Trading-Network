@@ -6,22 +6,47 @@ const allowGet =
   /^(stats|communities|posts|my-votes|posts\/[a-f0-9-]{36}\/comments)$/;
 const allowPost =
   /^(communities|communities\/[a-z][a-z0-9-]{2,39}\/subscribe|posts\/[a-f0-9-]{36}\/(vote|comments))$/;
-function endpoint(request: NextRequest, path: string[]): URL | null {
-  const api =
-    process.env.SATN_API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_SATN_API_URL;
+/**
+ * Network BFF upstreams are origins, not arbitrary URLs. A malformed or
+ * unexpectedly privileged configuration must fail closed before fetch().
+ */
+export function resolveNetworkEndpoint(
+  api: string | undefined,
+  path: string[],
+  search: string,
+  nodeEnv: string,
+): URL | null {
   if (!api) return null;
-  const u = new URL(api);
-  if (
-    u.protocol !== "https:" &&
-    !(
-      process.env.NODE_ENV !== "production" &&
-      ["localhost", "127.0.0.1"].includes(u.hostname)
+  try {
+    const upstream = new URL(api);
+    const localHttp =
+      nodeEnv !== "production" &&
+      upstream.protocol === "http:" &&
+      ["localhost", "127.0.0.1"].includes(upstream.hostname);
+    if (
+      (upstream.protocol !== "https:" && !localHttp) ||
+      upstream.username ||
+      upstream.password ||
+      upstream.pathname !== "/" ||
+      upstream.search ||
+      upstream.hash
     )
-  )
+      return null;
+
+    const destination = new URL(`/v1/network/${path.join("/")}`, upstream);
+    destination.search = search;
+    return destination;
+  } catch {
     return null;
-  const dest = new URL(`/v1/network/${path.join("/")}`, u);
-  dest.search = request.nextUrl.search;
-  return dest;
+  }
+}
+function endpoint(request: NextRequest, path: string[]): URL | null {
+  return resolveNetworkEndpoint(
+    process.env.SATN_API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_SATN_API_URL,
+    path,
+    request.nextUrl.search,
+    process.env.NODE_ENV ?? "development",
+  );
 }
 async function dispatch(
   request: NextRequest,

@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-export function middleware(request: NextRequest) {
+
+/**
+ * One-time agent claim URLs must not be indexed or leaked by a Referer header.
+ * This is a response-header boundary; API authorization happens separately.
+ */
+export function proxy(request: NextRequest) {
   const response = NextResponse.next();
   if (request.nextUrl.pathname.startsWith("/claim/")) {
     response.headers.set("Referrer-Policy", "no-referrer");
@@ -8,4 +13,5 @@ export function middleware(request: NextRequest) {
   }
   return response;
 }
+
 export const config = { matcher: ["/claim/:path*"] };
