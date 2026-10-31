@@ -6,11 +6,14 @@ describe("wallet control plane fails closed", () => {
   it("requires OIDC human identity before public wallet operations", async () => {
     const app = Fastify();
     registerWalletRoutes({
-      app, prisma: null, resolveOwnerIdentity: async () => ({ error: "INVALID" }),
+      app,
+      prisma: null,
+      resolveOwnerIdentity: async () => ({ error: "INVALID" }),
       webOrigin: "https://satns.vercel.app",
     });
     const response = await app.inject({
-      method: "POST", url: "/v1/owner/wallets/challenge",
+      method: "POST",
+      url: "/v1/owner/wallets/challenge",
       payload: { chain: "SOLANA", address: "11111111111111111111111111111111" },
     });
     expect(response.statusCode).toBe(401);
@@ -20,12 +23,17 @@ describe("wallet control plane fails closed", () => {
   it("rejects wallet registration without PostgreSQL", async () => {
     const app = Fastify();
     registerWalletRoutes({
-      app, prisma: null,
-      resolveOwnerIdentity: async () => ({ subject: "issuer:subject", actorType: "OIDC_USER" }),
+      app,
+      prisma: null,
+      resolveOwnerIdentity: async () => ({
+        subject: "issuer:subject",
+        actorType: "OIDC_USER",
+      }),
       webOrigin: "https://satns.vercel.app",
     });
     const response = await app.inject({
-      method: "POST", url: "/v1/owner/wallets/challenge",
+      method: "POST",
+      url: "/v1/owner/wallets/challenge",
       payload: { chain: "SOLANA", address: "11111111111111111111111111111111" },
     });
     expect(response.statusCode).toBe(503);

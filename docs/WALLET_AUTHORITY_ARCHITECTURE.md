@@ -38,13 +38,13 @@ Browser state is untrusted. Agent text is untrusted. Ownership proofs never serv
 
 ## Current implementation capabilities
 
-| Chain | Browser transport | Cryptographic owner proof | Stored assignment | Execution |
-|---|---|---|---|---|
-| Solana | Injected Phantom / Solflare-compatible provider | Ed25519 signature of server-generated message | OIDC owner to Shard, paper-only | DISABLED |
-| EVM | Injected EIP-1193 provider | NOT IMPLEMENTED (needs SIWE / ERC-1271) | BLOCKED | DISABLED |
-| Hyperliquid | Read-only public adapter | NOT IMPLEMENTED | BLOCKED | DISABLED |
-| Polymarket | Public market discovery | NOT IMPLEMENTED | BLOCKED | DISABLED |
-| Jupiter / other DEXs | No trading adapter | NOT IMPLEMENTED | BLOCKED | DISABLED |
+| Chain                | Browser transport                               | Cryptographic owner proof                     | Stored assignment               | Execution |
+| -------------------- | ----------------------------------------------- | --------------------------------------------- | ------------------------------- | --------- |
+| Solana               | Injected Phantom / Solflare-compatible provider | Ed25519 signature of server-generated message | OIDC owner to Shard, paper-only | DISABLED  |
+| EVM                  | Injected EIP-1193 provider                      | NOT IMPLEMENTED (needs SIWE / ERC-1271)       | BLOCKED                         | DISABLED  |
+| Hyperliquid          | Read-only public adapter                        | NOT IMPLEMENTED                               | BLOCKED                         | DISABLED  |
+| Polymarket           | Public market discovery                         | NOT IMPLEMENTED                               | BLOCKED                         | DISABLED  |
+| Jupiter / other DEXs | No trading adapter                              | NOT IMPLEMENTED                               | BLOCKED                         | DISABLED  |
 
 **Mobile:** Injected wallets work in supported wallet in-app browsers, not arbitrary Samsung/Chrome browsers. WalletConnect/Reown or equivalent cross-app support is a separately scoped change, requires configuration, supported SDKs and a mobile-device verification matrix. Never present transport connection as a completed server wallet link.
 
@@ -77,6 +77,7 @@ Mobile: 5-item bottom navigation; wallet connect and risk disclosure remain reac
 ## Phase gates for production
 
 ### P0 — Current PR
+
 - Separate operator wallet registry, challenge proofs and assignment from browser transport.
 - Solana signature verification with Node/OpenSSL Ed25519, strict base58 canonical validation.
 - EVM connect only (NOT verified, not eligible for assignment).
@@ -84,6 +85,7 @@ Mobile: 5-item bottom navigation; wallet connect and risk disclosure remain reac
 - PAPER execution still hard-blocked.
 
 ### P1 — Complete the supported wallet matrix
+
 - Adopt Solana Wallet Standard / Kit, including mobile, connect/disconnect, account change and optional SIWS.
 - Add Reown AppKit / WalletConnect with production project ID and allowed origins for EVM and wallet-to-wallet deep links.
 - EVM SIWE ERC-4361 with backend nonce/domain/audience/chain validation, EIP-1271 support for smart-contract wallets, and replay tests.
@@ -91,6 +93,7 @@ Mobile: 5-item bottom navigation; wallet connect and risk disclosure remain reac
 - Treat provider account/network change as invalidation and require revalidation where security state changed.
 
 ### P2 — Execution delegation, isolated from wallet verification
+
 - Venue adapters: Jupiter spot quotes, Hyperliquid, Uniswap aggregator and Polymarket discovery.
 - Venue-specific capability matrix rather than a fictional common "sign" permission.
 - Permissions: chain, venue, instruments, notional/order, daily and aggregate loss, slippage, leverage, expiry, max open orders, transfer/withdrawal deny.
@@ -101,6 +104,7 @@ Mobile: 5-item bottom navigation; wallet connect and risk disclosure remain reac
 - Backfill historical journal/fill provenance without pretending simulation = execution.
 
 ### P3 — Readiness proof, not a marketing flag
+
 - Ephemeral PostgreSQL migrate/rollback demonstration, explicit Neon production snapshot and restore test.
 - CI: lint/typecheck/schema diff/format/unit/integration/browser E2E/mobile-wallet smoke/security audit.
 - Threat modelling: signature replay, chain swap, session hijack, agent prompt injection, nonce races, over-grant, XSS, wallet spoofing, leaked session, compromised worker.

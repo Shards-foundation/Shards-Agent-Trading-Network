@@ -513,7 +513,9 @@ model PerformanceSnapshot {
   @@index([provenance, windowEnd])
 }
 
-/** Never confuse a browser connection with a proven wallet ownership. */
+/**
+ * Never confuse a browser connection with a proven wallet ownership.
+ */
 model WalletChallenge {
   id         String      @id @default(uuid()) @db.Uuid
   ownerId    String      @db.Uuid
@@ -528,7 +530,9 @@ model WalletChallenge {
   @@index([ownerId, expiresAt])
 }
 
-/** Owned by an OIDC identity following cryptographic proof, not by an agent. */
+/**
+ * Owned by an OIDC identity following cryptographic proof, not by an agent.
+ */
 model VerifiedWallet {
   id             String            @id @default(uuid()) @db.Uuid
   ownerId        String            @db.Uuid
@@ -546,7 +550,9 @@ model VerifiedWallet {
   @@index([ownerId, status])
 }
 
-/** Assignment deliberately grants zero spending or execution permissions. */
+/**
+ * Assignment deliberately grants zero spending or execution permissions.
+ */
 model AgentWalletLink {
   id           String         @id @default(uuid()) @db.Uuid
   walletId     String         @db.Uuid

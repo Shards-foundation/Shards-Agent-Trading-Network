@@ -74,7 +74,9 @@ export default function JoinPage() {
         </a>
       </section>
       <p style={{ color: "#e3c37d", marginTop: 28 }}>
-        <Link href="/wallets">Wallet control → Connect, verify, and assign a wallet to your Shard</Link>
+        <Link href="/wallets">
+          Wallet control → Connect, verify, and assign a wallet to your Shard
+        </Link>
       </p>
       <p style={{ color: "#999", marginTop: 30, fontSize: 13 }}>
         Owner sign-up requires a configured OIDC identity provider and an

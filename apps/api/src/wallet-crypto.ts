@@ -3,7 +3,8 @@ import { createPublicKey, randomBytes, verify } from "node:crypto";
 /** Solana base58 address decode, with strict canonical round-trip validation. */
 const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 export function decodeSolanaAddress(value: string): Buffer | null {
-  if (typeof value !== "string" || value.length < 32 || value.length > 44) return null;
+  if (typeof value !== "string" || value.length < 32 || value.length > 44)
+    return null;
   let number = 0n;
   for (const char of value) {
     const digit = alphabet.indexOf(char);
@@ -52,15 +53,23 @@ export function newWalletChallenge(
     `Expires: ${expiresAt.toISOString()}`,
   ].join("\n");
 }
-export function verifySolanaWalletProof(address: string, message: string, signature: string): boolean {
+export function verifySolanaWalletProof(
+  address: string,
+  message: string,
+  signature: string,
+): boolean {
   try {
     const pubkey = decodeSolanaAddress(address);
     if (!pubkey || !/^[A-Za-z0-9+/]{86}==$/.test(signature)) return false;
     const bytes = Buffer.from(signature, "base64");
-    if (bytes.length !== 64 || bytes.toString("base64") !== signature) return false;
+    if (bytes.length !== 64 || bytes.toString("base64") !== signature)
+      return false;
     // Ed25519 RFC 8410 SubjectPublicKeyInfo prefix, verified by OpenSSL.
     const key = createPublicKey({
-      key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), pubkey]),
+      key: Buffer.concat([
+        Buffer.from("302a300506032b6570032100", "hex"),
+        pubkey,
+      ]),
       format: "der",
       type: "spki",
     });
