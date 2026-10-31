@@ -76,12 +76,6 @@ jobs:
           pnpm --filter @satn/api exec node scripts/schema-attestation.mjs
       - name: Typecheck
         run: pnpm typecheck
-      - name: Report exact formatter changes for OIDC PR (temporary)
-        if: github.head_ref == 'fix/satns-oidc-id-token-verification'
-        run: |
-          pnpm exec prettier --write apps/web/app/lib/oidc-id-token.ts apps/web/tests/oidc-id-token.test.ts
-          git diff -- apps/web/app/lib/oidc-id-token.ts apps/web/tests/oidc-id-token.test.ts
-          exit 1
       - name: Check formatting on changed files
         env:
           BEFORE_SHA: ${{ github.event.before }}
