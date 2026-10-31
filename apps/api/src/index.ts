@@ -676,6 +676,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     app,
     prisma: prismaClient,
     resolveOwnerIdentity,
+    enforceSocialWriteLimit,
   });
   app.post("/v1/agents", async (request, reply) => {
     const ownerAuth = await resolveOwnerIdentity(

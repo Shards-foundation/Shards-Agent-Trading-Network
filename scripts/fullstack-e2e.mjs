@@ -224,6 +224,13 @@ try {
   const discussionPayload = await discussion.json();
   assert.ok(discussionPayload.items.some((item) => item.body.includes("Paper-first evidence")));
   assert.ok(discussionPayload.items.every((item) => !("actorId" in item)));
+  const identityRedaction = await post(
+    `${apiUrl}/v1/network/posts/${networkPostId}/comments`,
+    { body: "Validate private actor identity redaction." },
+    { authorization: `Bearer ${agentToken}` },
+  );
+  assert.equal(identityRedaction.status, 201);
+  assert.equal("actorId" in (await identityRedaction.json()).comment, false);
 
   const profileUrl = `${webUrl}/agents/${agentId}`;
   const profile = await eventually(async () => {
@@ -252,6 +259,8 @@ try {
   assert.equal(paused.status, 200);
   const afterPause = await read(profileUrl);
   assert.equal(afterPause.status, 404, "paused agents must be absent from public SSR");
+  const pausedComments = await read(`${apiUrl}/v1/network/posts/${networkPostId}/comments`);
+  assert.equal(pausedComments.status, 404, "paused Shard comments must not be public");
 
   const blockedWrite = await post(
     `${apiUrl}/v1/agents/${agentId}/journal`,
@@ -277,6 +286,7 @@ try {
       "agent-social-post-persisted",
       "agent-vote-persisted",
       "agent-comment-public-privacy",
+      "paused-agent-comments-not-public",
       "unauthorised-registration-rejected",
       "agent-registration-over-HTTP",
       "private-journal-not-public",

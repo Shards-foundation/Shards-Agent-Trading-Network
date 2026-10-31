@@ -5,7 +5,7 @@
  * active scoped agent credential. No mock posts or simulated network counts.
  */
 import { createHash } from "node:crypto";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
@@ -19,6 +19,11 @@ export type NetworkOptions = {
     authorization: unknown,
     bootstrap: unknown,
   ) => Promise<NetworkOwner>;
+  enforceSocialWriteLimit: (
+    actorId: string,
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => Promise<boolean>;
 };
 const uuid = z.string().uuid();
 const slugSchema = z.string().regex(/^[a-z][a-z0-9-]{2,39}$/);
@@ -61,6 +66,7 @@ export function registerNetworkRoutes({
   app,
   prisma,
   resolveOwnerIdentity,
+  enforceSocialWriteLimit,
 }: NetworkOptions): void {
   const unavailable = (reply: any) =>
     reply
@@ -111,7 +117,12 @@ export function registerNetworkRoutes({
       const [shards, humans, posts, comments, communities, legacyReplies] =
         await Promise.all([
           prisma.agent.count({ where: { status: "ACTIVE" } }),
-          prisma.user.count({ where: { status: "ACTIVE" } }),
+          prisma.user.count({
+            where: {
+              status: "ACTIVE",
+              NOT: { authSubject: { startsWith: "bootstrap:" } },
+            },
+          }),
           prisma.agentPost.count({
             where: {
               parentId: null,
@@ -312,7 +323,12 @@ export function registerNetworkRoutes({
       if (!uuid.safeParse(request.params.postId).success)
         return reply.code(400).send(error("INVALID_ID", "Invalid post."));
       const found = await prisma.agentPost.findFirst({
-        where: { id: request.params.postId, hiddenAt: null },
+        where: {
+          id: request.params.postId,
+          parentId: null,
+          hiddenAt: null,
+          agent: { status: "ACTIVE" },
+        },
         select: { id: true },
       });
       if (!found)
@@ -382,9 +398,12 @@ export function registerNetworkRoutes({
               "Sign in or supply a valid scoped Shard token.",
             ),
           );
+      if (!(await enforceSocialWriteLimit(principal.actorId, request, reply)))
+        return;
       const post = await prisma.agentPost.findFirst({
         where: {
           id: request.params.postId,
+          parentId: null,
           hiddenAt: null,
           agent: { status: "ACTIVE" },
         },
@@ -404,7 +423,6 @@ export function registerNetworkRoutes({
           postId: true,
           body: true,
           actorType: true,
-          actorId: true,
           createdAt: true,
         },
       });
@@ -433,9 +451,12 @@ export function registerNetworkRoutes({
               "Sign in or supply a valid scoped Shard token.",
             ),
           );
+      if (!(await enforceSocialWriteLimit(principal.actorId, request, reply)))
+        return;
       const post = await prisma.agentPost.findFirst({
         where: {
           id: request.params.postId,
+          parentId: null,
           hiddenAt: null,
           agent: { status: "ACTIVE" },
         },
@@ -498,6 +519,8 @@ export function registerNetworkRoutes({
             "Only verified humans can create communities.",
           ),
         );
+    if (!(await enforceSocialWriteLimit(principal.actorId, request, reply)))
+      return;
     try {
       const created = await prisma.networkCommunity.create({
         data: { ...parsed.data, createdById: principal.actorId },
@@ -526,6 +549,8 @@ export function registerNetworkRoutes({
         return reply
           .code(401)
           .send(error("SIGN_IN_REQUIRED", "Sign in to subscribe."));
+      if (!(await enforceSocialWriteLimit(principal.actorId, request, reply)))
+        return;
       const community = await prisma.networkCommunity.findUnique({
         where: { slug: request.params.slug },
         select: { id: true, status: true },
@@ -570,6 +595,8 @@ export function registerNetworkRoutes({
             "Only claimed, authorised Shards can publish network posts.",
           ),
         );
+    if (!(await enforceSocialWriteLimit(principal.actorId, request, reply)))
+      return;
     const community = await prisma.networkCommunity.findUnique({
       where: { slug: parsed.data.communitySlug },
       select: { id: true, status: true },
