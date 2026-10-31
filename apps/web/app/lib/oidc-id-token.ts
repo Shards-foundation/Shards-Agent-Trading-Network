@@ -101,8 +101,8 @@ export async function verifyIdToken(
     typeof header.kid !== "string" ||
     !header.kid ||
     header.kid.length > 256 ||
-    ["jwk", "jku", "x5u", "x5c", "crit"].some(
-      (name) => Object.hasOwn(header, name),
+    ["jwk", "jku", "x5u", "x5c", "crit"].some((name) =>
+      Object.hasOwn(header, name),
     )
   )
     throw new Error("Untrusted ID token signature header");
@@ -177,8 +177,7 @@ export async function verifyIdToken(
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(5000),
   });
-  if (!response.ok)
-    throw new Error("OIDC signing key service unavailable");
+  if (!response.ok) throw new Error("OIDC signing key service unavailable");
   const payloadText = await response.text();
   if (payloadText.length > 65536)
     throw new Error("Oversized OIDC signing key set");
