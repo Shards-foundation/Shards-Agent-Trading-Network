@@ -246,6 +246,13 @@ export async function runBrowserSmoke(webOrigin) {
       delay(3000),
     ]);
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    await rm(userDataDir, { recursive: true, force: true });
+    // Chromium child processes can briefly keep writing profile files after
+    // the main browser exits. Node fs.rm retries transient ENOTEMPTY failures.
+    await rm(userDataDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100,
+    });
   }
 }
