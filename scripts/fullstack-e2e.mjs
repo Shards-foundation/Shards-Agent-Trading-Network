@@ -5,7 +5,9 @@ import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-const require = createRequire(new URL("../apps/api/package.json", import.meta.url));
+const require = createRequire(
+  new URL("../apps/api/package.json", import.meta.url),
+);
 const { PrismaClient } = require("@prisma/client");
 import { buildServer } from "../apps/api/dist/index.js";
 
@@ -17,7 +19,11 @@ assert.ok(process.env.REDIS_URL, "REDIS_URL is required");
 assert.equal(process.env.EXECUTION_MODE, "PAPER");
 assert.equal(process.env.LIVE_EXECUTION_ENABLED, "false");
 assert.equal(process.env.NODE_ENV, "production");
-assert.equal(process.env.OIDC_ISSUER, undefined, "CI uses an isolated bootstrap test owner");
+assert.equal(
+  process.env.OIDC_ISSUER,
+  undefined,
+  "CI uses an isolated bootstrap test owner",
+);
 assert.equal(process.env.OIDC_AUDIENCE, undefined);
 assert.equal(process.env.OIDC_JWKS_URL, undefined);
 
@@ -34,6 +40,7 @@ let agentId;
 let journalId;
 let ownerId;
 let networkPostId;
+let legacyReplyId;
 
 async function availablePort() {
   const server = createServer();
@@ -52,7 +59,9 @@ async function eventually(check, label, timeoutMs = 30_000) {
   let lastError;
   while (Date.now() < deadline) {
     if (nextProcess && nextProcess.exitCode !== null) {
-      throw new Error(`Next.js process exited early (${nextProcess.exitCode}) while waiting for ${label}`);
+      throw new Error(
+        `Next.js process exited early (${nextProcess.exitCode}) while waiting for ${label}`,
+      );
     }
     try {
       const value = await check();
@@ -83,7 +92,11 @@ async function post(url, payload, headers = {}) {
 }
 
 async function stopNext() {
-  if (!nextProcess || nextProcess.exitCode !== null || nextProcess.signalCode !== null) {
+  if (
+    !nextProcess ||
+    nextProcess.exitCode !== null ||
+    nextProcess.signalCode !== null
+  ) {
     return;
   }
   const child = nextProcess;
@@ -102,17 +115,21 @@ try {
   apiUrl = await api.listen({ host: "127.0.0.1", port: 0 });
   const webPort = await availablePort();
   const webUrl = `http://127.0.0.1:${webPort}`;
-  nextProcess = spawn(process.execPath, [nextBin, "start", "-H", "127.0.0.1", "-p", String(webPort)], {
-    cwd: webRoot,
-    env: {
-      ...process.env,
-      SATN_API_URL: apiUrl,
-      NEXT_PUBLIC_SATN_API_URL: apiUrl,
-      EXECUTION_MODE: "PAPER",
-      LIVE_EXECUTION_ENABLED: "false",
+  nextProcess = spawn(
+    process.execPath,
+    [nextBin, "start", "-H", "127.0.0.1", "-p", String(webPort)],
+    {
+      cwd: webRoot,
+      env: {
+        ...process.env,
+        SATN_API_URL: apiUrl,
+        NEXT_PUBLIC_SATN_API_URL: apiUrl,
+        EXECUTION_MODE: "PAPER",
+        LIVE_EXECUTION_ENABLED: "false",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
   nextProcess.stdout.resume();
   nextProcess.stderr.resume();
 
@@ -120,11 +137,18 @@ try {
     const res = await read(webUrl);
     if (res.status !== 200) return null;
     const body = await res.text();
-    return body.includes("AGENT TRADING NETWORK") && body.includes("LIVE EXECUTION DISABLED") && body.includes("ACTIVE SHARDS") ? body : null;
+    return body.includes("AGENT TRADING NETWORK") &&
+      body.includes("LIVE EXECUTION DISABLED") &&
+      body.includes("ACTIVE SHARDS")
+      ? body
+      : null;
   }, "Next.js homepage");
 
   assert.ok(homepage.includes("PAPER-FIRST"));
-  assert.ok(!homepage.includes(bootstrapToken), "bootstrap secret must not appear in HTML");
+  assert.ok(
+    !homepage.includes(bootstrapToken),
+    "bootstrap secret must not appear in HTML",
+  );
 
   const terminal = await read(`${webUrl}/terminal`);
   assert.equal(terminal.status, 200);
@@ -132,7 +156,9 @@ try {
   assert.ok(terminalHtml.includes("LIVE DISABLED"));
   assert.ok(terminalHtml.includes("Moderator console"));
 
-  const unauthorised = await post(`${apiUrl}/v1/agents`, { name: "Unauthorised" });
+  const unauthorised = await post(`${apiUrl}/v1/agents`, {
+    name: "Unauthorised",
+  });
   assert.equal(unauthorised.status, 401);
 
   const name = `e2e-agent-${randomUUID().slice(0, 8)}`;
@@ -155,7 +181,9 @@ try {
   assert.ok(persisted);
   ownerId = persisted.ownerId;
 
-  const noAuth = await post(`${apiUrl}/v1/agents/${agentId}/journal`, { body: "blocked" });
+  const noAuth = await post(`${apiUrl}/v1/agents/${agentId}/journal`, {
+    body: "blocked",
+  });
   assert.equal(noAuth.status, 401);
 
   const privateEntry = await post(
@@ -169,7 +197,10 @@ try {
   const publicMarker = `PUBLISHED-E2E-${randomUUID().slice(0, 8)}`;
   const journal = await post(
     `${apiUrl}/v1/agents/${agentId}/journal`,
-    { body: `${publicMarker} <script>alert("injection")</script>`, publish: true },
+    {
+      body: `${publicMarker} <script>alert("injection")</script>`,
+      publish: true,
+    },
     { authorization: `Bearer ${agentToken}` },
   );
   assert.equal(journal.status, 201);
@@ -222,7 +253,11 @@ try {
   );
   assert.equal(discussion.status, 200);
   const discussionPayload = await discussion.json();
-  assert.ok(discussionPayload.items.some((item) => item.body.includes("Paper-first evidence")));
+  assert.ok(
+    discussionPayload.items.some((item) =>
+      item.body.includes("Paper-first evidence"),
+    ),
+  );
   assert.ok(discussionPayload.items.every((item) => !("actorId" in item)));
   const identityRedaction = await post(
     `${apiUrl}/v1/network/posts/${networkPostId}/comments`,
@@ -232,6 +267,43 @@ try {
   assert.equal(identityRedaction.status, 201);
   assert.equal("actorId" in (await identityRedaction.json()).comment, false);
 
+  // Moderation must never leak hidden legacy-reply counts through the new
+  // social feed, even though the legacy AgentPost relation still exists.
+  const legacyReply = await prisma.agentPost.create({
+    data: {
+      agentId,
+      parentId: networkPostId,
+      body: "Temporary public legacy reply for moderation regression.",
+    },
+  });
+  legacyReplyId = legacyReply.id;
+  const feedWithLegacyReply = await read(
+    `${apiUrl}/v1/network/posts?community=general`,
+  );
+  assert.equal(feedWithLegacyReply.status, 200);
+  assert.equal(
+    (await feedWithLegacyReply.json()).items.find(
+      (item) => item.id === networkPostId,
+    )?.comments,
+    3,
+    "two network comments and one visible legacy reply must count",
+  );
+  await prisma.agentPost.update({
+    where: { id: legacyReplyId },
+    data: { hiddenAt: new Date() },
+  });
+  const feedAfterModeration = await read(
+    `${apiUrl}/v1/network/posts?community=general`,
+  );
+  assert.equal(feedAfterModeration.status, 200);
+  assert.equal(
+    (await feedAfterModeration.json()).items.find(
+      (item) => item.id === networkPostId,
+    )?.comments,
+    2,
+    "hidden legacy reply must not be exposed in the social comment counter",
+  );
+
   const profileUrl = `${webUrl}/agents/${agentId}`;
   const profile = await eventually(async () => {
     const res = await read(profileUrl);
@@ -240,16 +312,33 @@ try {
     return html.includes(publicMarker) ? html : null;
   }, "SSR agent profile displaying persisted public journal");
   assert.ok(profile.includes(name));
-  assert.ok(profile.includes("SELF REPORTED") || profile.includes("SELF_REPORTED"));
-  assert.ok(!profile.includes(privateBody), "unpublished journal must stay private");
-  assert.ok(!profile.includes(agentToken), "agent token must not appear in HTML");
-  assert.ok(!profile.includes('<script>alert("injection")</script>'), "raw journal script must be escaped");
+  assert.ok(
+    profile.includes("SELF REPORTED") || profile.includes("SELF_REPORTED"),
+  );
+  assert.ok(
+    !profile.includes(privateBody),
+    "unpublished journal must stay private",
+  );
+  assert.ok(
+    !profile.includes(agentToken),
+    "agent token must not appear in HTML",
+  );
+  assert.ok(
+    !profile.includes('<script>alert("injection")</script>'),
+    "raw journal script must be escaped",
+  );
 
   const data = await read(`${apiUrl}/v1/agents/${agentId}/journal?limit=10`);
   assert.equal(data.status, 200);
   const payload = await data.json();
-  assert.equal(payload.items.some((item) => item.id === journalId), true);
-  assert.equal(payload.items.some((item) => item.body === privateBody), false);
+  assert.equal(
+    payload.items.some((item) => item.id === journalId),
+    true,
+  );
+  assert.equal(
+    payload.items.some((item) => item.body === privateBody),
+    false,
+  );
 
   const paused = await post(
     `${apiUrl}/v1/agents/${agentId}/pause`,
@@ -258,9 +347,19 @@ try {
   );
   assert.equal(paused.status, 200);
   const afterPause = await read(profileUrl);
-  assert.equal(afterPause.status, 404, "paused agents must be absent from public SSR");
-  const pausedComments = await read(`${apiUrl}/v1/network/posts/${networkPostId}/comments`);
-  assert.equal(pausedComments.status, 404, "paused Shard comments must not be public");
+  assert.equal(
+    afterPause.status,
+    404,
+    "paused agents must be absent from public SSR",
+  );
+  const pausedComments = await read(
+    `${apiUrl}/v1/network/posts/${networkPostId}/comments`,
+  );
+  assert.equal(
+    pausedComments.status,
+    404,
+    "paused Shard comments must not be public",
+  );
 
   const blockedWrite = await post(
     `${apiUrl}/v1/agents/${agentId}/journal`,
@@ -276,29 +375,32 @@ try {
   assert.equal(revoked.length, 1);
   assert.notEqual(revoked[0].secretHash, agentToken);
 
-  console.info(JSON.stringify({
-    event: "e2e.fullstack.passed",
-    scenarios: [
-      "homepage-production-SSR",
-      "legacy-terminal-preserved",
-      "postgres-backed-network-stats",
-      "seeded-community-discovery",
-      "agent-social-post-persisted",
-      "agent-vote-persisted",
-      "agent-comment-public-privacy",
-      "paused-agent-comments-not-public",
-      "unauthorised-registration-rejected",
-      "agent-registration-over-HTTP",
-      "private-journal-not-public",
-      "published-journal-in-SSR",
-      "untrusted-content-escaped",
-      "agent-token-not-exposed",
-      "paused-agent-hidden",
-      "paused-agent-credential-rejected",
-    ],
-    executionMode: "PAPER",
-    liveTradingEnabled: false,
-  }));
+  console.info(
+    JSON.stringify({
+      event: "e2e.fullstack.passed",
+      scenarios: [
+        "homepage-production-SSR",
+        "legacy-terminal-preserved",
+        "postgres-backed-network-stats",
+        "seeded-community-discovery",
+        "agent-social-post-persisted",
+        "agent-vote-persisted",
+        "agent-comment-public-privacy",
+        "hidden-legacy-reply-counter-filtered",
+        "paused-agent-comments-not-public",
+        "unauthorised-registration-rejected",
+        "agent-registration-over-HTTP",
+        "private-journal-not-public",
+        "published-journal-in-SSR",
+        "untrusted-content-escaped",
+        "agent-token-not-exposed",
+        "paused-agent-hidden",
+        "paused-agent-credential-rejected",
+      ],
+      executionMode: "PAPER",
+      liveTradingEnabled: false,
+    }),
+  );
 } finally {
   await stopNext();
   await api.close();
@@ -308,14 +410,28 @@ try {
         OR: [
           { targetType: "Agent", targetId: agentId },
           { targetType: "JournalEntry", targetId: journalId ?? "" },
-          { targetType: "JournalEntry", action: "journal.drafted", actorId: { in: (await prisma.agentCredential.findMany({ where: { agentId }, select: { id: true } })).map((c) => c.id) } },
+          {
+            targetType: "JournalEntry",
+            action: "journal.drafted",
+            actorId: {
+              in: (
+                await prisma.agentCredential.findMany({
+                  where: { agentId },
+                  select: { id: true },
+                })
+              ).map((c) => c.id),
+            },
+          },
           { targetType: "Agent", action: "agent.paused", targetId: agentId },
           { targetType: "AgentPost", targetId: networkPostId ?? "" },
         ],
       },
     });
     await prisma.journalEntry.deleteMany({ where: { agentId } });
-    if (networkPostId) await prisma.agentPost.delete({ where: { id: networkPostId } });
+    if (legacyReplyId)
+      await prisma.agentPost.delete({ where: { id: legacyReplyId } });
+    if (networkPostId)
+      await prisma.agentPost.delete({ where: { id: networkPostId } });
     await prisma.agent.delete({ where: { id: agentId } });
   }
   // The isolated bootstrap owner is only removed if there are no other agents.

@@ -138,7 +138,10 @@ export function registerNetworkRoutes({
             where: {
               parentId: { not: null },
               hiddenAt: null,
-              parent: { hiddenAt: null },
+              parent: {
+                hiddenAt: null,
+                agent: { status: "ACTIVE" },
+              },
               agent: { status: "ACTIVE" },
             },
           }),
@@ -267,7 +270,13 @@ export function registerNetworkRoutes({
           agent: { select: { id: true, name: true, mode: true } },
           community: { select: { slug: true, name: true } },
           _count: {
-            select: { networkComments: true, replies: true, likes: true },
+            select: {
+              networkComments: true,
+              replies: {
+                where: { hiddenAt: null, agent: { status: "ACTIVE" } },
+              },
+              likes: true,
+            },
           },
         },
       });
