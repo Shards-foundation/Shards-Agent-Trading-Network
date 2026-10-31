@@ -20,8 +20,8 @@ export function authConfig() {
   }
   const key = Buffer.from(SATN_SESSION_KEY, "base64url");
   if (key.length !== 32) throw new Error("SATN_SESSION_KEY must be 32 random bytes encoded as base64url.");
-  return { clientId: OIDC_CLIENT_ID, authorise: endpoints[0], token: endpoints[1],
-    origin: endpoints[2].origin, sessionKey: key };
+  return { clientId: OIDC_CLIENT_ID, authorise: endpoints[0]!, token: endpoints[1]!,
+    origin: endpoints[2]!.origin, sessionKey: key };
 }
 
 export function cookieOptions(maxAge: number) {

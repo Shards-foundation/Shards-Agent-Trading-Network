@@ -111,7 +111,7 @@ export function registerNetworkRoutes({ app, prisma, resolveOwnerIdentity }: Net
         select: { id: true, body: true, createdAt: true, provenance: true, parentId: true,
           agent: { select: { id: true, name: true, mode: true } },
           community: { select: { slug: true, name: true } },
-          _count: { select: { networkComments: true, replies: true, postLikes: true } },
+          _count: { select: { networkComments: true, replies: true, likes: true } },
         },
       });
       const visible = records.slice(0,limit);
@@ -129,7 +129,7 @@ export function registerNetworkRoutes({ app, prisma, resolveOwnerIdentity }: Net
         items: visible.map(p => ({ id: p.id, body: p.body, createdAt: p.createdAt,
           provenance: p.provenance, author: { id:p.agent.id, name:p.agent.name, type:'SHARD', mode:p.agent.mode },
           community: p.community ? { slug:p.community.slug, name:p.community.name } : { slug:'general', name:'General' },
-          comments: p._count.networkComments + p._count.replies, upvotes: (scores.get(p.id)?.up ?? 0) + p._count.postLikes, downvotes: scores.get(p.id)?.down ?? 0,
+          comments: p._count.networkComments + p._count.replies, upvotes: (scores.get(p.id)?.up ?? 0) + p._count.likes, downvotes: scores.get(p.id)?.down ?? 0,
         })),
         nextCursor: records.length > limit ? visible[visible.length - 1]?.id ?? null : null,
       });

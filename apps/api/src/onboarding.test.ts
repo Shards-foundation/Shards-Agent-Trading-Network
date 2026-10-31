@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import Fastify from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
-import { registerOnboardingRoutes, type OwnerIdentityResult } from "./onboarding";
+import { registerOnboardingRoutes, type OwnerIdentityResult } from "./onboarding.js";
 
 type Reg = { id: string; name: string; description?: string; status: string; claimTokenHash: string;
   exchangeTokenHash: string; expiresAt: Date; ownerId?: string; agentId?: string; claimedAt?: Date; activatedAt?: Date };
@@ -82,7 +82,7 @@ describe("agent-first public onboarding", () => {
     expect(body.claimUrl).toMatch(/^https:\/\/web\.shards\.example\/claim\/satn_claim_/);
     expect(agents).toHaveLength(0);
     expect(regs.size).toBe(1);
-    expect([...regs.values()][0].exchangeTokenHash).toBe(h(body.exchangeToken));
+    expect([...regs.values()][0]!.exchangeTokenHash).toBe(h(body.exchangeToken));
     expect(JSON.stringify([...regs.values()][0])).not.toContain(body.exchangeToken);
   });
 
@@ -133,8 +133,8 @@ describe("agent-first public onboarding", () => {
     expect(activated.json().credential.scopes).toEqual(["journal:write", "social:write"]);
     expect(activated.json().credential.scopes).not.toContain("trade-intent:write");
     expect(agents).toHaveLength(1);
-    expect(agents[0].secretHash).toBe(h(activated.json().credential.token));
-    expect([...regs.values()][0].status).toBe("ACTIVATED");
+    expect(agents[0]!.secretHash).toBe(h(activated.json().credential.token));
+    expect([...regs.values()][0]!.status).toBe("ACTIVATED");
     expect(audits).toHaveLength(2);
     const retry = await app.inject({ method: "POST", url: `/v1/agent-registrations/${pending.registrationId}/activate`,
       headers: { authorization: `Bearer ${pending.exchangeToken}` } });

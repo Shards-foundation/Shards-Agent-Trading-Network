@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { registerOnboardingRoutes } from "./onboarding";
-import { registerNetworkRoutes } from "./network";
+import { registerOnboardingRoutes } from "./onboarding.js";
+import { registerNetworkRoutes } from "./network.js";
 import {
   calculatePaperDailyLoss,
   calculatePaperPerformance,

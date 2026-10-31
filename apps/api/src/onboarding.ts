@@ -86,7 +86,7 @@ export function registerOnboardingRoutes({
       const registration = await prisma.agentRegistration.create({
         data: {
           name: parsed.data.name,
-          description: parsed.data.description,
+          description: parsed.data.description ?? null,
           claimTokenHash: hash(claimToken),
           exchangeTokenHash: hash(exchangeToken),
           expiresAt,

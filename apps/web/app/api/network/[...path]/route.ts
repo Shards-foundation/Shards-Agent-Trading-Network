@@ -31,7 +31,7 @@ async function dispatch(request:NextRequest,path:string[],method:'GET'|'POST'){
     headers['content-type']='application/json';
   }
   try{
-    const res=await fetch(dest,{method,headers,body,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(8500)});
+    const res=await fetch(dest,{method,headers,body:body??null,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(8500)});
     const text=await res.text();
     if(text.length>300000)return NextResponse.json({error:{code:'RESPONSE_TOO_LARGE'}},{status:502});
     return new NextResponse(text,{status:res.status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
