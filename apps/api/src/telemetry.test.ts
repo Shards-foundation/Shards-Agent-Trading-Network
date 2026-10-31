@@ -95,10 +95,12 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     expect(safeRouteTemplate("/v1/posts?token=SECRET")).toBe("unmatched");
     expect(safeRouteTemplate("/".repeat(130))).toBe("unmatched");
     expect(safeRouteTemplate(null)).toBe("unmatched");
-    expect(safeRouteTemplate("/v1/agents/PRIVATE-AGENT-123")).toBe("unmatched");
-    expect(safeRouteTemplate("/v1/agents/a1234567-e89b-12d3-a456-426614174000")).toBe(
+    expect(safeRouteTemplate("/v1/agents/PRIVATE-AGENT-123")).toBe(
       "unmatched",
     );
+    expect(
+      safeRouteTemplate("/v1/agents/a1234567-e89b-12d3-a456-426614174000"),
+    ).toBe("unmatched");
     expect(safeRouteTemplate("/v1/network/posts/:postId/comments")).toBe(
       "/v1/network/posts/:postId/comments",
     );
@@ -167,10 +169,12 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     }
   });
 
-  it("records bounded request-duration seconds with no private data", async () => {
+  it("records safe duration in seconds", async () => {
     const app = Fastify();
-    const records: Array<{ value: number; attributes: Record<string, unknown> }> =
-      [];
+    const records: Array<{
+      value: number;
+      attributes: Record<string, unknown>;
+    }> = [];
     const makeHistogram = vi.fn(() => ({
       record(value: number, attributes: Record<string, unknown>) {
         records.push({ value, attributes });
@@ -192,7 +196,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: "/v1/network/posts/SECRET-AGENT-UUID/comments?wallet=SECRET-WALLET",
+        url: "/v1/network/posts/SECRET-ID/comments?wallet=SECRET-WALLET",
         headers: {
           authorization: "Bearer SECRET-ACCESS",
           cookie: "session=SECRET-COOKIE",
@@ -214,7 +218,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
         },
       ]);
       for (const sensitive of [
-        "SECRET-AGENT-UUID",
+        "SECRET-ID",
         "SECRET-WALLET",
         "SECRET-ACCESS",
         "SECRET-COOKIE",
@@ -226,7 +230,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     }
   });
 
-  it("does not create a metric instrument when tracing is disabled", async () => {
+  it("does not create metric instruments when disabled", async () => {
     const app = Fastify();
     const createHistogram = vi.fn();
     const meter = { createHistogram } as unknown as Meter;
@@ -242,7 +246,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     }
   });
 
-  it("preserves HTTP behaviour if a metric provider throws during recording", async () => {
+  it("preserves HTTP results when a metrics provider fails", async () => {
     const app = Fastify();
     const meter = {
       createHistogram: () => ({
