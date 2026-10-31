@@ -3,15 +3,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  reactStrictMode: true
+  reactStrictMode: true,
 };
 
 // Source-map uploads require a separately scoped, operator-provisioned token.
 // Keep the existing Next build unchanged when those values are absent.
 const sourceMapsEnabled = Boolean(
   process.env.SENTRY_ORG &&
-    process.env.SENTRY_PROJECT &&
-    process.env.SENTRY_AUTH_TOKEN,
+  process.env.SENTRY_PROJECT &&
+  process.env.SENTRY_AUTH_TOKEN,
 );
 export default sourceMapsEnabled
   ? withSentryConfig(nextConfig, {

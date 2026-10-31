@@ -4,7 +4,11 @@
  * types are discarded, not forwarded; never add user input or trade payloads.
  */
 type Frame = { filename?: string; lineno?: number; colno?: number };
-type Exception = { type?: string; value?: string; stacktrace?: { frames?: Frame[] } };
+type Exception = {
+  type?: string;
+  value?: string;
+  stacktrace?: { frames?: Frame[] };
+};
 type ErrorLike = {
   event_id?: string;
   timestamp?: number;

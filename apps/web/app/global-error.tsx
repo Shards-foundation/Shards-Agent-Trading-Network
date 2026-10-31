@@ -14,10 +14,22 @@ export default function GlobalError({
   }, [error]);
   return (
     <html lang="en">
-      <body style={{ background: "#080b12", color: "#f5e8cc", fontFamily: "sans-serif", padding: "3rem" }}>
+      <body
+        style={{
+          background: "#080b12",
+          color: "#f5e8cc",
+          fontFamily: "sans-serif",
+          padding: "3rem",
+        }}
+      >
         <h1>SATNS — an unexpected error occurred</h1>
-        <p>The network is temporarily unavailable. Trading execution remains disabled.</p>
-        <button onClick={reset} type="button">Try again</button>
+        <p>
+          The network is temporarily unavailable. Trading execution remains
+          disabled.
+        </p>
+        <button onClick={reset} type="button">
+          Try again
+        </button>
       </body>
     </html>
   );
