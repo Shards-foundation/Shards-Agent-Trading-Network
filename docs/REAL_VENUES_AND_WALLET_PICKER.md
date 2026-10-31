@@ -9,6 +9,7 @@ Feature branch: `feat/live-venues-reown-wallet-picker`.
 | ---------------------------- | ------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Hyperliquid Perpetuals       | `https://api.hyperliquid.xyz/info`          | `/api/venues/hyperliquid`                 | Real `metaAndAssetCtxs` mark, 24h, funding, leverage; 15s refresh                                           |
 | Hyperliquid L2 book          | Same                                        | `/api/venues/hyperliquid/book?symbol=BTC` | Real venue book timestamp; stale >30s rejected                                                              |
+| Hyperliquid public accounts | `https://api.hyperliquid.xyz/info` | `/api/venues/hyperliquid/account?address=0x...` | Actual `clearinghouseState` and `openOrders`, manually requested, no signing |
 | Polymarket predictions       | `https://gamma-api.polymarket.com/markets`  | `/api/venues/polymarket`                  | Real Gamma markets, outcomes, token IDs, 30s refresh                                                        |
 | Polymarket CLOB depth        | `https://clob.polymarket.com/book`          | `/api/venues/polymarket/book?tokenId=...` | Actual outcome-token book. Not a trade quotation guarantee                                                  |
 | Multi-chain wallet selection | **Reown AppKit** via Wagmi + Solana adapter | `/wallets`                                | WalletConnect catalogue, installed EVM wallets and deep links; Solana injected wallets supported separately |
@@ -43,3 +44,7 @@ Do not add a generic `POST /trade` endpoint with an unrestricted signer. A quote
 ## Security dependency decision
 
 The Reown Solana adapter has been removed because CI found a high-severity unpatched bigint-buffer dependency via Solana SPL token internals. Do not suppress the dependency audit. We retain the existing server-verified Solana injected-wallet flow. The Reown modal covers the EVM wallet catalogue until a remediated Solana wallet-connect integration is available. The root pnpm override policy also constrains ws >=8.21.0, zod >=4.6.7 and decode-uri-component >=0.5.1. Dependency installation and security audit must verify these constraints before release.
+
+## Hyperliquid account inspector boundaries
+
+The Perpetuals view includes a manual public-address lookup for real Hyperliquid margin balances, open positions and orders. This is a public info API query, **not** wallet ownership verification or account authorisation. Never imply the account is the signed-in user's account merely because its address was entered. It does not display other users' balances without a deliberate address lookup; production should add edge rate limits/abuse controls for arbitrary public-address queries. Results are retrieved only when the user submits an address and never carry signing keys or live order permissions.
