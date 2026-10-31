@@ -33,6 +33,25 @@ Before deploying a candidate, run `node scripts/staging-preflight.mjs` with its 
 
 Do **not** paste decrypted environment variables, private DSNs or credentials into GitHub comments or ChatGPT.
 
+### Explicit human-auth release switch
+
+Human registration and the direct OAuth login route are now both
+**disabled unless** `SATNS_HUMAN_AUTH_ENABLED=true` is present in the
+server-side web environment. The switch is separate from client credentials
+and is never included in browser HTML as a value. Even with the switch
+enabled, both entry points require valid OIDC issuer/JWKS/client settings,
+a 32-byte server session key and a distinct, valid API upstream. If
+anything is missing, the Join page displays registration as unavailable
+and the login route returns HTTP 503 **without issuing state, nonce,
+PKCE challenge or redirect cookies**.
+
+The web-auth preflight also requires this explicit approval switch before
+declaring a public-auth configuration syntactically ready. Do not enable
+the switch in production until verified API/worker deployment, issuer
+conformance, authenticated end-to-end tests, legal review and operator signoff
+have been recorded. This runtime switch is not a substitute for a server-side
+allowlist and provider-level restrictions on unauthorised registrations.
+
 ### Browser OIDC verification gate
 
 The Next.js OAuth callback now requires a **signed ID token** returned by the
