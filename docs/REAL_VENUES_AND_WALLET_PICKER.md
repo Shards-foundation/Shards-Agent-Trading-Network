@@ -12,7 +12,7 @@ Feature branch: `feat/live-venues-reown-wallet-picker`.
 | Hyperliquid public accounts  | `https://api.hyperliquid.xyz/info`          | `/api/venues/hyperliquid/account?address=0x...` | Actual `clearinghouseState` and `openOrders`, manually requested, no signing                                |
 | Polymarket predictions       | `https://gamma-api.polymarket.com/markets`  | `/api/venues/polymarket`                        | Real Gamma markets, outcomes, token IDs, 30s refresh                                                        |
 | Polymarket CLOB depth        | `https://clob.polymarket.com/book`          | `/api/venues/polymarket/book?tokenId=...`       | Actual outcome-token book. Not a trade quotation guarantee                                                  |
-| Multi-chain wallet selection | **Reown AppKit** via Wagmi + Solana adapter | `/wallets`                                      | WalletConnect catalogue, installed EVM wallets and deep links; Solana injected wallets supported separately |
+| Multi-chain wallet selection | **Reown AppKit** via Wagmi (EVM); separately injected Phantom/Solflare (Solana) | `/wallets`                                      | WalletConnect catalogue, installed EVM wallets and deep links; Solana injected wallets supported separately |
 
 Both venues remain **non-signing and execution-disabled**. Public display does not imply custody or instrument/trader eligibility. Browser and backend always gate live trading independently.
 
@@ -22,7 +22,7 @@ Both venues remain **non-signing and execution-disabled**. Public display does n
 2. Set Vercel `NEXT_PUBLIC_REOWN_PROJECT_ID` to its public project ID in the Preview environment; scope origin as `NEXT_PUBLIC_APP_ORIGIN`, e.g. the exact preview domain. These two values are public identifiers, **never private wallet keys**.
 3. Rebuild the web preview and confirm the AppKit modal actually opens and discovers wallet brands. Do not copy a demo or third-party AppKit project ID.
 4. Test EVM account selection, Solana wallet selection, QR/deeplink, cancel, disconnect, network changes and session restoration on Samsung Internet/Android Chrome and wallet browsers.
-5. Test the Reown Solana `signMessage` path on a disposable wallet, then confirm backend Ed25519 ownership proof and one-time nonce invalidation. Ensure no transaction signature or token approval is requested.
+5. Test the **separate injected Phantom and Solflare** `signMessage` paths on disposable wallets, including the case where both providers are present. Confirm backend Ed25519 ownership proof and one-time nonce invalidation. Reown's Solana adapter is excluded pending dependency security remediation. Ensure no transaction signature or token approval is requested.
 6. Note: Reown AppKit is subject to its own SDK **Community License** and potential commercial use/MAU/RPC requirements. Shards Inc should review those terms before a commercial launch. Reown project creation may also be subject to service limits.
 
 ## Supported future execution
