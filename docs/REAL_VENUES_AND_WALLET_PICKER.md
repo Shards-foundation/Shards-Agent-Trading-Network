@@ -5,13 +5,13 @@ Feature branch: `feat/live-venues-reown-wallet-picker`.
 
 ## Provider integration matrix
 
-| Surface | Official provider | Route | Reality |
-|---|---|---|---|
-| Hyperliquid Perpetuals | `https://api.hyperliquid.xyz/info` | `/api/venues/hyperliquid` | Real `metaAndAssetCtxs` mark, 24h, funding, leverage; 15s refresh |
-| Hyperliquid L2 book | Same | `/api/venues/hyperliquid/book?symbol=BTC` | Real venue book timestamp; stale >30s rejected |
-| Polymarket predictions | `https://gamma-api.polymarket.com/markets` | `/api/venues/polymarket` | Real Gamma markets, outcomes, token IDs, 30s refresh |
-| Polymarket CLOB depth | `https://clob.polymarket.com/book` | `/api/venues/polymarket/book?tokenId=...` | Actual outcome-token book. Not a trade quotation guarantee |
-| Multi-chain wallet selection | **Reown AppKit** via Wagmi + Solana adapter | `/wallets` | WalletConnect catalogue, installed EVM wallets and deep links; Solana injected wallets supported separately |
+| Surface                      | Official provider                           | Route                                     | Reality                                                                                                     |
+| ---------------------------- | ------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Hyperliquid Perpetuals       | `https://api.hyperliquid.xyz/info`          | `/api/venues/hyperliquid`                 | Real `metaAndAssetCtxs` mark, 24h, funding, leverage; 15s refresh                                           |
+| Hyperliquid L2 book          | Same                                        | `/api/venues/hyperliquid/book?symbol=BTC` | Real venue book timestamp; stale >30s rejected                                                              |
+| Polymarket predictions       | `https://gamma-api.polymarket.com/markets`  | `/api/venues/polymarket`                  | Real Gamma markets, outcomes, token IDs, 30s refresh                                                        |
+| Polymarket CLOB depth        | `https://clob.polymarket.com/book`          | `/api/venues/polymarket/book?tokenId=...` | Actual outcome-token book. Not a trade quotation guarantee                                                  |
+| Multi-chain wallet selection | **Reown AppKit** via Wagmi + Solana adapter | `/wallets`                                | WalletConnect catalogue, installed EVM wallets and deep links; Solana injected wallets supported separately |
 
 Both venues remain **non-signing and execution-disabled**. Public display does not imply custody or instrument/trader eligibility. Browser and backend always gate live trading independently.
 
@@ -41,4 +41,5 @@ Do not add a generic `POST /trade` endpoint with an unrestricted signer. A quote
 - https://github.com/reown-com/appkit/blob/main/README.md
 
 ## Security dependency decision
+
 The Reown Solana adapter has been removed because CI found a high-severity unpatched bigint-buffer dependency via Solana SPL token internals. Do not suppress the dependency audit. We retain the existing server-verified Solana injected-wallet flow. The Reown modal covers the EVM wallet catalogue until a remediated Solana wallet-connect integration is available. The root pnpm override policy also constrains ws >=8.21.0, zod >=4.6.7 and decode-uri-component >=0.5.1. Dependency installation and security audit must verify these constraints before release.

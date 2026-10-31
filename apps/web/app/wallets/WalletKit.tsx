@@ -21,7 +21,9 @@ if (wagmi) {
     // The installed SDK publishes a narrower runtime adapter shape than its
     // TypeScript interface under exactOptionalPropertyTypes.
     adapters: [
-      wagmi as unknown as NonNullable<Parameters<typeof createAppKit>[0]["adapters"]>[number],
+      wagmi as unknown as NonNullable<
+        Parameters<typeof createAppKit>[0]["adapters"]
+      >[number],
     ],
     projectId,
     networks,
