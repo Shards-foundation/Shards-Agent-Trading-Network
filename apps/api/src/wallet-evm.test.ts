@@ -25,20 +25,46 @@ describe("EVM EIP-4361 operator wallet ownership proof", () => {
     expect(message).toContain("Nonce: ");
     expect(message).toContain("Expiration Time: 2026-10-31T19:05:00.000Z");
     expect(message).toContain("No trading, transfer or withdrawal authority");
-    expect(canonicalEvmAddress(account.address.toLowerCase())).toBe(account.address);
+    expect(canonicalEvmAddress(account.address.toLowerCase())).toBe(
+      account.address,
+    );
   });
 
   it("recovers the exact EOA address and rejects wrong signer or modified message", async () => {
     const signature = await account.signMessage({ message });
-    expect(await verifyEvmWalletProof(account.address, message, signature)).toBe(true);
-    expect(await verifyEvmWalletProof(account.address, message + "!", signature)).toBe(false);
-    expect(await verifyEvmWalletProof(`0x${"2".repeat(40)}`, message, signature)).toBe(false);
-    expect(await verifyEvmWalletProof(account.address, message, "0x1234")).toBe(false);
+    expect(
+      await verifyEvmWalletProof(account.address, message, signature),
+    ).toBe(true);
+    expect(
+      await verifyEvmWalletProof(account.address, message + "!", signature),
+    ).toBe(false);
+    expect(
+      await verifyEvmWalletProof(`0x${"2".repeat(40)}`, message, signature),
+    ).toBe(false);
+    expect(await verifyEvmWalletProof(account.address, message, "0x1234")).toBe(
+      false,
+    );
   });
 
   it("rejects untrusted or unsupported chain/origin metadata", () => {
-    expect(() => newEvmWalletChallenge(account.address, 999, "https://satns.vercel.app", issuedAt, expiresAt)).toThrow();
-    expect(() => newEvmWalletChallenge(account.address, 1, "http://example.com", issuedAt, expiresAt)).toThrow();
+    expect(() =>
+      newEvmWalletChallenge(
+        account.address,
+        999,
+        "https://satns.vercel.app",
+        issuedAt,
+        expiresAt,
+      ),
+    ).toThrow();
+    expect(() =>
+      newEvmWalletChallenge(
+        account.address,
+        1,
+        "http://example.com",
+        issuedAt,
+        expiresAt,
+      ),
+    ).toThrow();
     expect(canonicalEvmAddress("0xincorrect")).toBeNull();
   });
 });

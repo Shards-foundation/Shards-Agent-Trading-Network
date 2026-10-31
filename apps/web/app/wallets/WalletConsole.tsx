@@ -13,7 +13,9 @@ interface AnnouncedEvmWallet {
   name: string;
   provider: EvmProvider;
 }
-export function parseEip6963Provider(detail: unknown): AnnouncedEvmWallet | null {
+export function parseEip6963Provider(
+  detail: unknown,
+): AnnouncedEvmWallet | null {
   if (!detail || typeof detail !== "object") return null;
   const supplied = detail as { info?: unknown; provider?: unknown };
   if (!supplied.info || typeof supplied.info !== "object") return null;
@@ -94,7 +96,9 @@ async function post(path: string, data: unknown) {
 
 export default function WalletConsole() {
   const [active, setActive] = useState<Active | null>(null);
-  const [installedEvmWallets, setInstalledEvmWallets] = useState<AnnouncedEvmWallet[]>([]);
+  const [installedEvmWallets, setInstalledEvmWallets] = useState<
+    AnnouncedEvmWallet[]
+  >([]);
   const [solProvider, setSolProvider] = useState<SolanaProvider | null>(null);
   const [evmProvider, setEvmProvider] = useState<EvmProvider | null>(null);
   const [connected, setConnected] = useState<{ evm: boolean; sol: boolean }>({
@@ -125,14 +129,19 @@ export default function WalletConsole() {
       const discovered = parseEip6963Provider(detail);
       if (!discovered) return;
       setInstalledEvmWallets((existing) => {
-        if (existing.some((wallet) => wallet.id === discovered.id) || existing.length >= 24) return existing;
+        if (
+          existing.some((wallet) => wallet.id === discovered.id) ||
+          existing.length >= 24
+        )
+          return existing;
         return [...existing, discovered];
       });
       setConnected((existing) => ({ ...existing, evm: true }));
     };
     window.addEventListener("eip6963:announceProvider", announce);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
-    return () => window.removeEventListener("eip6963:announceProvider", announce);
+    return () =>
+      window.removeEventListener("eip6963:announceProvider", announce);
   }, []);
 
   useEffect(() => {
@@ -190,7 +199,8 @@ export default function WalletConsole() {
     setError("");
     setMessage("");
     try {
-      const provider = wallet?.provider ?? (window.ethereum as EvmProvider | undefined);
+      const provider =
+        wallet?.provider ?? (window.ethereum as EvmProvider | undefined);
       if (!provider)
         throw new Error(
           "No EVM wallet was detected. Open this site in your wallet browser.",
@@ -290,38 +300,57 @@ export default function WalletConsole() {
     }
   }
   async function verifyEvm() {
-    if (!active || active.chain !== "EVM" || !evmProvider || !authenticated) return;
+    if (!active || active.chain !== "EVM" || !evmProvider || !authenticated)
+      return;
     setBusy(true);
     setError("");
     setMessage("");
     try {
       const originalAddress = active.address;
-      const currentAccounts = await evmProvider.request({ method: "eth_accounts" });
-      if (!Array.isArray(currentAccounts) ||
-          !currentAccounts.some(value => typeof value === "string" &&
-            value.toLowerCase() === originalAddress.toLowerCase()))
+      const currentAccounts = await evmProvider.request({
+        method: "eth_accounts",
+      });
+      if (
+        !Array.isArray(currentAccounts) ||
+        !currentAccounts.some(
+          (value) =>
+            typeof value === "string" &&
+            value.toLowerCase() === originalAddress.toLowerCase(),
+        )
+      )
         throw new Error("Wallet account changed. Reconnect before verifying.");
       const rawChain = await evmProvider.request({ method: "eth_chainId" });
       if (typeof rawChain !== "string" || !/^0x[0-9a-fA-F]+$/.test(rawChain))
         throw new Error("The wallet returned an invalid chain.");
       const chainId = Number.parseInt(rawChain, 16);
       if (![1, 42161, 8453].includes(chainId))
-        throw new Error("Select Ethereum, Arbitrum or Base before verifying ownership.");
+        throw new Error(
+          "Select Ethereum, Arbitrum or Base before verifying ownership.",
+        );
       const { challengeId, message: text } = await post("challenge", {
-        chain: "EVM", address: originalAddress, chainId,
+        chain: "EVM",
+        address: originalAddress,
+        chainId,
       });
-      const encoded = `0x${Array.from(new TextEncoder().encode(text), byte =>
-        byte.toString(16).padStart(2, "0")).join("")}`;
+      const encoded = `0x${Array.from(new TextEncoder().encode(text), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("")}`;
       const signature = await evmProvider.request({
-        method: "personal_sign", params: [encoded, originalAddress],
+        method: "personal_sign",
+        params: [encoded, originalAddress],
       });
-      if (typeof signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(signature))
+      if (
+        typeof signature !== "string" ||
+        !/^0x[0-9a-fA-F]{130}$/.test(signature)
+      )
         throw new Error("Wallet did not provide a valid EOA signature.");
       const proof = await post("verify", { challengeId, signature });
       if (proof.verified !== true || proof.tradingEnabled !== false)
         throw new Error("Wallet verification was not confirmed.");
       await refresh();
-      setMessage("EVM wallet ownership verified and linked to your operator identity. Trading remains disabled.");
+      setMessage(
+        "EVM wallet ownership verified and linked to your operator identity. Trading remains disabled.",
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "EVM proof rejected.");
     } finally {
@@ -422,9 +451,16 @@ export default function WalletConsole() {
             </div>
           )}
           {installedEvmWallets.length > 0 && (
-            <div className="wallet-discovered" role="group" aria-label="Installed EVM wallets">
+            <div
+              className="wallet-discovered"
+              role="group"
+              aria-label="Installed EVM wallets"
+            >
               <div className="wallet-step">INSTALLED EVM WALLETS</div>
-              <p>Choose a detected wallet. Names are provider-reported; connections are not ownership proof.</p>
+              <p>
+                Choose a detected wallet. Names are provider-reported;
+                connections are not ownership proof.
+              </p>
               {installedEvmWallets.map((wallet) => (
                 <button
                   key={wallet.id}
@@ -547,7 +583,11 @@ export default function WalletConsole() {
               disabled={busy || verifiedActive}
               onClick={() => void verifyEvm()}
             >
-              {verifiedActive ? "Ownership verified" : busy ? "Processing…" : "Sign EVM ownership message"}
+              {verifiedActive
+                ? "Ownership verified"
+                : busy
+                  ? "Processing…"
+                  : "Sign EVM ownership message"}
             </button>
           ) : (
             <div className="wallet-disabled-action">

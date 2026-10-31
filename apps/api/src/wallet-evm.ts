@@ -21,11 +21,16 @@ export function newEvmWalletChallenge(
   expiresAt: Date,
 ): string {
   const canonical = canonicalEvmAddress(address);
-  if (!canonical || !SUPPORTED_EVM_CHAINS.some(id => id === chainId))
+  if (!canonical || !SUPPORTED_EVM_CHAINS.some((id) => id === chainId))
     throw new Error("Unsupported EVM proof");
   const site = new URL(origin);
-  if (site.protocol !== "https:" && !(site.protocol === "http:" &&
-    ["localhost", "127.0.0.1"].includes(site.hostname)))
+  if (
+    site.protocol !== "https:" &&
+    !(
+      site.protocol === "http:" &&
+      ["localhost", "127.0.0.1"].includes(site.hostname)
+    )
+  )
     throw new Error("Non-secure SIWE origin");
   const nonce = randomBytes(16).toString("hex");
   return [

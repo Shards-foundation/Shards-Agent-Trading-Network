@@ -58,18 +58,30 @@ function Controls({ authenticated, onVerified }: Props) {
     setError("");
     setNotice("");
     try {
-      if (account.chainId === undefined || ![1, 42161, 8453].includes(account.chainId))
-        throw new Error("Connect Ethereum, Arbitrum or Base before verification.");
+      if (
+        account.chainId === undefined ||
+        ![1, 42161, 8453].includes(account.chainId)
+      )
+        throw new Error(
+          "Connect Ethereum, Arbitrum or Base before verification.",
+        );
       const first = await fetch("/api/wallets/challenge", {
-        method: "POST", credentials: "same-origin",
+        method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chain: "EVM", chainId: account.chainId, address: signingAddress }),
+        body: JSON.stringify({
+          chain: "EVM",
+          chainId: account.chainId,
+          address: signingAddress,
+        }),
       });
       const challenge = await first.json();
-      if (!first.ok) throw new Error(challenge.error?.code ?? "Challenge unavailable");
+      if (!first.ok)
+        throw new Error(challenge.error?.code ?? "Challenge unavailable");
       const signature = await signMessageAsync({ message: challenge.message });
       const last = await fetch("/api/wallets/verify", {
-        method: "POST", credentials: "same-origin",
+        method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ challengeId: challenge.challengeId, signature }),
       });
@@ -77,9 +89,13 @@ function Controls({ authenticated, onVerified }: Props) {
       if (!last.ok || proof.verified !== true || proof.tradingEnabled !== false)
         throw new Error(proof.error?.code ?? "Signature rejected");
       await onVerified();
-      setNotice("Wallet ownership verified. Assign to a Shard below; live execution is disabled.");
+      setNotice(
+        "Wallet ownership verified. Assign to a Shard below; live execution is disabled.",
+      );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Wallet verification failed.");
+      setError(
+        cause instanceof Error ? cause.message : "Wallet verification failed.",
+      );
     } finally {
       setBusy(false);
     }
@@ -111,16 +127,34 @@ function Controls({ authenticated, onVerified }: Props) {
         </div>
       )}
       {isConnected && !authenticated && (
-        <p className="wallet-detail">Sign in as a human operator before signing an EVM ownership proof.</p>
+        <p className="wallet-detail">
+          Sign in as a human operator before signing an EVM ownership proof.
+        </p>
       )}
       {isConnected && authenticated && (
-        <button type="button" className="wallet-button" disabled={busy} onClick={() => void prove()}>
+        <button
+          type="button"
+          className="wallet-button"
+          disabled={busy}
+          onClick={() => void prove()}
+        >
           {busy ? "Verifying…" : "Verify wallet ownership"}
         </button>
       )}
-      {error && <p role="alert" className="wallet-notice error">{error}</p>}
-      {notice && <p role="status" className="wallet-notice">{notice}</p>}
-      <p className="wallet-detail">Verification never enables withdrawals or live trading. ERC-1271 contract-wallet signatures are not yet supported.</p>
+      {error && (
+        <p role="alert" className="wallet-notice error">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="wallet-notice">
+          {notice}
+        </p>
+      )}
+      <p className="wallet-detail">
+        Verification never enables withdrawals or live trading. ERC-1271
+        contract-wallet signatures are not yet supported.
+      </p>
     </div>
   );
 }
