@@ -121,7 +121,12 @@
   bottom: -32px;
   left: 0;
 }
+.satn-logout-form {
+  margin: 0;
+}
 .satn-header-join {
+  cursor: pointer;
+  font-family: inherit;
   background: var(--satn-gold);
   color: #171612 !important;
   border: 1px solid var(--satn-gold);
