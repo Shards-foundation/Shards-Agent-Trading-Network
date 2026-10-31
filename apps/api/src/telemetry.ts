@@ -89,7 +89,10 @@ export function registerHttpTelemetry(
     try {
       // Use framework route templates only. Never copy request.url, query,
       // cookies, headers, bodies, bearer tokens, actor IDs or journal text.
-      span.setAttribute("http.route", safeRouteTemplate(request.routeOptions.url));
+      span.setAttribute(
+        "http.route",
+        safeRouteTemplate(request.routeOptions.url),
+      );
       span.setAttribute("http.response.status_code", reply.statusCode);
       if (reply.statusCode >= 500)
         span.setStatus({ code: SpanStatusCode.ERROR });
