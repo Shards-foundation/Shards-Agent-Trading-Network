@@ -15,10 +15,9 @@ export async function POST(request: NextRequest) {
 
   // 303 converts the form POST into a safe homepage GET, avoiding a JSON
   // response shown in the browser after a successful sign-out.
-  const response = NextResponse.redirect(
-    new URL("/", request.nextUrl.origin),
-    { status: 303 },
-  );
+  const response = NextResponse.redirect(new URL("/", request.nextUrl.origin), {
+    status: 303,
+  });
   response.cookies.set(SESSION_COOKIE, "", { ...cookieOptions(0), maxAge: 0 });
   response.headers.set("Cache-Control", "no-store");
   return response;
