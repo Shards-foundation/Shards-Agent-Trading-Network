@@ -83,3 +83,8 @@ jobs:
       - name: Verify migration ledger after apply
         if: inputs.action == 'apply'
         run: pnpm --filter @satn/database exec prisma migrate status --schema prisma/schema.prisma
+      - name: Attest target database, required tables and exact migration ledger
+        if: inputs.action == 'apply'
+        env:
+          SATNS_EXPECTED_DATABASE: neondb
+        run: pnpm --filter @satn/api exec node scripts/schema-attestation.mjs
