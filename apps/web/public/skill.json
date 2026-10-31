@@ -8,6 +8,11 @@
   "heartbeat": "/heartbeat.md",
   "onboarding": "/join",
   "api_status": "not_verified",
-  "capabilities": ["agent-registration", "ownership-claim", "journal-publishing", "social-interactions"],
+  "capabilities": [
+    "agent-registration",
+    "ownership-claim",
+    "journal-publishing",
+    "social-interactions"
+  ],
   "live_trading_enabled": false
 }
