@@ -1,7 +1,10 @@
 import {
   SpanKind,
   SpanStatusCode,
+  metrics,
   trace,
+  type Histogram,
+  type Meter,
   type Span,
   type Tracer,
 } from "@opentelemetry/api";
@@ -38,10 +41,29 @@ const methodAllowlist = new Set([
   "OPTIONS",
 ]);
 
+// Only literals from the reviewed SATNS Fastify routing surface are exposed.
+// A route that accidentally contains a real ID/token is always "unmatched".
+const staticRouteSegments = new Set([
+  "health", "live", "ready", "v1", "agents", "credentials",
+  "rotate", "revoke", "pause", "resume", "journal", "feed",
+  "trades", "follows", "following", "followers", "posts",
+  "replies", "likes", "home-feed", "reports", "moderation",
+  "visibility", "portfolio", "performance", "trade-intents",
+  "venues", "markets", "market", "network", "stats", "my-votes",
+  "communities", "comments", "vote", "subscribe", "owners",
+  "me", "agent-registrations", "status", "preview", "claim",
+  "activate",
+]);
+
 export function safeRouteTemplate(value: unknown): string {
-  return typeof value === "string" &&
-    value.length <= 120 &&
-    /^\/[a-zA-Z0-9_./:-]*$/.test(value)
+  if (typeof value !== "string" || value.length > 120 || !value.startsWith("/"))
+    return "unmatched";
+  if (value === "/") return "/";
+  const segments = value.slice(1).split("/");
+  return segments.every((segment) =>
+    staticRouteSegments.has(segment) ||
+    /^:[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(segment),
+  )
     ? value
     : "unmatched";
 }
@@ -57,12 +79,38 @@ export function registerHttpTelemetry(
   {
     enabled = telemetryEnabled(),
     tracer = trace.getTracer("satns.api", "0.1.0"),
-  }: { enabled?: boolean; tracer?: Tracer } = {},
+    meter = metrics.getMeter("satns.api", "0.1.0"),
+    now = () => performance.now(),
+  }: {
+    enabled?: boolean;
+    tracer?: Tracer;
+    meter?: Meter;
+    now?: () => number;
+  } = {},
 ): void {
   if (!enabled) return;
 
+  // OpenTelemetry Meter API remains a no-op until an independently approved
+  // MeterProvider/exporter is installed. Do not enable implicit network export.
+  let requestDuration: Histogram | undefined;
+  try {
+    requestDuration = meter.createHistogram("http.server.request.duration", {
+      unit: "s",
+      description: "SATNS inbound HTTP request duration",
+    });
+  } catch {
+    // Telemetry registration must never prevent the API from starting.
+  }
+
+  const startedAt = new WeakMap<FastifyRequest, number>();
   const activeSpans = new WeakMap<FastifyRequest, Span>();
   app.addHook("onRequest", async (request) => {
+    try {
+      const timestamp = now();
+      if (Number.isFinite(timestamp)) startedAt.set(request, timestamp);
+    } catch {
+      // The monotonic clock is an optional observational dependency.
+    }
     try {
       activeSpans.set(
         request,
@@ -83,17 +131,34 @@ export function registerHttpTelemetry(
     }
   });
   app.addHook("onResponse", async (request, reply) => {
+    // Both spans and duration measurements use identical low-cardinality
+    // attributes. Never pass through request headers, URLs or identities.
+    const attributes = {
+      "http.request.method": safeMethod(request.method),
+      "http.route": safeRouteTemplate(request.routeOptions.url),
+      "http.response.status_code": reply.statusCode,
+    };
+    const started = startedAt.get(request);
+    startedAt.delete(request);
+    if (started !== undefined && requestDuration) {
+      try {
+        const seconds = (now() - started) / 1000;
+        if (Number.isFinite(seconds) && seconds >= 0)
+          requestDuration.record(seconds, attributes);
+      } catch {
+        // A misconfigured metrics provider is never a request dependency.
+      }
+    }
+
     const span = activeSpans.get(request);
     if (!span) return;
     activeSpans.delete(request);
     try {
-      // Use framework route templates only. Never copy request.url, query,
-      // cookies, headers, bodies, bearer tokens, actor IDs or journal text.
+      span.setAttribute("http.route", attributes["http.route"]);
       span.setAttribute(
-        "http.route",
-        safeRouteTemplate(request.routeOptions.url),
+        "http.response.status_code",
+        attributes["http.response.status_code"],
       );
-      span.setAttribute("http.response.status_code", reply.statusCode);
       if (reply.statusCode >= 500)
         span.setStatus({ code: SpanStatusCode.ERROR });
     } catch {
