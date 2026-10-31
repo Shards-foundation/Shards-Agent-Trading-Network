@@ -1,5 +1,10 @@
 import Fastify from "fastify";
-import { SpanKind, SpanStatusCode, type Span, type Tracer } from "@opentelemetry/api";
+import {
+  SpanKind,
+  SpanStatusCode,
+  type Span,
+  type Tracer,
+} from "@opentelemetry/api";
 import { describe, expect, it, vi } from "vitest";
 import {
   registerHttpTelemetry,
@@ -17,11 +22,17 @@ function recorder() {
     ended: number;
   }> = [];
   const tracer = {
-    startSpan(name: string, options: { kind?: SpanKind; attributes?: Record<string, string> }) {
+    startSpan(
+      name: string,
+      options: { kind?: SpanKind; attributes?: Record<string, string> },
+    ) {
       const recorded = {
         name,
         kind: options.kind,
-        attributes: { ...options.attributes } as Record<string, string | number>,
+        attributes: { ...options.attributes } as Record<
+          string,
+          string | number
+        >,
         statuses: [] as number[],
         ended: 0,
       };
@@ -45,22 +56,47 @@ function recorder() {
 }
 
 describe("SATNS OpenTelemetry privacy and release gate", () => {
-  it("requires exact opt-in plus Sentry DSN; disabled in test", () => {
-    expect(telemetryEnabled({ SATNS_OTEL_ENABLED: "true", SENTRY_DSN: "synthetic", NODE_ENV: "production" })).toBe(true);
-    expect(telemetryEnabled({ SATNS_OTEL_ENABLED: "1", SENTRY_DSN: "synthetic", NODE_ENV: "production" })).toBe(false);
-    expect(telemetryEnabled({ SATNS_OTEL_ENABLED: "true", NODE_ENV: "production" })).toBe(false);
-    expect(telemetryEnabled({ SATNS_OTEL_ENABLED: "true", SENTRY_DSN: "synthetic", NODE_ENV: "test" })).toBe(false);
+  it("requires exact opt-in plus DSN; disabled in test", () => {
+    expect(
+      telemetryEnabled({
+        SATNS_OTEL_ENABLED: "true",
+        SENTRY_DSN: "synthetic",
+        NODE_ENV: "production",
+      }),
+    ).toBe(true);
+    expect(
+      telemetryEnabled({
+        SATNS_OTEL_ENABLED: "1",
+        SENTRY_DSN: "synthetic",
+        NODE_ENV: "production",
+      }),
+    ).toBe(false);
+    expect(
+      telemetryEnabled({
+        SATNS_OTEL_ENABLED: "true",
+        NODE_ENV: "production",
+      }),
+    ).toBe(false);
+    expect(
+      telemetryEnabled({
+        SATNS_OTEL_ENABLED: "true",
+        SENTRY_DSN: "synthetic",
+        NODE_ENV: "test",
+      }),
+    ).toBe(false);
   });
 
-  it("accepts only static route templates, never raw queries or secrets", () => {
-    expect(safeRouteTemplate("/v1/agents/:agentId")).toBe("/v1/agents/:agentId");
+  it("accepts only static route templates, not raw queries or secrets", () => {
+    expect(safeRouteTemplate("/v1/agents/:agentId")).toBe(
+      "/v1/agents/:agentId",
+    );
     expect(safeRouteTemplate("/health/ready")).toBe("/health/ready");
     expect(safeRouteTemplate("/v1/posts?token=SECRET")).toBe("unmatched");
     expect(safeRouteTemplate("/".repeat(130))).toBe("unmatched");
     expect(safeRouteTemplate(null)).toBe("unmatched");
   });
 
-  it("records only allowlisted HTTP method, route template and status code", async () => {
+  it("records only method, template and status, never request data", async () => {
     const app = Fastify();
     const { tracer, spans } = recorder();
     registerHttpTelemetry(app, { enabled: true, tracer });
@@ -101,7 +137,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     }
   });
 
-  it("records failure status, never the exception message", async () => {
+  it("records failure status but never the exception message", async () => {
     const app = Fastify();
     const { tracer, spans } = recorder();
     registerHttpTelemetry(app, { enabled: true, tracer });
@@ -109,7 +145,9 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
       throw new Error("wallet=TOP-SECRET-ERROR");
     });
     try {
-      expect((await app.inject("/fail/PRIVATE-IDENTIFIER")).statusCode).toBe(500);
+      expect((await app.inject("/fail/PRIVATE-IDENTIFIER")).statusCode).toBe(
+        500,
+      );
       expect(spans).toHaveLength(1);
       expect(spans[0]?.statuses).toContain(SpanStatusCode.ERROR);
       expect(spans[0]?.attributes["http.route"]).toBe("/fail/:id");
@@ -121,7 +159,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     }
   });
 
-  it("does not start spans when disabled and never blocks a request on telemetry faults", async () => {
+  it("never blocks a request on telemetry faults", async () => {
     const app = Fastify();
     const startSpan = vi.fn(() => {
       throw new Error("exporter unavailable");
@@ -139,7 +177,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
     }
   });
 
-  it("traces only approved worker operations and retains the original error", async () => {
+  it("traces approved worker operations and preserves errors", async () => {
     const { tracer, spans } = recorder();
     expect(
       await withWorkerSpan(
@@ -158,7 +196,7 @@ describe("SATNS OpenTelemetry privacy and release gate", () => {
         { enabled: true, tracer },
       ),
     ).rejects.toBe(privateError);
-    expect(spans.map((s) => s.name)).toEqual([
+    expect(spans.map((item) => item.name)).toEqual([
       "satns.worker.queue.stats",
       "satns.worker.system.healthcheck",
     ]);
