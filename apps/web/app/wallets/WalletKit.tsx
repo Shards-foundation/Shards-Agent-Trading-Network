@@ -8,7 +8,7 @@ import {
 } from "@reown/appkit/networks";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { WagmiProvider, useAccount, useSignMessage } from "wagmi";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
@@ -42,8 +42,12 @@ if (wagmi) {
     features: { analytics: false, swaps: false, onramp: false },
   });
 }
-type Props = { authenticated: boolean; onVerified: () => Promise<void> };
-function Controls({ authenticated, onVerified }: Props) {
+type Props = {
+  authenticated: boolean;
+  onVerified: () => Promise<void>;
+  onConnectionChange: (connection: { address: string; chainId: number } | null) => void;
+};
+function Controls({ authenticated, onVerified, onConnectionChange }: Props) {
   const { open } = useAppKit();
   const { address, isConnected } = useAppKitAccount();
   const account = useAccount();
@@ -51,6 +55,13 @@ function Controls({ authenticated, onVerified }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (isConnected && account.address && account.chainId !== undefined) {
+      onConnectionChange({ address: account.address, chainId: account.chainId });
+    } else {
+      onConnectionChange(null);
+    }
+  }, [isConnected, account.address, account.chainId, onConnectionChange]);
   async function prove() {
     const signingAddress = account.address;
     if (!authenticated || !isConnected || !signingAddress) return;

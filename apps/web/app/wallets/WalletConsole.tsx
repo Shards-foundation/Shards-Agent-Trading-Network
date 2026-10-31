@@ -94,7 +94,12 @@ async function post(path: string, data: unknown) {
   return json;
 }
 
-export default function WalletConsole() {
+type ReownConnection = { address: string; chainId: number } | null;
+export default function WalletConsole({
+  operatorSignInReady,
+}: {
+  operatorSignInReady: boolean;
+}) {
   const [active, setActive] = useState<Active | null>(null);
   const [installedEvmWallets, setInstalledEvmWallets] = useState<
     AnnouncedEvmWallet[]
@@ -106,6 +111,7 @@ export default function WalletConsole() {
     sol: false,
   });
   const [authenticated, setAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [selectedAgent, setSelectedAgent] = useState("");
   const [busy, setBusy] = useState(false);
@@ -159,7 +165,8 @@ export default function WalletConsole() {
           );
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setAuthChecked(true));
   }, [refresh]);
 
   useEffect(() => {
@@ -193,6 +200,20 @@ export default function WalletConsole() {
       evmProvider.removeListener?.("disconnect", onDisconnect);
     };
   }, [evmProvider]);
+
+  const onReownConnection = useCallback((connection: ReownConnection) => {
+    setActive((current) => {
+      if (!connection) {
+        return current?.label === "Reown / WalletConnect" ? null : current;
+      }
+      return {
+        chain: "EVM",
+        address: connection.address,
+        chainId: `0x${connection.chainId.toString(16)}`,
+        label: "Reown / WalletConnect",
+      };
+    });
+  }, []);
 
   async function connectEvm(wallet?: AnnouncedEvmWallet) {
     setBusy(true);
@@ -440,7 +461,11 @@ export default function WalletConsole() {
             private keys or unrestricted signatures.
           </p>
           {process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ? (
-            <WalletKit authenticated={authenticated} onVerified={refresh} />
+            <WalletKit
+              authenticated={authenticated}
+              onVerified={refresh}
+              onConnectionChange={onReownConnection}
+            />
           ) : (
             <div className="wallet-multi">
               <strong>Full wallet catalogue</strong>
@@ -548,7 +573,15 @@ export default function WalletConsole() {
           <div className="wallet-check">
             <span>01</span>
             <strong>Human identity</strong>
-            <em>{authenticated ? "Signed in" : "Sign-in required"}</em>
+            <em>
+              {authenticated
+                ? "Signed in"
+                : !authChecked
+                  ? "Checking…"
+                  : operatorSignInReady
+                    ? "Sign-in required"
+                    : "Not configured"}
+            </em>
           </div>
           <div className="wallet-check">
             <span>02</span>
@@ -560,7 +593,13 @@ export default function WalletConsole() {
             <strong>Ownership proof</strong>
             <em>{verifiedActive ? "Verified" : "Not verified"}</em>
           </div>
-          {!authenticated ? (
+          {!authenticated && !operatorSignInReady ? (
+            <div className="wallet-disabled-action" role="status">
+              Operator sign-in is not configured on this deployment. You can
+              browse wallets, but ownership verification and Shard assignment
+              are unavailable until the identity provider and API are enabled.
+            </div>
+          ) : !authenticated ? (
             <a className="wallet-button" href="/join">
               Sign in to verify →
             </a>
@@ -577,6 +616,12 @@ export default function WalletConsole() {
                   ? "Processing…"
                   : "Sign verification message"}
             </button>
+          ) : active?.chain === "EVM" &&
+            active.label === "Reown / WalletConnect" ? (
+            <div className="wallet-disabled-action">
+              Use the Reown wallet's Verify wallet ownership action in the
+              connection panel. The same server-side proof applies.
+            </div>
           ) : active?.chain === "EVM" ? (
             <button
               className="wallet-button"
