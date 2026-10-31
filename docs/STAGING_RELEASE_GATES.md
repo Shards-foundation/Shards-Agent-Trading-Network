@@ -2,6 +2,10 @@
 
 **Status:** Configuration preflight and CI tests exist. No staging deployment, operator sign-off, external health evidence or live trading is asserted by this document.
 
+See [Render staging provisioning and release gates](RENDER_STAGING.md) for
+currently provisioned disposable resources, the manual paid-service Blueprint,
+TLS/OIDC blockers and cost approval gate.
+
 See [Backend staging container runbook](STAGING_CONTAINER_RUNBOOK.md) for the
 CI-tested API/worker image, loopback-only Compose topology and supervised
 migration release sequence. These manifests do not constitute deployed staging.
