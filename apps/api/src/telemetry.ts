@@ -90,11 +90,7 @@ const staticRouteSegments = new Set([
 ]);
 
 export function safeRouteTemplate(value: unknown): string {
-  if (
-    typeof value !== "string" ||
-    value.length > 120 ||
-    !value.startsWith("/")
-  )
+  if (typeof value !== "string" || value.length > 120 || !value.startsWith("/"))
     return "unmatched";
   if (value === "/") return "/";
   const segments = value.slice(1).split("/");
