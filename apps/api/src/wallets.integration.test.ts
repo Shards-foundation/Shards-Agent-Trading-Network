@@ -58,7 +58,10 @@ describe.skipIf(!integrationEnabled)(
         app.inject({
           method: payload === undefined ? "GET" : "POST",
           url,
-          headers: { authorization: `Bearer ${token}` },
+          headers: {
+            authorization: `Bearer ${token}`,
+            ...(payload === undefined ? {} : { "content-type": "application/json" }),
+          },
           ...(payload === undefined
             ? {}
             : { payload: JSON.stringify(payload) }),
