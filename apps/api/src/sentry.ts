@@ -6,7 +6,18 @@ const active =
 if (active) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
-    sendDefaultPii: false,
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: { request: false, response: false },
+      httpBodies: [],
+      urlQueryParams: false,
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+      frameContextLines: 0,
+    },
     tracesSampleRate: 0,
     autoSessionTracking: false,
     beforeBreadcrumb: () => null,

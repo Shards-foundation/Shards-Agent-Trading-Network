@@ -48,5 +48,5 @@ export function minimalSentryError<T extends ErrorLike>(event: T): T | null {
         },
       })),
     },
-  } as T;
+  } as unknown as T;
 }

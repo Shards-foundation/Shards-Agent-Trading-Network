@@ -31,12 +31,12 @@ describe("privacy-first Sentry event allowlist", () => {
         ],
       },
     });
-    expect(result?.exception?.values?.[0].type).toBe("TypeError");
+    expect(result?.exception?.values?.[0]?.type).toBe("TypeError");
     expect(
-      result?.exception?.values?.[0].stacktrace?.frames?.[0].filename,
+      result?.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename,
     ).toBe("index.ts");
     expect(
-      result?.exception?.values?.[0].stacktrace?.frames?.[1].filename,
+      result?.exception?.values?.[0]?.stacktrace?.frames?.[1]?.filename,
     ).toBeUndefined();
     const output = JSON.stringify(result);
     expect(output).not.toContain(secret);
@@ -46,13 +46,14 @@ describe("privacy-first Sentry event allowlist", () => {
   });
 
   it("discards non-exception messages, traces, feedback, and forged types", () => {
-    expect(minimalSentryError({ message: "private journal" })).toBeNull();
+    const privateMessage = { message: "private journal", exception: undefined };
+    expect(minimalSentryError(privateMessage)).toBeNull();
     const result = minimalSentryError({
       exception: {
         values: [{ type: "Error?password=abc", value: "wallet key" }],
       },
     });
-    expect(result?.exception?.values?.[0].type).toBe("Error");
+    expect(result?.exception?.values?.[0]?.type).toBe("Error");
     expect(JSON.stringify(result)).not.toContain("wallet key");
   });
 });
