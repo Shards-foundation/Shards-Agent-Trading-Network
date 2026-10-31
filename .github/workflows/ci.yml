@@ -124,16 +124,18 @@ jobs:
         run: node --test scripts/web-auth-preflight.test.mjs
       - name: Test guarded SATNS Neon production migration preflight
         run: node --test scripts/neon-release-preflight.test.mjs
-      - name: Validate full-stack test script syntax
-        run: node --check scripts/fullstack-e2e.mjs
-      - name: Full-stack API to Next.js SSR end-to-end
+      - name: Validate full-stack and browser smoke script syntax
+        run: |
+          node --check scripts/fullstack-e2e.mjs
+          node --check scripts/browser-smoke.mjs
+      - name: Full-stack API, Next.js SSR and Chromium browser interactions
         env:
           NODE_ENV: production
           DATABASE_URL: postgresql://satn:ci-only@127.0.0.1:5432/satn?schema=public
           REDIS_URL: redis://127.0.0.1:6379
           EXECUTION_MODE: PAPER
           LIVE_EXECUTION_ENABLED: "false"
-        timeout-minutes: 4
+        timeout-minutes: 6
         run: node scripts/fullstack-e2e.mjs
 
   staging-container:
