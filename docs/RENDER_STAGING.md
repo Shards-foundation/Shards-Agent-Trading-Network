@@ -6,12 +6,12 @@ Do not equate a GitHub/Vercel green check with a functioning backend.
 
 ## Existing isolated resources (31 October 2026)
 
-| Resource | Render identifier | Region | Current plan | Caveat |
-| --- | --- | --- | --- | --- |
-| `satn-staging-postgres` | `dpg-dbij2rajnfac73ap3djg-a` | Frankfurt | Free PostgreSQL 16 | Expires **30 November 2026**; no managed backup |
-| `satn-staging-cache` | `red-dbij2soae00c73br2chg` | Frankfurt | Free Key Value | Volatile, no persistence |
-| `satn-staging-api` | Not created | Frankfurt proposed | Paid worker-class service | Public exposure is blocked |
-| `satn-staging-worker` | Not created | Frankfurt proposed | Paid background worker | Not available on the free plan |
+| Resource                | Render identifier            | Region             | Current plan              | Caveat                                          |
+| ----------------------- | ---------------------------- | ------------------ | ------------------------- | ----------------------------------------------- |
+| `satn-staging-postgres` | `dpg-dbij2rajnfac73ap3djg-a` | Frankfurt          | Free PostgreSQL 16        | Expires **30 November 2026**; no managed backup |
+| `satn-staging-cache`    | `red-dbij2soae00c73br2chg`   | Frankfurt          | Free Key Value            | Volatile, no persistence                        |
+| `satn-staging-api`      | Not created                  | Frankfurt proposed | Paid worker-class service | Public exposure is blocked                      |
+| `satn-staging-worker`   | Not created                  | Frankfurt proposed | Paid background worker    | Not available on the free plan                  |
 
 The two free resources are **disposable integration fixtures only**. Do not use
 for customer data or release acceptance. Their creation is not proof of live
