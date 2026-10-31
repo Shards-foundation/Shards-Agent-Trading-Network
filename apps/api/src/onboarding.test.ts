@@ -56,7 +56,7 @@ describe("agent-first public onboarding", () => {
     const store = fixture();
     registerOnboardingRoutes({ app, prisma: options.disabled ? null : store.prismaMock,
       resolveOwnerIdentity: async () => options.owner ?? { subject: "https://issuer.test/:person-1", actorType: "OIDC_USER" },
-      webOrigin: "https://web.shards.example", now: options.time });
+      webOrigin: "https://web.shards.example", ...(options.time ? { now: options.time } : {}) });
     return { app, ...store };
   }
   const register = (app: ReturnType<typeof Fastify>) => app.inject({ method: "POST", url: "/v1/agent-registrations",
