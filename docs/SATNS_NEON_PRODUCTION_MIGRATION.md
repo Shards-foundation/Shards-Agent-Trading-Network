@@ -31,12 +31,12 @@ The temporary branch is a staging artefact and must be deleted once approved. Ne
 
 Read-only Neon inspection on 2026-10-31 established:
 
-| Branch and database | Application tables | Prisma `_prisma_migrations` ledger |
-| --- | --- | --- |
-| Production `main/neondb` | 0 | Missing |
-| Production `main/satn` | 0 | Missing |
-| Validation `validation/satns-schema-20261031/neondb` | 23 | Missing |
-| Validation `validation/satns-schema-20261031/satn` | 0 | Missing |
+| Branch and database                                  | Application tables | Prisma `_prisma_migrations` ledger |
+| ---------------------------------------------------- | ------------------ | ---------------------------------- |
+| Production `main/neondb`                             | 0                  | Missing                            |
+| Production `main/satn`                               | 0                  | Missing                            |
+| Validation `validation/satns-schema-20261031/neondb` | 23                 | Missing                            |
+| Validation `validation/satns-schema-20261031/satn`   | 0                  | Missing                            |
 
 The **canonical production target is `main/neondb`**, not the other
 database named `satn`. The validation branch is a raw-schema rehearsal,
