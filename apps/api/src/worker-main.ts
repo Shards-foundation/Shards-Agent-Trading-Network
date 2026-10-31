@@ -1,5 +1,6 @@
 import "./sentry.js";
 import { captureBackendException } from "./sentry.js";
+import { withWorkerSpan } from "./telemetry.js";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { PrismaClient } from "@prisma/client";
@@ -46,17 +47,18 @@ const queue = new WorkerQueue(prisma, { leaseMs });
 const handlers = new Map<string, WorkerHandler>([
   [
     "system.healthcheck",
-    async (payload, context) => {
-      if (context.signal.aborted) throw new Error("healthcheck cancelled");
-      if (
-        payload === null ||
-        typeof payload !== "object" ||
-        Array.isArray(payload)
-      ) {
-        throw new Error("system.healthcheck payload must be a JSON object");
-      }
-      // This handler intentionally performs no external side effects.
-    },
+    async (payload, context) =>
+      withWorkerSpan("satns.worker.system.healthcheck", async () => {
+        if (context.signal.aborted) throw new Error("healthcheck cancelled");
+        if (
+          payload === null ||
+          typeof payload !== "object" ||
+          Array.isArray(payload)
+        ) {
+          throw new Error("system.healthcheck payload must be a JSON object");
+        }
+        // This handler intentionally performs no external side effects.
+      }),
   ],
 ]);
 const runner = new WorkerRunner(queue, queueName, workerId, handlers, {
@@ -142,7 +144,9 @@ async function stop(signal: string): Promise<void> {
 
 async function logQueueStats(): Promise<void> {
   try {
-    const stats = await queue.stats(queueName);
+    const stats = await withWorkerSpan("satns.worker.queue.stats", () =>
+      queue.stats(queueName),
+    );
     console.info(
       JSON.stringify({ event: "worker.queue.stats", workerId, ...stats }),
     );
