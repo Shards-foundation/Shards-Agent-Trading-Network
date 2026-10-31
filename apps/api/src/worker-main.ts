@@ -1,3 +1,5 @@
+import "./sentry.js";
+import { captureBackendException } from "./sentry.js";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { PrismaClient } from "@prisma/client";
@@ -205,7 +207,8 @@ try {
     }),
   );
   await runner.run(shutdown.signal);
-} catch {
+} catch (error) {
+  captureBackendException(error);
   console.error(
     JSON.stringify({
       event: "worker.fatal",

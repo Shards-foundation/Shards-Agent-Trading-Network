@@ -13,7 +13,8 @@
   "dependencies": {
     "next": "^16.4.3",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "@sentry/nextjs": "11.10.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.10",
