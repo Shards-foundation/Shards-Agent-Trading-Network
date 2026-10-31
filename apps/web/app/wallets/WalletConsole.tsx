@@ -76,8 +76,40 @@ type Registry = { wallets: OwnerWallet[]; agents: OwnerAgent[] };
 function short(value: string) {
   return value.length < 20 ? value : `${value.slice(0, 7)}…${value.slice(-6)}`;
 }
-function getSolana(): SolanaProvider | undefined {
-  return window.phantom?.solana ?? window.solflare ?? window.solana;
+type SolanaSources = {
+  phantom?: { solana?: SolanaProvider };
+  solflare?: SolanaProvider;
+  solana?: SolanaProvider;
+};
+type SolanaChoice = { label: string; provider: SolanaProvider };
+
+/**
+ * Prefer explicit injected wallet namespaces and suppress aliases for the
+ * same provider. Never silently choose Phantom when Solflare is also present.
+ */
+export function discoverSolanaWallets(
+  sources: SolanaSources,
+): SolanaChoice[] {
+  const found: SolanaChoice[] = [];
+  const seen = new Set<SolanaProvider>();
+  const add = (label: string, provider: SolanaProvider | undefined) => {
+    if (
+      !provider ||
+      seen.has(provider) ||
+      typeof provider.connect !== "function" ||
+      typeof provider.signMessage !== "function"
+    ) return;
+    seen.add(provider);
+    found.push({ label, provider });
+  };
+  add("Phantom", sources.phantom?.solana);
+  add("Solflare", sources.solflare);
+  const generic = sources.solana;
+  add(
+    generic?.isPhantom ? "Phantom" : generic?.isSolflare ? "Solflare" : "Solana",
+    generic,
+  );
+  return found;
 }
 async function post(path: string, data: unknown) {
   const response = await fetch(`/api/wallets/${path}`, {
@@ -105,6 +137,7 @@ export default function WalletConsole({
     AnnouncedEvmWallet[]
   >([]);
   const [solProvider, setSolProvider] = useState<SolanaProvider | null>(null);
+  const [solanaChoices, setSolanaChoices] = useState<SolanaChoice[]>([]);
   const [evmProvider, setEvmProvider] = useState<EvmProvider | null>(null);
   const [connected, setConnected] = useState<{ evm: boolean; sol: boolean }>({
     evm: false,
@@ -151,9 +184,11 @@ export default function WalletConsole({
   }, []);
 
   useEffect(() => {
+    const choices = discoverSolanaWallets(window);
+    setSolanaChoices(choices);
     setConnected((previous) => ({
       evm: previous.evm || Boolean(window.ethereum),
-      sol: Boolean(getSolana()),
+      sol: choices.length > 0,
     }));
     void fetch("/api/auth/me", { cache: "no-store" })
       .then(async (r) => {
@@ -249,16 +284,14 @@ export default function WalletConsole({
       setBusy(false);
     }
   }
-  async function connectSolana() {
+  async function connectSolana(choice: SolanaChoice) {
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const provider = getSolana();
+      const provider = choice.provider;
       if (!provider)
-        throw new Error(
-          "No Solana wallet was detected. Open in Phantom or Solflare wallet browser.",
-        );
+        throw new Error("The selected Solana wallet is unavailable.");
       const result = await provider.connect();
       const address =
         result.publicKey?.toBase58() ?? provider.publicKey?.toBase58();
@@ -269,11 +302,7 @@ export default function WalletConsole({
       setActive({
         chain: "SOLANA",
         address,
-        label: provider.isPhantom
-          ? "Phantom"
-          : provider.isSolflare
-            ? "Solflare"
-            : "Solana",
+        label: choice.label,
       });
       setMessage(
         "Connected locally. Sign a separate ownership challenge to link this wallet to your Shards identity.",
@@ -501,23 +530,29 @@ export default function WalletConsole({
             </div>
           )}
           <div className="wallet-choices">
-            <button
-              onClick={() => void connectSolana()}
-              disabled={busy}
-              type="button"
-              className="wallet-choice"
-            >
-              <span className="wallet-chain-icon sol">◎</span>
-              <span>
-                <strong>Solana</strong>
-                <small>
-                  {connected.sol
-                    ? "Wallet available"
-                    : "Phantom / Solflare in-app browser"}
-                </small>
-              </span>
-              <span aria-hidden>↗</span>
-            </button>
+            {solanaChoices.length > 0 ? (
+              solanaChoices.map((choice) => (
+                <button
+                  key={choice.label}
+                  onClick={() => void connectSolana(choice)}
+                  disabled={busy}
+                  type="button"
+                  className="wallet-choice"
+                >
+                  <span className="wallet-chain-icon sol">◎</span>
+                  <span>
+                    <strong>{choice.label}</strong>
+                    <small>Solana · installed provider</small>
+                  </span>
+                  <span aria-hidden="true">↗</span>
+                </button>
+              ))
+            ) : (
+              <div className="wallet-disabled-action" role="status">
+                No injected Solana wallet detected. Open this site in Phantom
+                or Solflare's in-app browser to connect.
+              </div>
+            )}
             <button
               onClick={() => void connectEvm()}
               disabled={busy}
@@ -718,8 +753,8 @@ export default function WalletConsole({
           </p>
         ) : registry.wallets.length === 0 ? (
           <p className="wallet-registry-empty">
-            No verified wallets yet. Connect and sign a Solana ownership
-            challenge above.
+            No verified wallets yet. Connect an EVM or Solana wallet and
+            sign its ownership challenge above.
           </p>
         ) : (
           <div className="wallet-rows">
