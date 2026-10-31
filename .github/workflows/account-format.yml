@@ -1,0 +1,53 @@
+name: Phase 2 account formatting (temporary)
+
+on:
+  push:
+    branches:
+      - feat/live-venues-reown-wallet-picker
+
+permissions:
+  contents: write
+
+concurrency:
+  group: satns-account-format
+  cancel-in-progress: false
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/live-venues-reown-wallet-picker
+          persist-credentials: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          pnpm exec prettier --write \
+            apps/web/app/api/venues/hyperliquid/account/route.ts \
+            apps/web/app/terminal/HyperliquidAccount.tsx \
+            apps/web/app/terminal/hyperliquid-account.css \
+            apps/web/app/terminal/HyperliquidPerps.tsx \
+            apps/web/tests/hyperliquid-account.test.ts \
+            docs/REAL_VENUES_AND_WALLET_PICKER.md
+      - name: Commit formatting
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apps/web/app/api/venues/hyperliquid/account/route.ts \
+              apps/web/app/terminal/HyperliquidAccount.tsx \
+              apps/web/app/terminal/hyperliquid-account.css \
+              apps/web/app/terminal/HyperliquidPerps.tsx \
+              apps/web/tests/hyperliquid-account.test.ts \
+              docs/REAL_VENUES_AND_WALLET_PICKER.md
+            git commit -m "style(perps): format account integration source and tests"
+            git pull --rebase origin feat/live-venues-reown-wallet-picker
+            git push origin HEAD:feat/live-venues-reown-wallet-picker
+          fi
