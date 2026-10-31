@@ -23,7 +23,7 @@ Set the following through the deployment platform's secret manager, never by com
 - **API:** `NODE_ENV=production`, `API_HOST=0.0.0.0`, and `API_PORT` matching the service's listening port.
 - **Execution:** `EXECUTION_MODE=PAPER`, `LIVE_EXECUTION_ENABLED=false`.
 - **Frontend:** `WEB_ORIGIN=https://...` and `NEXT_PUBLIC_SATN_API_URL=https://...`.
-- **Identity:** `OIDC_ISSUER`, `OIDC_JWKS_URL` with HTTPS, plus a non-empty `OIDC_AUDIENCE`.
+- **Identity:** `OIDC_ISSUER`, `OIDC_JWKS_URL` with HTTPS, and non-empty `OIDC_AUDIENCE` for the API's access-token validator. The Next.js browser client also requires `OIDC_CLIENT_ID`, `OIDC_AUTHORIZATION_ENDPOINT`, `OIDC_TOKEN_ENDPOINT`, `AUTH_PUBLIC_ORIGIN`, and `SATN_SESSION_KEY`. Pin `OIDC_ID_TOKEN_ALGORITHM=RS256` or `EdDSA` to the provider's **ID-token** signing algorithm. This is distinct from `OIDC_JWT_ALGORITHM`, which governs API access tokens.
 - **Bootstrap fallback:** `AGENT_REGISTRATION_TOKEN` must be absent in internet-facing staging.
 - **Storage:** `DATABASE_URL` with PostgreSQL TLS (`sslmode=require` or stricter) and `REDIS_URL` using `rediss://`.
 - **Worker:** `WORKER_QUEUE`, `WORKER_HEARTBEAT_MS`, `WORKER_STALE_AFTER_MS`, `WORKER_LEASE_MS`, and `WORKER_SHUTDOWN_GRACE_MS`.
@@ -32,6 +32,28 @@ Set the following through the deployment platform's secret manager, never by com
 Before deploying a candidate, run `node scripts/staging-preflight.mjs` with its real staging environment variables loaded in the process environment. It emits only fixed issue codes and an explicit `operationalVerification: "NOT_PERFORMED"` flag. A successful exit confirms **configuration shape only**, not operational readiness, security posture or legal eligibility. The preflight is tested in CI against synthetic, intentionally non-operational examples.
 
 Do **not** paste decrypted environment variables, private DSNs or credentials into GitHub comments or ChatGPT.
+
+### Browser OIDC verification gate
+
+The Next.js OAuth callback now requires a **signed ID token** returned by the
+token endpoint. It verifies the issuer, browser client ID audience, nonce,
+expiry, issued-at time and signature against an explicitly configured HTTPS
+JWKS endpoint. If an ID token is missing or invalid, the callback neither
+creates a session nor registers the owner through the API. The API separately
+validates the resource **access token**; an ID token is never substituted for
+an API bearer token.
+
+Run `node --test scripts/web-auth-preflight.test.mjs` and the web
+OIDC callback tests on synthetic keys. Before activating real signup, verify
+the provider's discovery metadata and token response conform to this
+authorisation-code and PKCE contract. The web validator uses RS256 by default
+unless `OIDC_ID_TOKEN_ALGORITHM` is explicitly set to EdDSA. It rejects
+unsigned JWTs, unexpected key headers, invalid nonces and untrusted key sets.
+
+**Provider conformance and a real end-to-end registration remain unverified.**
+Provider OIDC configuration, website deployment, API availability and legal
+approval are independent requirements. Do not expose registration on the basis
+of synthetic identity tests alone.
 
 ## 2. Database and worker rollout
 

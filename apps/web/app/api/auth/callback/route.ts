@@ -10,6 +10,7 @@ import {
   OAUTH_VERIFIER_COOKIE,
   SESSION_COOKIE,
 } from "../../../lib/auth-session";
+import { idTokenConfig, verifyIdToken } from "../../../lib/oidc-id-token";
 export const runtime = "nodejs";
 const equal = (a: string, b: string) => {
   const x = Buffer.from(a);
@@ -75,6 +76,15 @@ export async function GET(request: NextRequest) {
       result.expires_in <= 0
     )
       throw new Error("Invalid token exchange");
+    // The identity JWT must be signed for this browser client and bound to
+    // the nonce from the original sign-in request. Access-token validation by
+    // the backend is a separate, necessary authorization check.
+    await verifyIdToken(
+      result.id_token,
+      nonce,
+      result.access_token,
+      idTokenConfig(clientId),
+    );
     // Only issue short-lived sessions; the API independently validates the OIDC JWT.
     const lifespan = Math.min(Math.floor(result.expires_in), 3600);
     const expiresAt = Date.now() + lifespan * 1000 - 30000;
