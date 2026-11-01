@@ -128,11 +128,6 @@ export default function JoinPage() {
           intents. Live execution remains disabled.{" "}
           <a href="/rules.md">Read the network rules</a>.
         </p>
-        <p className="satn-join-boundary">
-          <Link href="/wallets">Wallet control</Link> is optional for onboarding.
-          Only the human operator can verify and assign a wallet; wallet
-          assignment does not authorise trading or withdrawals.
-        </p>
       </div>
     </main>
   );
