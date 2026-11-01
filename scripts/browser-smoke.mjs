@@ -19,8 +19,14 @@ export async function runBrowserSmoke(webOrigin) {
 
   const chrome =
     process.env.CHROME_BIN ??
-    ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"].find(
-      (candidate) => spawnSync("which", [candidate], { stdio: "ignore" }).status === 0,
+    [
+      "google-chrome",
+      "google-chrome-stable",
+      "chromium",
+      "chromium-browser",
+    ].find(
+      (candidate) =>
+        spawnSync("which", [candidate], { stdio: "ignore" }).status === 0,
     );
   assert.ok(chrome, "Chromium/Chrome executable required for browser E2E");
 
@@ -49,7 +55,11 @@ export async function runBrowserSmoke(webOrigin) {
   const pending = new Map();
 
   async function command(method, params = {}) {
-    assert.equal(ws?.readyState, WebSocket.OPEN, "DevTools session disconnected");
+    assert.equal(
+      ws?.readyState,
+      WebSocket.OPEN,
+      "DevTools session disconnected",
+    );
     const id = ++seq;
     return new Promise((resolveResult, reject) => {
       const timeout = setTimeout(() => {
@@ -77,7 +87,9 @@ export async function runBrowserSmoke(webOrigin) {
       returnByValue: true,
     });
     if (result.exceptionDetails) {
-      throw new Error(`Browser JavaScript error: ${result.exceptionDetails.text}`);
+      throw new Error(
+        `Browser JavaScript error: ${result.exceptionDetails.text}`,
+      );
     }
     return result.result?.value;
   }
@@ -105,7 +117,9 @@ export async function runBrowserSmoke(webOrigin) {
         throw new Error(`Chromium exited early: ${stderr}`);
       }
       try {
-        const config = (await readFile(join(userDataDir, "DevToolsActivePort"), "utf8")).trim();
+        const config = (
+          await readFile(join(userDataDir, "DevToolsActivePort"), "utf8")
+        ).trim();
         port = Number(config.split("\n")[0]);
         if (Number.isInteger(port) && port > 0) break;
       } catch {
@@ -114,7 +128,9 @@ export async function runBrowserSmoke(webOrigin) {
       await delay(150);
     }
     assert.ok(port, `Chrome DevTools port not opened: ${stderr}`);
-    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    const targets = await (
+      await fetch(`http://127.0.0.1:${port}/json/list`)
+    ).json();
     const page = targets.find((target) => target.type === "page");
     assert.ok(page?.webSocketDebuggerUrl, "Chrome page target unavailable");
     ws = new WebSocket(page.webSocketDebuggerUrl);
@@ -138,6 +154,29 @@ export async function runBrowserSmoke(webOrigin) {
 
     await command("Page.enable");
     await command("Runtime.enable");
+    for (const path of [
+      "/get-started.md",
+      "/skill.md",
+      "/rules.md",
+      "/heartbeat.md",
+    ]) {
+      const response = await fetch(new URL(path, base), { redirect: "error" });
+      assert.equal(response.status, 200, `${path} must be publicly readable`);
+      assert.ok(
+        (await response.text()).includes("Shards"),
+        `${path} must contain the real guide`,
+      );
+    }
+    const metadata = await (await fetch(new URL("/skill.json", base))).json();
+    assert.equal(metadata.get_started, "/get-started.md");
+    const discoveryResponse = await fetch(
+      new URL(metadata.configuration, base),
+    );
+    assert.equal(discoveryResponse.headers.get("cache-control"), "no-store");
+    const discovery = await discoveryResponse.json();
+    assert.equal(discovery.registration_configured, false);
+    assert.equal(discovery.api_origin, null);
+    assert.equal(discovery.readiness, "not_checked");
     await command("Page.navigate", { url: base.href });
     await until(
       'document.body?.innerText?.includes("LIVE EXECUTION DISABLED")',
@@ -189,7 +228,7 @@ export async function runBrowserSmoke(webOrigin) {
       "create-community button should be clickable",
     );
     await until(
-      '!!document.querySelector(\'input[placeholder="e.g. Macro Research"]\')',
+      "!!document.querySelector('input[placeholder=\"e.g. Macro Research\"]')",
       "community creation form opens after click",
     );
     assert.equal(
@@ -198,15 +237,52 @@ export async function runBrowserSmoke(webOrigin) {
       "unauthenticated users must see the sign-in gate",
     );
 
-    await command("Page.navigate", { url: new URL("/join", base).href });
+    await evaluate(
+      "document.querySelector('a[href=\"/join#agent-setup\"]').click()",
+    );
     await until(
       'document.body?.innerText?.includes("Registration not yet open")',
       "identity-unconfigured join page is gated",
     );
     assert.equal(
-      await evaluate('document.querySelectorAll(\'a[href^="/api/auth/login"]\').length'),
+      await evaluate(
+        "document.querySelectorAll('a[href^=\"/api/auth/login\"]').length",
+      ),
       0,
       "unconfigured identity must not offer an OAuth login link",
+    );
+    const prompt = await evaluate(
+      'document.querySelector("#agent-onboarding-prompt").value',
+    );
+    assert.ok(prompt.includes("https://satns.vercel.app/get-started.md"));
+    await command("Browser.grantPermissions", {
+      origin: base.origin,
+      permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+    });
+    await evaluate(
+      "document.querySelector('button[aria-label=\"Copy onboarding prompt\"]').click()",
+    );
+    await until(
+      'document.body.innerText.includes("Prompt copied")',
+      "clipboard success is confirmed",
+    );
+    assert.equal(await evaluate("navigator.clipboard.readText()"), prompt);
+    await command("Browser.grantPermissions", {
+      origin: base.origin,
+      permissions: [],
+    });
+    await evaluate(
+      "document.querySelector('button[aria-label=\"Copy onboarding prompt\"]').click()",
+    );
+    await until(
+      'document.body.innerText.includes("Copy unavailable")',
+      "clipboard rejection offers manual copy",
+    );
+    assert.equal(
+      await evaluate(
+        'document.querySelector("#agent-onboarding-prompt").readOnly',
+      ),
+      true,
     );
 
     await command("Emulation.setDeviceMetricsOverride", {
@@ -220,6 +296,32 @@ export async function runBrowserSmoke(webOrigin) {
       'document.body?.innerText?.includes("LIVE EXECUTION DISABLED")',
       "mobile viewport renders the safety notice",
     );
+    assert.equal(
+      await evaluate(
+        "document.documentElement.scrollWidth <= window.innerWidth",
+      ),
+      true,
+      "mobile homepage must not overflow",
+    );
+    await evaluate(
+      "document.querySelector('button[aria-label=\"Dismiss agent onboarding\"]').click()",
+    );
+    await until(
+      '!document.querySelector(".satn-onboarding-launcher")',
+      "launcher dismisses without navigating",
+    );
+    await command("Page.navigate", { url: new URL("/join", base).href });
+    await until(
+      'Boolean(document.querySelector("#agent-onboarding-prompt"))',
+      "mobile onboarding prompt is visible",
+    );
+    assert.equal(
+      await evaluate(
+        "document.documentElement.scrollWidth <= window.innerWidth",
+      ),
+      true,
+      "mobile onboarding must not overflow",
+    );
 
     console.info(
       JSON.stringify({
@@ -232,20 +334,25 @@ export async function runBrowserSmoke(webOrigin) {
           "feed-retry-interaction",
           "unauthenticated-community-form-gated",
           "unconfigured-human-registration-gated",
+          "public-agent-guide-and-fail-closed-discovery",
+          "onboarding-launcher-navigation-and-dismissal",
+          "onboarding-clipboard-success-and-denial",
           "mobile-rendering",
         ],
       }),
     );
   } finally {
     if (ws) ws.close();
-    for (const entry of pending.values()) entry.reject(new Error("DevTools closed"));
+    for (const entry of pending.values())
+      entry.reject(new Error("DevTools closed"));
     pending.clear();
     child.kill("SIGTERM");
     await Promise.race([
       new Promise((resolveExit) => child.once("exit", resolveExit)),
       delay(3000),
     ]);
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null)
+      child.kill("SIGKILL");
     // Chromium child processes can briefly keep writing profile files after
     // the main browser exits. Node fs.rm retries transient ENOTEMPTY failures.
     await rm(userDataDir, {
