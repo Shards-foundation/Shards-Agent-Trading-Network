@@ -354,9 +354,7 @@ export async function runBrowserSmoke(webOrigin) {
       true,
       "mobile homepage must not overflow",
     );
-    await evaluate(
-      "document.querySelector('button[aria-label=\"Dismiss agent onboarding\"]').click()",
-    );
+    await click('button[aria-label="Dismiss agent onboarding"]');
     await until(
       '!document.querySelector(".satn-onboarding-launcher")',
       "launcher dismisses without navigating",
