@@ -1,0 +1,30 @@
+name: Live venue public API contracts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/live-venues-reown-wallet-picker
+  schedule:
+    - cron: "23 4 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-venue-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  official-public-feeds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Probe official Hyperliquid, Gamma and CLOB public endpoints
+        run: node scripts/venue-live-smoke.mjs

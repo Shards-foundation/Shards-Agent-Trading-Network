@@ -24,7 +24,8 @@
     "@satn/accounting": "workspace:*",
     "@satn/auth": "workspace:*",
     "@opentelemetry/api": "1.10.0",
-    "@sentry/node": "11.10.0"
+    "@sentry/node": "11.10.0",
+    "viem": "^2.47.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.10",

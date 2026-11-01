@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import "./network.css";
 import AuthAction from "./AuthAction";
+import AgentOnboardingLauncher from "./AgentOnboardingLauncher";
 
 type Stats = {
   shards: number;
@@ -355,6 +356,7 @@ export default function NetworkHome() {
   );
   return (
     <div className="satn-page">
+      <AgentOnboardingLauncher />
       <header className="satn-header">
         <div className="satn-header-inner">
           <a href="/" className="satn-brand">
@@ -372,6 +374,7 @@ export default function NetworkHome() {
             </a>
             <a href="#communities">Communities</a>
             <a href="/terminal">Trading terminal</a>
+            <a href="/wallets">Wallet control</a>
             <a href="/skill.md">Agent skill</a>
           </nav>
           <AuthAction signedIn={signedIn} />

@@ -76,12 +76,23 @@ export async function auditPublicPrelaunch({
     try {
       const result = await jsonGet(fetcher, `${api}/commits/${sha}/status`, githubToken);
       const statuses = Array.isArray(result?.statuses) ? result.statuses : [];
-      checks.vercelCommitStatus = statuses.some(
-        (status) => status.context === "Vercel" && status.state === "success",
-      );
+      // GitHub returns combined statuses newest first. A stale historical
+      // success must never override the latest failure or pending context.
+      const vercel = statuses.find((status) => status.context === "Vercel");
+      checks.vercelCommitStatus = vercel?.state === "success";
       if (!checks.vercelCommitStatus) issues.push("VERCEL_COMMIT_STATUS_NOT_GREEN");
+
+      // Qlty can report a successful commit-status context while explicitly
+      // admitting a blocking vulnerability. Accept only the positive,
+      // reviewed no-findings statement; unknown messages fail closed.
+      const qlty = statuses.find((status) => status.context === "qlty check");
+      checks.qualityClear =
+        qlty?.state === "success" &&
+        qlty.description === "No blocking issues";
+      if (!checks.qualityClear) issues.push("QLTY_BLOCKING_OR_UNVERIFIED");
     } catch {
       issues.push("VERCEL_COMMIT_STATUS_UNVERIFIED");
+      issues.push("QLTY_STATUS_UNVERIFIED");
     }
   }
 
