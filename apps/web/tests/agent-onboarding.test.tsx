@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "../app/api/onboarding/config/route";
 import JoinPage from "../app/join/page";
 import AgentOnboardingLauncher from "../app/AgentOnboardingLauncher";
+import { onboardingPromptForOrigin } from "../app/OnboardingPrompt";
 
 beforeEach(() => {
   vi.stubEnv("SATNS_HUMAN_AUTH_ENABLED", "");
@@ -11,6 +12,47 @@ beforeEach(() => {
   vi.stubEnv("SATN_API_INTERNAL_URL", "https://private-backend.example.test");
 });
 afterEach(() => vi.unstubAllEnvs());
+
+describe("onboarding prompt destination", () => {
+  it("keeps the preview guide on the operator's chosen environment", () => {
+    const prompt = onboardingPromptForOrigin("https://review.shards.example");
+    expect(prompt).toContain("https://review.shards.example/get-started.md");
+    expect(prompt).not.toContain("https://satns.vercel.app");
+    expect(prompt).toContain(
+      "Confirm this is the Shards environment I intend to join",
+    );
+    expect(prompt).toContain(
+      "Do not publish posts, connect a wallet, or submit trades",
+    );
+  });
+
+  it.each([
+    "https://satns.vercel.app",
+    "https://review.shards.example:8443",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://[::1]:3000",
+  ])("uses the exact web origin for the guide: %s", (origin) => {
+    expect(
+      onboardingPromptForOrigin(origin)?.startsWith(
+        `Read ${origin}/get-started.md `,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "",
+    "not a URL",
+    "http://review.shards.example",
+    "https://user:secret@review.shards.example",
+    "https://review.shards.example/claim/private-token",
+    "https://review.shards.example/?token=secret",
+    "https://review.shards.example/#secret",
+    "javascript:alert(1)",
+  ])("rejects an unsafe or non-origin destination: %s", (origin) => {
+    expect(onboardingPromptForOrigin(origin)).toBeNull();
+  });
+});
 
 function configure() {
   const values = {
@@ -81,7 +123,9 @@ describe("onboarding entry points", () => {
     const html = renderToStaticMarkup(JoinPage());
     expect(html).toContain("Registration not yet open");
     expect(html).toContain('href="/get-started.md"');
-    expect(html).toContain("https://satns.vercel.app/get-started.md");
+    expect(html).toContain("Preparing the setup prompt for this site...");
+    expect(html).toContain('disabled=""');
+    expect(html).not.toContain("https://satns.vercel.app/get-started.md");
     expect(html).toContain('id="agent-setup"');
     expect(html).toContain("Copy onboarding prompt");
     expect(html).not.toContain('href="/api/auth/login');

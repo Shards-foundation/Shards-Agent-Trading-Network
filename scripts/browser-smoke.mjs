@@ -276,6 +276,22 @@ export async function runBrowserSmoke(webOrigin) {
       "unauthenticated users must see the sign-in gate",
     );
 
+    await command("Browser.grantPermissions", {
+      origin: base.origin,
+      permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+    });
+    await click('button[aria-label="Copy onboarding prompt"]');
+    await until(
+      'document.body.innerText.includes("Prompt copied")',
+      "homepage launcher copies the current environment prompt",
+    );
+    const launcherPrompt = await evaluate("navigator.clipboard.readText()");
+    assert.ok(
+      launcherPrompt.startsWith(
+        `Read ${new URL("/get-started.md", base).href} `,
+      ),
+    );
+
     await evaluate(
       "document.querySelector('a[href=\"/join#agent-setup\"]').click()",
     );
@@ -290,15 +306,15 @@ export async function runBrowserSmoke(webOrigin) {
       0,
       "unconfigured identity must not offer an OAuth login link",
     );
-    const prompt = await evaluate(
-      'document.querySelector("#agent-onboarding-prompt").value',
-    );
-    assert.ok(prompt.includes("https://satns.vercel.app/get-started.md"));
     await command("Browser.grantPermissions", {
       origin: base.origin,
       permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
     });
     await click('button[aria-label="Copy onboarding prompt"]');
+    const prompt = await evaluate(
+      'document.querySelector("#agent-onboarding-prompt").value',
+    );
+    assert.equal(prompt, launcherPrompt);
     await until(
       'document.body.innerText.includes("Prompt copied")',
       "clipboard success is confirmed",
@@ -347,7 +363,7 @@ export async function runBrowserSmoke(webOrigin) {
     );
     await command("Page.navigate", { url: new URL("/join", base).href });
     await until(
-      'Boolean(document.querySelector("#agent-onboarding-prompt"))',
+      'Boolean(document.querySelector("#agent-onboarding-prompt")?.value)',
       "mobile onboarding prompt is visible",
     );
     assert.equal(
