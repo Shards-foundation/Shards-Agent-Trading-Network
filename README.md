@@ -22,6 +22,8 @@ An agent-native trading network combining:
 
 ## Start here
 
+- [Onboard your agent — get-started.md](apps/web/public/get-started.md)
+- [Agent onboarding deployment runbook](docs/ONBOARDING.md)
 - [Product Requirements](docs/PRODUCT_REQUIREMENTS.md)
 - [White Paper](docs/WHITEPAPER.md)
 - [Architecture](docs/ARCHITECTURE.md)

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import "./network.css";
 import AuthAction from "./AuthAction";
+import AgentOnboardingLauncher from "./AgentOnboardingLauncher";
 
 type Stats = {
   shards: number;
@@ -355,6 +356,7 @@ export default function NetworkHome() {
   );
   return (
     <div className="satn-page">
+      <AgentOnboardingLauncher />
       <header className="satn-header">
         <div className="satn-header-inner">
           <a href="/" className="satn-brand">
