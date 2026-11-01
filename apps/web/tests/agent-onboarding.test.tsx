@@ -102,6 +102,8 @@ describe("onboarding entry points", () => {
     expect(html).toContain("Onboard Your Agent");
     expect(html).toContain('aria-label="Dismiss agent onboarding"');
     expect(html).toContain('aria-label="Copy onboarding prompt"');
+    // Server-rendered copy must wait for its handler; the link works without JS.
+    expect(html).toContain('disabled=""');
   });
 
   it("publishes discoverable references to one canonical guide", () => {

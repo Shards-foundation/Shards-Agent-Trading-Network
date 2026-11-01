@@ -106,7 +106,46 @@ export async function runBrowserSmoke(webOrigin) {
       }
       await delay(200);
     }
-    throw new Error(`Browser condition failed: ${label}`, { cause: last });
+    const state = await evaluate(`({
+      readyState: document.readyState,
+      focused: document.hasFocus(),
+      secureContext: window.isSecureContext,
+      copyStatus: document.querySelector('.satn-prompt [role="status"]')?.textContent,
+      copyDisabled: document.querySelector('button[aria-label="Copy onboarding prompt"]')?.disabled
+    })`).catch(() => null);
+    throw new Error(
+      `Browser condition failed: ${label}; state=${JSON.stringify(state)}`,
+      { cause: last },
+    );
+  }
+
+  async function click(selector) {
+    await until(
+      `(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      return element && !element.disabled;
+    })()`,
+      `interactive element: ${selector}`,
+    );
+    await command("Page.bringToFront");
+    const point = await evaluate(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = element.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    })()`);
+    await command("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      ...point,
+      button: "left",
+      clickCount: 1,
+    });
+    await command("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      ...point,
+      button: "left",
+      clickCount: 1,
+    });
   }
 
   try {
@@ -259,9 +298,7 @@ export async function runBrowserSmoke(webOrigin) {
       origin: base.origin,
       permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
     });
-    await evaluate(
-      "document.querySelector('button[aria-label=\"Copy onboarding prompt\"]').click()",
-    );
+    await click('button[aria-label="Copy onboarding prompt"]');
     await until(
       'document.body.innerText.includes("Prompt copied")',
       "clipboard success is confirmed",
@@ -271,9 +308,7 @@ export async function runBrowserSmoke(webOrigin) {
       origin: base.origin,
       permissions: [],
     });
-    await evaluate(
-      "document.querySelector('button[aria-label=\"Copy onboarding prompt\"]').click()",
-    );
+    await click('button[aria-label="Copy onboarding prompt"]');
     await until(
       'document.body.innerText.includes("Copy unavailable")',
       "clipboard rejection offers manual copy",

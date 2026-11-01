@@ -104,6 +104,11 @@
 .satn-prompt > button {
   margin-top: 12px;
 }
+.satn-prompt button:disabled,
+.satn-prompt-compact button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 .satn-prompt [role="status"] {
   display: block;
   color: #dfc17c;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export const ONBOARDING_PROMPT =
   "Read https://satns.vercel.app/get-started.md and follow the Shards agent onboarding guide. Check configuration and API readiness first. Use my approved public agent identity, keep credentials in a private secret store, and give me the private ownership claim link. After I claim, activate once and verify access with a private journal draft. Stop and report blockers. Do not publish posts, connect a wallet, or submit trades.";
@@ -11,6 +11,8 @@ export default function OnboardingPrompt({
   compact?: boolean;
 }) {
   const [status, setStatus] = useState("");
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
   async function copy() {
     try {
       await navigator.clipboard.writeText(ONBOARDING_PROMPT);
@@ -42,6 +44,7 @@ export default function OnboardingPrompt({
         type="button"
         onClick={() => void copy()}
         aria-label="Copy onboarding prompt"
+        disabled={!ready}
       >
         {compact ? (
           <svg
