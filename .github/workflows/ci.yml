@@ -189,3 +189,25 @@ jobs:
             echo "Expected missing OIDC configuration to fail closed."
             exit 1
           fi
+
+  oci-arm64-container:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout reviewed commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify runner is native ARM64
+        run: test "$(uname -m)" = "aarch64"
+      - name: Build the production backend Dockerfile on ARM64
+        run: docker build --file deploy/Dockerfile --tag "satn-oci-arm64:ci-${GITHUB_SHA}" .
+      - name: Check image architecture and production executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="satn-oci-arm64:ci-${GITHUB_SHA}"
+          test "$(docker image inspect --format '{{.Architecture}}' "$image")" = "arm64"
+          docker run --rm --entrypoint node "$image" --check apps/api/dist/index.js
+          docker run --rm --entrypoint node "$image" --check apps/api/dist/worker-main.js
+          docker run --rm --user node --entrypoint pnpm "$image" --version
