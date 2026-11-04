@@ -4,6 +4,7 @@ All calls are GET/list via Oracle's maintained SDK. Never log credentials,
 network addresses, OCIDs, instance names, request errors or token responses.
 """
 
+import base64
 import json
 import os
 import re
@@ -75,34 +76,66 @@ def main():
     try:
         import oci
         import requests
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
         region = os.environ["OCI_REGION"]
         tenancy = os.environ["OCI_TENANCY_OCID"]
         compartment = os.environ["OCI_COMPARTMENT_OCID"]
-        audience = "https://cloud.oracle.com"
 
-        def github_token():
-            url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-            sep = "&" if "?" in url else "?"
-            response = requests.get(
-                url + sep + "audience=" + quote(audience, safe=""),
-                headers={
-                    "Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
-                },
-                timeout=15,
-            )
-            response.raise_for_status()
-            token = response.json().get("value")
-            if not isinstance(token, str) or not token:
-                raise ValueError("OIDC_RESPONSE_INVALID")
-            return token
+        # OCI's TokenExchangeSigner requests UPST (user principal), not RPST.
+        # Exchange a GitHub OIDC JWT explicitly for an OCI *resource principal*
+        # session token, bound to this process's ephemeral RSA public key.
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_pem = key.public_key().public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        ).decode("ascii")
 
-        signer = oci.auth.signers.TokenExchangeSigner(
-            github_token,
-            os.environ["OCI_IDENTITY_DOMAIN_URL"].rstrip("/"),
-            os.environ["OCI_OAUTH_CLIENT_ID"],
-            os.environ["OCI_OAUTH_CLIENT_SECRET"],
+        url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+        separator = "&" if "?" in url else "?"
+        response = requests.get(
+            url + separator + "audience=" + quote("https://cloud.oracle.com", safe=""),
+            headers={
+                "Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+            },
+            timeout=15,
         )
+        response.raise_for_status()
+        jwt = response.json().get("value")
+        if not isinstance(jwt, str) or not jwt:
+            raise ValueError("OIDC_RESPONSE_INVALID")
+
+        exchange_url = os.environ["OCI_IDENTITY_DOMAIN_URL"].rstrip("/") + "/oauth2/v1/token"
+        credentials = (
+            os.environ["OCI_OAUTH_CLIENT_ID"]
+            + ":"
+            + os.environ["OCI_OAUTH_CLIENT_SECRET"]
+        ).encode("utf-8")
+        token_response = requests.post(
+            exchange_url,
+            headers={
+                "Authorization": "Basic "
+                + base64.b64encode(credentials).decode("ascii"),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+                "requested_token_type": "urn:oci:token-type:oci-rpst",
+                "subject_token_type": "jwt",
+                "subject_token": jwt,
+                "public_key": public_pem,
+                "res_type": "githubactions",
+                "rpst_exp": "20",
+            },
+            timeout=20,
+        )
+        token_response.raise_for_status()
+        rpst = token_response.json().get("token")
+        if not isinstance(rpst, str) or not rpst:
+            raise ValueError("RPST_RESPONSE_INVALID")
+        # The private key never leaves this process or enters GitHub secrets.
+        signer = oci.auth.signers.SecurityTokenSigner(rpst, key)
+        del jwt, credentials, rpst
         config = {"region": region}
         identity = oci.identity.IdentityClient(config, signer=signer)
         subscriptions = oci.pagination.list_call_get_all_results(
