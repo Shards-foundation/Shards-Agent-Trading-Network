@@ -1,0 +1,92 @@
+name: SATNS OCI Always Free discovery (manual, read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact reviewed main commit SHA. This workflow never provisions.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: satns-oci-readonly
+  cancel-in-progress: false
+
+jobs:
+  check-authority:
+    if: github.repository == 'Shards-foundation/Shards-Agent-Trading-Network' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed main
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require reviewed SHA and protected main
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          BRANCH_READ_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          const exact = /^[a-f0-9]{40}$/;
+          const { EXPECTED_SHA, GITHUB_SHA, GITHUB_REPOSITORY, GITHUB_REF } = process.env;
+          if (!exact.test(EXPECTED_SHA ?? '') || EXPECTED_SHA !== GITHUB_SHA || GITHUB_REPOSITORY !== 'Shards-foundation/Shards-Agent-Trading-Network' || GITHUB_REF !== 'refs/heads/main') {
+            console.error('OCI_INVENTORY_GIT_REF_NOT_ATTESTED');
+            process.exit(1);
+          }
+          const response = await fetch('https://api.github.com/repos/Shards-foundation/Shards-Agent-Trading-Network/branches/main', {
+            headers: { Authorization: 'Bearer ' + process.env.BRANCH_READ_TOKEN, Accept: 'application/vnd.github+json' },
+            signal: AbortSignal.timeout(10000),
+          }).catch(() => null);
+          if (!response?.ok || (await response.json()).protected !== true) {
+            console.error('OCI_INVENTORY_MAIN_NOT_PROTECTED');
+            process.exit(1);
+          }
+          console.info('OCI_INVENTORY_GIT_AUTHORITY_PASS');
+          NODE
+      - name: Check free-tier offline safety tests
+        run: |
+          node --test scripts/oci-free-policy.test.mjs
+          python3 -m unittest discover -s deploy/oci -p 'test_*.py'
+          python3 -m py_compile deploy/oci/inventory.py
+
+  inventory:
+    needs: check-authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: satns-oci-inventory
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OCI_REGION: ${{ vars.SATNS_OCI_HOME_REGION }}
+      OCI_TENANCY_OCID: ${{ vars.SATNS_OCI_TENANCY_OCID }}
+      OCI_COMPARTMENT_OCID: ${{ vars.SATNS_OCI_COMPARTMENT_OCID }}
+      OCI_IDENTITY_DOMAIN_URL: ${{ vars.SATNS_OCI_IDENTITY_DOMAIN_URL }}
+      OCI_OAUTH_CLIENT_ID: ${{ vars.SATNS_OCI_OAUTH_CLIENT_ID }}
+      OCI_OAUTH_CLIENT_SECRET: ${{ secrets.SATNS_OCI_OAUTH_CLIENT_SECRET }}
+      SATNS_EXPECTED_SHA: ${{ inputs.expected_sha }}
+      EXECUTION_MODE: PAPER
+      LIVE_EXECUTION_ENABLED: 'false'
+    steps:
+      - name: Checkout reviewed code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate gate without external network access
+        run: |
+          python3 -m unittest discover -s deploy/oci -p 'test_*.py'
+          python3 -m py_compile deploy/oci/inventory.py
+      - name: Install pinned Oracle-maintained SDK
+        run: python3 -m pip install --disable-pip-version-check 'oci==2.190.0' 'requests==2.32.5'
+      - name: Read-only home-region and compartment inventory
+        run: python3 deploy/oci/inventory.py
