@@ -71,7 +71,7 @@ jobs:
       OCI_OAUTH_CLIENT_SECRET: ${{ secrets.SATNS_OCI_OAUTH_CLIENT_SECRET }}
       SATNS_EXPECTED_SHA: ${{ inputs.expected_sha }}
       EXECUTION_MODE: PAPER
-      LIVE_EXECUTION_ENABLED: 'false'
+      LIVE_EXECUTION_ENABLED: "false"
     steps:
       - name: Checkout reviewed code
         uses: actions/checkout@v7
@@ -81,7 +81,7 @@ jobs:
       - name: Setup Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Validate gate without external network access
         run: |
           python3 -m unittest discover -s deploy/oci -p 'test_*.py'
