@@ -101,6 +101,11 @@ jobs:
           fi
       - name: Validate Render staging Blueprint contract
         run: node --test scripts/render-blueprint.test.mjs
+      - name: Validate no-cost OCI read-only candidate guards
+        run: |
+          node --test scripts/oci-free-policy.test.mjs
+          python3 -m unittest discover -s deploy/oci -p 'test_*.py'
+          python3 -m py_compile deploy/oci/inventory.py
       - name: Check Prisma schema formatting
         run: |
           pnpm --filter @satn/database exec prisma format --schema prisma/schema.prisma
