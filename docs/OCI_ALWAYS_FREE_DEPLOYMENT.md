@@ -16,18 +16,18 @@ Oracle supports **JWT-to-RPST workload federation**, including GitHub Actions, s
 
 **Important:** the currently documented OCI Python SDK `TokenExchangeSigner` also authenticates the token exchange with an **OAuth client ID and OAuth client secret**. Avoiding a permanent OCI API signing key is **not** the same as eliminating all stored secrets. The client secret must only be stored as a protected, rotating **GitHub environment secret**; never post it in chat.
 
-1. **Oracle operator (one time):** identify the real OCI tenancy and **home region**, inspect existing Always Free allocations and capacity. Create a dedicated *read-only* OCI identity-domain OAuth client and Identity Propagation Trust for issuer `https://token.actions.githubusercontent.com`. Trust must validate exact `repository=Shards-foundation/Shards-Agent-Trading-Network`, `ref=refs/heads/main` and `job_workflow_ref=Shards-foundation/Shards-Agent-Trading-Network/.github/workflows/satns-oci-readonly.yml@refs/heads/main`. Restrict the resource principal to **inspect/list** permissions for the selected compartment, relevant tenancy region metadata and networking. No `manage` permissions, broad administrators or multi-repository wildcard claims. Verify the actual claims in the secure session without printing JWTs.
+1. **Oracle operator (one time):** identify the real OCI tenancy and **home region**, inspect existing Always Free allocations and capacity. Create a dedicated _read-only_ OCI identity-domain OAuth client and Identity Propagation Trust for issuer `https://token.actions.githubusercontent.com`. Trust must validate exact `repository=Shards-foundation/Shards-Agent-Trading-Network`, `ref=refs/heads/main` and `job_workflow_ref=Shards-foundation/Shards-Agent-Trading-Network/.github/workflows/satns-oci-readonly.yml@refs/heads/main`. Restrict the resource principal to **inspect/list** permissions for the selected compartment, relevant tenancy region metadata and networking. No `manage` permissions, broad administrators or multi-repository wildcard claims. Verify the actual claims in the secure session without printing JWTs.
 2. **GitHub operator (one time):** protect `main` against unreviewed edits. The workflow checks the GitHub branch API for `protected=true` and will stop otherwise. Configure an environment named **`satns-oci-inventory`** restricted to `main`, with required human review and no administrator bypass where supported. Previously the project's main branch reported `protected=false`: this is a real current blocker until fixed.
 3. Enter the following **environment** settings in GitHub's UI—not in this chat and not in Git:
 
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `SATNS_OCI_HOME_REGION` | variable | Actual tenancy home region, e.g. `uk-london-1` |
-| `SATNS_OCI_TENANCY_OCID` | variable | Tenancy OCID |
-| `SATNS_OCI_COMPARTMENT_OCID` | variable | Inspected compartment OCID |
-| `SATNS_OCI_IDENTITY_DOMAIN_URL` | variable | HTTPS identity-domain origin under `identity.oraclecloud.com` |
-| `SATNS_OCI_OAUTH_CLIENT_ID` | variable | Dedicated OAuth token-exchange client ID |
-| `SATNS_OCI_OAUTH_CLIENT_SECRET` | **secret** | Token-exchange client secret; rotate as required |
+| Key                             | Type       | Meaning                                                       |
+| ------------------------------- | ---------- | ------------------------------------------------------------- |
+| `SATNS_OCI_HOME_REGION`         | variable   | Actual tenancy home region, e.g. `uk-london-1`                |
+| `SATNS_OCI_TENANCY_OCID`        | variable   | Tenancy OCID                                                  |
+| `SATNS_OCI_COMPARTMENT_OCID`    | variable   | Inspected compartment OCID                                    |
+| `SATNS_OCI_IDENTITY_DOMAIN_URL` | variable   | HTTPS identity-domain origin under `identity.oraclecloud.com` |
+| `SATNS_OCI_OAUTH_CLIENT_ID`     | variable   | Dedicated OAuth token-exchange client ID                      |
+| `SATNS_OCI_OAUTH_CLIENT_SECRET` | **secret** | Token-exchange client secret; rotate as required              |
 
 4. **After the PR is reviewed and the code reaches protected main**, run **Actions → SATNS OCI Always Free discovery (manual, read-only)** and provide the exact current 40-character `main` SHA. The job refuses an unprotected main, an unexpected SHA, an incorrect repository, non-PAPER mode and incomplete configuration. It never provisions. If permissions, provider capacity or credentials are unavailable, report **BLOCKED**, not success.
 
