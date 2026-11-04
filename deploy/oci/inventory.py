@@ -60,7 +60,7 @@ def validate_runtime(env):
     if not re.fullmatch(r"[a-z]{2}-[a-z0-9-]+-[1-9][0-9]*", env.get("OCI_REGION", "")):
         issues.append("OCI_REGION_INVALID")
     for key in ("OCI_TENANCY_OCID", "OCI_COMPARTMENT_OCID"):
-        if not re.fullmatch(r"ocid1\\.[a-z0-9_.-]{8,}", env.get(key, "")):
+        if not re.fullmatch(r"ocid1\.[a-z0-9_.-]{8,}", env.get(key, "")):
             issues.append("OCI_IDENTIFIER_INVALID")
             break
     return issues
