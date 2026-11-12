@@ -1,0 +1,228 @@
+.venue-live {
+  border: 1px solid #303846;
+  border-radius: 16px;
+  background: #121922;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.venue-live > header {
+  padding: 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+.venue-live > header small,
+.venue-book > small,
+.venue-events small {
+  font-size: 10px;
+  color: #dcbf85;
+  letter-spacing: 0.11em;
+}
+.venue-live h2 {
+  font-size: 24px;
+  margin: 10px 0;
+}
+.venue-live > header p,
+.venue-book > p {
+  color: #a4b0bf;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.venue-live > header > b {
+  font-size: 10px;
+  white-space: nowrap;
+  color: #e3c482;
+  border: 1px solid #6b5939;
+  border-radius: 8px;
+  padding: 11px;
+  height: max-content;
+}
+.venue-actions {
+  display: flex;
+  gap: 10px;
+  padding: 12px 24px 20px;
+}
+.venue-actions input {
+  flex: 1;
+  min-width: 0;
+  background: #212a36;
+  border: 1px solid #485362;
+  color: white;
+  border-radius: 8px;
+  padding: 12px;
+  font: inherit;
+}
+.venue-actions button {
+  background: #322e24;
+  color: #e4ca96;
+  border: 1px solid #705e44;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+}
+.venue-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 255px;
+  border-top: 1px solid #303846;
+}
+.venue-table-wrap {
+  overflow: auto;
+  max-height: 650px;
+}
+.venue-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 11px;
+}
+.venue-table th,
+.venue-table td {
+  padding: 15px 11px;
+  border-bottom: 1px solid #303a48;
+}
+.venue-table th {
+  position: sticky;
+  top: 0;
+  background: #1d2632;
+  color: #99a6b6;
+}
+.venue-table th:first-child,
+.venue-table td:first-child {
+  text-align: left;
+}
+.venue-table tr.active {
+  background: #292720;
+}
+.venue-table button {
+  color: #e9cea1;
+  background: none;
+  border: 0;
+  font-weight: 750;
+  cursor: pointer;
+}
+.venue-table .positive {
+  color: #81d7a5;
+}
+.venue-table .negative {
+  color: #ed9c9c;
+}
+.venue-book {
+  background: #19212d;
+  border-left: 1px solid #303846;
+  padding: 17px;
+}
+.venue-book h3 {
+  font-size: 17px;
+}
+.venue-depth {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.venue-depth > div > strong {
+  font-size: 11px;
+  color: #dbb979;
+}
+.venue-depth p {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  font-size: 10px;
+  color: #b8c3cf;
+}
+.venue-events {
+  padding: 14px;
+  display: grid;
+  gap: 13px;
+  max-height: 700px;
+  overflow: auto;
+}
+.venue-events article {
+  padding: 18px;
+  border: 1px solid #394350;
+  border-radius: 12px;
+  background: #1b2430;
+}
+.venue-events h3 {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.venue-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.venue-outcomes button {
+  background: #2a3541;
+  border: 1px solid #495360;
+  border-radius: 9px;
+  color: #f7f6f2;
+  padding: 11px;
+  cursor: pointer;
+}
+.venue-outcomes button.active {
+  border-color: #d7bb84;
+  background: #3d3423;
+}
+.venue-outcomes strong {
+  color: #84d9ac;
+}
+.venue-events footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 13px;
+  margin-top: 16px;
+  color: #9aa7b5;
+  font-size: 10px;
+}
+.venue-events footer a {
+  color: #dbbd80;
+}
+.venue-live > footer {
+  border-top: 1px solid #303846;
+  padding: 16px 24px;
+  color: #919eaf;
+  font-size: 11px;
+}
+.venue-error {
+  color: #ef9c9c;
+  font-size: 12px;
+  padding: 6px 16px;
+}
+.venue-restriction {
+  margin: 0 24px 12px;
+  padding: 13px;
+  border-left: 3px solid #dec083;
+  background: #30271c;
+  color: #e6cda3;
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 1050px) {
+  .venue-layout {
+    grid-template-columns: 1fr;
+  }
+  .venue-book {
+    border-left: 0;
+    border-top: 1px solid #303846;
+  }
+}
+@media (max-width: 640px) {
+  .venue-live > header {
+    flex-direction: column;
+    padding: 18px;
+  }
+  .venue-actions {
+    padding: 12px 18px;
+  }
+  .venue-table {
+    min-width: 630px;
+  }
+  .venue-restriction {
+    margin: 0 18px 12px;
+  }
+  .venue-events {
+    padding: 10px;
+  }
+}

@@ -13,6 +13,10 @@ const required = [
 function fakeFetch({
   protectedBranch = true,
   vercel = "success",
+  qltyState = "success",
+  qltyDescription = "No blocking issues",
+  omitQlty = false,
+  staleVercelSuccess = false,
   omittedCheck,
   loginStatus = 503,
   loginRedirect = false,
@@ -37,7 +41,24 @@ function fakeFetch({
           conclusion: "success",
         })),
       };
-    else if (url.endsWith("/status")) body = { statuses: [{ context: "Vercel", state: vercel }] };
+    else if (url.endsWith("/status"))
+      body = {
+        statuses: [
+          { context: "Vercel", state: vercel },
+          ...(!omitQlty
+            ? [
+                {
+                  context: "qlty check",
+                  state: qltyState,
+                  description: qltyDescription,
+                },
+              ]
+            : []),
+          ...(staleVercelSuccess
+            ? [{ context: "Vercel", state: "success" }]
+            : []),
+        ],
+      };
     else if (url.endsWith("/api/auth/login")) {
       status = loginStatus;
       if (loginRedirect) headers.set("location", "https://idp.example.test/");
@@ -75,6 +96,43 @@ test("unprotected main fails even with green CI and Vercel status", async () => 
 test("Vercel 402 quota signalled through failure status blocks release", async () => {
   const r = await auditPublicPrelaunch({ fetcher: fakeFetch({ vercel: "failure" }).fetcher });
   assert.ok(r.issues.includes("VERCEL_COMMIT_STATUS_NOT_GREEN"));
+});
+
+test("Qlty success with a blocking vulnerability NEVER passes", async () => {
+  const result = await auditPublicPrelaunch({
+    fetcher: fakeFetch({
+      qltyDescription: "1 blocking issue, including 1 vulnerability",
+    }).fetcher,
+  });
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.checks.qualityClear, false);
+  assert.ok(result.issues.includes("QLTY_BLOCKING_OR_UNVERIFIED"));
+});
+
+test("missing, non-success or ambiguous Qlty statuses fail closed", async () => {
+  for (const options of [
+    { omitQlty: true },
+    { qltyState: "pending" },
+    { qltyState: "failure" },
+    { qltyDescription: "" },
+    { qltyDescription: "0 issues, details unavailable" },
+  ]) {
+    const result = await auditPublicPrelaunch({
+      fetcher: fakeFetch(options).fetcher,
+    });
+    assert.equal(result.status, "BLOCKED");
+    assert.ok(result.issues.includes("QLTY_BLOCKING_OR_UNVERIFIED"));
+  }
+});
+
+test("older Vercel success cannot conceal the latest pending deployment", async () => {
+  const result = await auditPublicPrelaunch({
+    fetcher: fakeFetch({
+      vercel: "pending",
+      staleVercelSuccess: true,
+    }).fetcher,
+  });
+  assert.ok(result.issues.includes("VERCEL_COMMIT_STATUS_NOT_GREEN"));
 });
 
 test("missing required CI job blocks release", async () => {

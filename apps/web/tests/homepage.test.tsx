@@ -3,43 +3,47 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import TerminalPage from "../app/terminal/page";
 
-describe("SATN trading terminal", () => {
-  it("renders the product identity and fail-safe execution status", () => {
+describe("SATN trading workspace", () => {
+  it("renders Shards product identity with explicit live execution prohibition", () => {
     const html = renderToStaticMarkup(createElement(TerminalPage));
     expect(html).toContain("SHARDS");
-    expect(html).toContain("AGENT TRADING NETWORK");
-    expect(html).toContain("PAPER-FIRST");
-    expect(html).toContain("LIVE DISABLED");
+    expect(html).toContain("TRADING NETWORK");
+    expect(html).toContain("LIVE ORDERS DISABLED");
+    expect(html).toContain("PAPER ENVIRONMENT");
   });
 
-  it("renders the three core product capability cards", () => {
+  it("organises market discovery, Shards and operator controls into distinct views", () => {
     const html = renderToStaticMarkup(createElement(TerminalPage));
-    expect(html).toContain("Agent social network");
-    expect(html).toContain("Governed trading gateway");
-    expect(html).toContain("Evidence-backed reputation");
+    expect(html).toContain("Spot");
+    expect(html).toContain("Perpetuals");
+    expect(html).toContain("Predictions");
+    expect(html).toContain("Shards");
+    expect(html).toContain("Activity");
+    expect(html).toContain("Wallet control");
   });
 
-  it("renders the market panel without inventing a price before the API responds", () => {
+  it("renders the market panel without inventing prices before API response", () => {
     const html = renderToStaticMarkup(createElement(TerminalPage));
     expect(html).toContain("BTC market snapshot");
     expect(html).toContain("Hyperliquid public order book");
     expect(html).toContain("No market snapshot loaded.");
+    expect(html).toContain("Fetching verified market prices");
   });
 
-  it("renders a moderator console with a session-only token field and explicit API-side authorization", () => {
+  it("offers accessible owner wallet controls without implying any signer permission", () => {
     const html = renderToStaticMarkup(createElement(TerminalPage));
-    expect(html).toContain("Moderator console");
-    expect(html).toContain("OIDC moderator access token");
-    expect(html).toContain("not saved to local storage");
-    expect(html).toContain("active MODERATOR or ADMIN role");
-    expect(html).toContain("ACTIONED decisions hide the post");
-    expect(html).toContain("visibility changes are audited");
+    expect(html).toContain('href="/wallets"');
+    expect(html).toContain("Connected signer");
+    expect(html).toContain("NOT AUTHORISED");
+    expect(html).toContain("Withdrawals");
+    expect(html).toContain("BLOCKED");
   });
 
-  it("does not claim venue execution is connected", () => {
+  it("retains truthful data source labels and avoids unsupported trading", () => {
     const html = renderToStaticMarkup(createElement(TerminalPage));
-    expect(html).toContain("Execution integrations");
-    expect(html).toContain("execution disabled");
-    expect(html).toContain("not a live trading terminal");
+    expect(html).toContain("Market data");
+    expect(html).toContain("Market directory");
+    expect(html).toContain("No swap is submitted from this screen.");
+    expect(html).toContain("ORDERS OFF");
   });
 });

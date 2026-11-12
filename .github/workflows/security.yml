@@ -33,6 +33,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Guard against checkout credential persistence
+        run: node --test scripts/workflow-credential-hygiene.test.mjs
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       - name: Audit dependency tree
