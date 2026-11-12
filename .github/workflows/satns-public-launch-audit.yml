@@ -30,7 +30,7 @@ jobs:
         run: node scripts/launch-public-audit.mjs | tee satns-public-launch-audit.json
       - name: Preserve redacted evidence even if release remains blocked
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: satns-public-launch-audit
           path: satns-public-launch-audit.json
